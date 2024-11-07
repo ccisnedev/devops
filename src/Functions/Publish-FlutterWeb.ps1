@@ -23,7 +23,7 @@ function Publish-FlutterWeb {
         [string]$server
     )
     #version
-    $version = "1.0.2"
+    $version = "1.0.3"
     Write-Host "[$version] Publicando la carpeta web en el servidor '$server'..." -ForegroundColor Cyan
 
     # Obtener la versión y el nombre de la aplicación del pubspec.yaml
@@ -36,17 +36,16 @@ function Publish-FlutterWeb {
     $name = $nameLine -replace "name: ", ""
     
     # Variables de la carpeta de lanzamiento y el nombre de la carpeta web
-    $releasePath = "./release"
     $webFolder = "app_${name}_v${version}_web"
-    $localWebPath = "$releasePath/$webFolder"
-    $remoteWebPath = "/home/cacsiadmin/frontend/${name}_web_test"
+    $localWebPath = "./release/$webFolder"
+    $remoteWebPath = "/home/cacsiadmin/frontend/${name}_web"
 
-    # Verificar si la carpeta web existe
+    # Verificar si la carpeta web existe en local
     if (!(Test-Path -Path $localWebPath)) {
         Write-Host "La carpeta web '$localWebPath' no existe." -ForegroundColor Red
         return
     } else {
-        Write-Host "La carpeta web '$localWebPath' existe." -ForegroundColor Green
+        Write-Host "La carpeta web '$localWebPath' encontrada." -ForegroundColor Green
     }
 
     # Importar el archivo de configuración
@@ -91,17 +90,23 @@ function Publish-FlutterWeb {
 
     # Verificar si ya existe la carpeta "web" y eliminarla si exite
     $checkAndRemoveCommand = "'if [ -d ${remoteWebPath} ]; then rm -rf ${remoteWebPath}; fi'"
-    Write-Host "Verificar si existe y borrar $checkAndRemoveCommand" -ForegroundColor Cyan
+    Write-Host "Verificar si existe y borrar $remoteWebPath" -ForegroundColor Cyan
     Invoke-Expression "$sshCommand $checkAndRemoveCommand"
 
-    # Renombrar la carpeta a "web"
-    $renameCommand = "'mv ${destinationPath} ${remoteWebPath}'"
-    Write-Host "Renombrar: $renameCommand" -ForegroundColor Cyan
-    Invoke-Expression "$sshCommand $renameCommand"
+    # Copia el contenido a la carpeta "${name}_web"
+    $copyCommand = "'cp -r ${destinationPath} ${remoteWebPath}'"
+    Write-Host "Copia: $copyCommand" -ForegroundColor Cyan
+    Invoke-Expression "$sshCommand $copyCommand"
 
     # Enviar comando a la carpeta de nginx
-    # sudo rm -rf "/var/www/$name/*"
-    # sudo cp -r "$HOME/frontend/${name}_web/." "/var/www/$name/"
+    $rmCommand = "'sudo rm -rf /var/www/$name/*'"
+    Write-Host "Borrando contenido de /var/www/$name" -ForegroundColor Cyan
+    Invoke-Expression "$sshCommand $rmCommand"
+    
+    # Copiar el contenido de la carpeta web a la carpeta de nginx
+    $copy2Command = "'sudo cp -r $remoteWebPath/. /var/www/$name/'"
+    Write-Host "Copiando contenido de $remoteWebPath a /var/www/$name" -ForegroundColor Cyan
+    Invoke-Expression "$sshCommand $copy2Command"
 
     Write-Host "Despliegue completado en el servidor '$server'." -ForegroundColor Green
 }
