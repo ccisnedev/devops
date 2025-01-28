@@ -70,4 +70,5 @@ SSH con la clave privada especificada.
 Versión: 1.0.0
 Autor: @ccisnedev
 #>
-function server { param($server); & Connect-Server -server $server }
+# function server { param($server); & Connect-Server -server $server }
+New-Alias -Name server -Value Connect-Server
