@@ -25,4 +25,9 @@ $servers = @{
         "ip" = "192.168.137.206"
         "port" = 8022
     };
+    "10.3" = @{
+        "username" = "apiController"
+        "ip" = "192.168.10.3"
+        "port" = 22
+    }
 }
