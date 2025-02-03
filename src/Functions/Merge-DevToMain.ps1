@@ -29,20 +29,20 @@ function Merge-DevToMain {
         [string]$devBranch = "dev",
         [string]$mainBranch = "main"
     )
-    Write-Host "Subiendo cambios de $devBranch a $remote..."
+    Write-Host "Subiendo cambios de $devBranch a $remote..." -ForegroundColor Yellow
     git push $remote $devBranch
 
-    Write-Host "Cambiando a $mainBranch..."
+    Write-Host "Cambiando a $mainBranch..." -ForegroundColor Yellow
     git checkout $mainBranch
     git fetch $remote
     git pull $remote $mainBranch
 
-    Write-Host "Fusionando $devBranch en $mainBranch..."
+    Write-Host "Fusionando $devBranch en $mainBranch..." -ForegroundColor Yellow
     git merge $devBranch
 
-    Write-Host "Subiendo cambios de $mainBranch a $remote..."
+    Write-Host "Subiendo cambios de $mainBranch a $remote..." -ForegroundColor Yellow
     git push $remote $mainBranch
 
-    Write-Host "Regresando a $devBranch..."
+    Write-Host "Regresando a $devBranch..." -ForegroundColor Yellow
     git checkout $devBranch
 }
