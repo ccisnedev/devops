@@ -12,11 +12,12 @@
     
     # Funcionalidad
     FunctionsToExport = @(
-        'Build-FlutterApp'
+        'Invoke-FlutterBuild'
         , 'Connect-Server'
         # , 'server' # No se exporta porque es un alias (nombre no apropaido)
         , 'Publish-FlutterWeb'
         , 'Get-SQLiteDB'
+        , 'Merge-DevToMain'
     )
     CmdletsToExport = @()                          # En este caso no hay cmdlets, pero si existieran se listarían aquí
     AliasesToExport = @('server')                  # Aliases que exporta el módulo (si los hay)
