@@ -3,21 +3,21 @@
 Compila la aplicación Flutter en diferentes modos.
 
 .DESCRIPTION
-El cmdlet `Build-FlutterApp` permite compilar una aplicación Flutter en modo APK o web. 
+El cmdlet `Invoke-FlutterBuild` permite compilar una aplicación Flutter en modo APK o web. 
 Crea una carpeta de lanzamiento si no existe y lee el archivo `pubspec.yaml` para obtener información de la versión.
 
 .PARAMETER web
 Compila la aplicación en modo web.
 
 .EXAMPLE
-Build-FlutterApp -web
+Invoke-FlutterBuild -web
 Compila la aplicación Flutter en modo apk y tambien en modo web.
 
 .NOTES
 Versión: 1.0.0
 Autor: @ccisnedev
 #>
-function Build-FlutterApp {
+function Invoke-FlutterBuild {
     # Parámetros
     [CmdletBinding()]
     param(
