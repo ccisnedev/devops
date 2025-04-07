@@ -1,6 +1,6 @@
 @{
     # Módulo general
-    ModuleVersion = '1.0.0'                       # Versión del módulo
+    ModuleVersion = '1.0.1'                       # Versión del módulo
     GUID = '25f10f0c-b26c-4238-9782-7c8a68c15681'  # Identificador único del módulo
     Author = '@ccisnedev'                           # Autor del módulo
     CompanyName = 'ccisne.dev'                    # Nombre de la compañía (opcional)
@@ -17,7 +17,7 @@
         , 'Publish-FlutterWeb'
         , 'Get-SQLiteDB'
         , 'Merge-DevToMain'
-        , 'Generate-FileTree' # Nueva función añadida
+        , 'Export-FileTree'
     )
     CmdletsToExport = @()                          # En este caso no hay cmdlets, pero si existieran se listarían aquí
     AliasesToExport = @('server')                  # Aliases que exporta el módulo (si los hay)
