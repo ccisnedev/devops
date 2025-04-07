@@ -14,10 +14,10 @@
     FunctionsToExport = @(
         'Invoke-FlutterBuild'
         , 'Connect-Server'
-        # , 'server' # No se exporta porque es un alias (nombre no apropaido)
         , 'Publish-FlutterWeb'
         , 'Get-SQLiteDB'
         , 'Merge-DevToMain'
+        , 'Generate-FileTree' # Nueva función añadida
     )
     CmdletsToExport = @()                          # En este caso no hay cmdlets, pero si existieran se listarían aquí
     AliasesToExport = @('server')                  # Aliases que exporta el módulo (si los hay)
@@ -25,7 +25,7 @@
 
     # Scripts a cargar
     FileList = @()                                 # Listado de archivos que el módulo necesita para su funcionamiento (opcional)
-    RootModule = 'PSFlutterDevOps.psm1'              # Archivo principal del módulo
+    RootModule = 'PSDevOps.psm1'              # Archivo principal del módulo
 
     # Dependencias y Compatibilidad
     RequiredModules = @()                          # Lista de módulos que este módulo necesita (ej: Pester para pruebas)
