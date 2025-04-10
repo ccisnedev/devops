@@ -3,26 +3,57 @@
 Compila la aplicación Flutter en diferentes modos.
 
 .DESCRIPTION
-El cmdlet `Invoke-FlutterBuild` permite compilar una aplicación Flutter en modo APK o web. 
+El cmdlet `Invoke-FlutterBuild` permite compilar una aplicación Flutter en modo APK, web o Windows. 
 Crea una carpeta de lanzamiento si no existe y lee el archivo `pubspec.yaml` para obtener información de la versión.
 
-.PARAMETER web
+.PARAMETER Apk
+Compila la aplicación en modo APK.
+
+.PARAMETER Web
 Compila la aplicación en modo web.
 
+.PARAMETER Windows
+Compila la aplicación en modo Windows.
+
+.PARAMETER SplitPerAbi
+Compila la aplicación en modo APK con la opción --split-per-abi.
+
 .EXAMPLE
-Invoke-FlutterBuild -web
-Compila la aplicación Flutter en modo apk y tambien en modo web.
+Invoke-FlutterBuild
+Compila la aplicación Flutter en modo APK por defecto.
+
+.EXAMPLE
+Invoke-FlutterBuild -Web
+Compila la aplicación Flutter en modo web.
+
+.EXAMPLE
+Invoke-FlutterBuild -Apk -SplitPerAbi
+Compila la aplicación Flutter en modo APK con la opción --split-per-abi.
 
 .NOTES
-Versión: 1.0.0
+Versión: 1.1.0
 Autor: @ccisnedev
 #>
 function Invoke-FlutterBuild {
-    # Parámetros
     [CmdletBinding()]
     param(
-        [switch]$web
+        [switch]$Apk,
+        [switch]$Web,
+        [switch]$Windows,
+        [switch]$SplitPerAbi
     )
+
+    # Verificar si no se especifica ninguna plataforma, asumir Android por defecto
+    if (-not $Apk -and -not $Web -and -not $Windows) {
+        $Apk = $true
+    }
+
+    # Verificar si SplitPerAbi está activo pero no se está compilando para APK
+    if ($SplitPerAbi -and -not $Apk) {
+        Write-Warning "La opción -SplitPerAbi solo es válida para la compilación APK. Será ignorada."
+        $SplitPerAbi = $false
+    }
+
     # Verificar si existe la carpeta release y si no existe crearla
     if (!(Test-Path -Path "./release")) {
         New-Item -Path "./release" -ItemType Directory
@@ -37,63 +68,74 @@ function Invoke-FlutterBuild {
     # Extraer el número de versión
     $version = $versionLine -replace "version: ", "" -replace '"', ''
     Write-Host "Versión: $version" -ForegroundColor Cyan
-    
+
     # split en + para tomar solo la primera parte
     $version = $version.Split('+')[0]
-    
-    # Quita los puntos de la versión
-    # $version = $version.Replace(".", "")
-    
-    #Buscar la línea que contiene el nombre de la aplicación
+
+    # Buscar la línea que contiene el nombre de la aplicación
     $nameLine = $content | Where-Object { $_ -match "name:" }
 
     # Extraer el nombre de la aplicación
     $name = $nameLine -replace "name: ", "" -replace '"', ''
 
-    # Construir el nombre del archivo APK
-    $apkName = "app_${name}_v${version}.apk"
-    Write-Host "Nombre del APK: $apkName" -ForegroundColor Green
+    # Compilar para APK
+    if ($Apk) {
+        $apkName = "app_${name}_v${version}.apk"
 
-    # Generar el APK
-    Write-Host "Iniciando la construcción del APK..." -ForegroundColor Yellow
-    flutter build apk
+        if (Test-Path -Path "./release/$apkName") {
+            Remove-Item -Path "./release/$apkName"
+        }
 
-    # Borrar "./release/$apkName" si es que existe
-    if (Test-Path -Path "./release/$apkName") {
-        Remove-Item -Path "./release/$apkName"
+        if ($SplitPerAbi) {
+            Write-Host "Iniciando la construcción del APK con --split-per-abi..." -ForegroundColor Yellow
+            flutter build apk --split-per-abi
+            
+            # Tomar solo el archivo app-arm64-v8a-release.apk
+            Move-Item -Path "./build/app/outputs/flutter-apk/app-arm64-v8a-release.apk" -Destination "./release/$apkName"
+        } else {
+            Write-Host "Iniciando la construcción del APK..." -ForegroundColor Yellow
+            flutter build apk
+
+            Move-Item -Path "./build/app/outputs/flutter-apk/app-release.apk" -Destination "./release/$apkName"
+        }
+        Write-Host "APK generado exitosamente ./$apkName" -ForegroundColor Green
     }
 
-    # Mover y renombrar el APK
-    Move-Item -Path "./build/app/outputs/flutter-apk/app-release.apk" -Destination "./release/$apkName"
-
-    # Mostrar la ruta del APK
-    Write-Host "APK generado exitosamente ./$apkName" -ForegroundColor Green
-
-    # Generar versión web
-    if ($web.IsPresent) {
-        # Write-Host "Iniciando la construcción de la versión web..." -ForegroundColor Yellow
+    # Compilar para Web
+    if ($Web) {
+        Write-Host "Iniciando la construcción de la versión web..." -ForegroundColor Yellow
         flutter build web
 
         # Mover y renombrar la carpeta
         Move-Item -Path "./build/web" -Destination "./release/app_${name}_v${version}_web"
     }
 
+    # Compilar para Windows
+    if ($Windows) {
+        Write-Host "Iniciando la construcción de la versión Windows..." -ForegroundColor Yellow
+        flutter build windows
+
+        # Mover y renombrar la carpeta
+        Move-Item -Path "./build/windows" -Destination "./release/app_${name}_v${version}_windows"
+    }
+
+    # Inicializar el objeto Shell.Application
+    $openWindows = New-Object -ComObject Shell.Application
+    
     # Abrir la carpeta "release" o ponerla en primer plano
     $folderPath = (Get-Item ".\release").FullName
-    $openWindows = New-Object -ComObject Shell.Application
+    $normalizedFolderPath = "file:///$($folderPath.Replace('\', '/'))"
     $found = $false
-
+    
     foreach ($window in $openWindows.Windows()) {
-        if ($window.LocationURL -eq "file:///$($folderPath.Replace('\', '/'))") {
-            $window.Visible = $true
-            # $window.Focus()
+        # Normalizar la URL de la ventana para comparación
+        $normalizedWindowURL = $window.LocationURL -replace '%20', ' ' # Reemplazar espacios codificados
+        if ($normalizedWindowURL -eq $normalizedFolderPath) {
+            $window.Quit() # Cerrar la ventana si ya está abierta
+            $window = $openWindows.ShellExecute("explorer.exe", $folderPath, "", "open", 1)
             $found = $true
             break
         }
-    }
-
-    if (-not $found) {
-        explorer.exe $folderPath
     }
 
     Write-Host "=======================================" -ForegroundColor Yellow
