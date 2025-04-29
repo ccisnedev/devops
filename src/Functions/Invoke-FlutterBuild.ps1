@@ -88,13 +88,13 @@ function Invoke-FlutterBuild {
 
         if ($SplitPerAbi) {
             Write-Host "Iniciando la construcción del APK con --split-per-abi..." -ForegroundColor Yellow
-            flutter build apk --split-per-abi
+            flutter build apk --release --obfuscate --split-debug-info=build/debug_info/ --split-per-abi
             
             # Tomar solo el archivo app-arm64-v8a-release.apk
             Move-Item -Path "./build/app/outputs/flutter-apk/app-arm64-v8a-release.apk" -Destination "./release/$apkName"
         } else {
             Write-Host "Iniciando la construcción del APK..." -ForegroundColor Yellow
-            flutter build apk
+            flutter build apk --release --obfuscate --split-debug-info=build/debug_info/
 
             Move-Item -Path "./build/app/outputs/flutter-apk/app-release.apk" -Destination "./release/$apkName"
         }
@@ -125,18 +125,19 @@ function Invoke-FlutterBuild {
     # Abrir la carpeta "release" o ponerla en primer plano
     $folderPath = (Get-Item ".\release").FullName
     $normalizedFolderPath = "file:///$($folderPath.Replace('\', '/'))"
-    $found = $false
     
+    # Para asegurar que quede en primer plado, se debe cerrar la ventana si ya está abierta
     foreach ($window in $openWindows.Windows()) {
         # Normalizar la URL de la ventana para comparación
-        $normalizedWindowURL = $window.LocationURL -replace '%20', ' ' # Reemplazar espacios codificados
+        $normalizedWindowURL = $window.LocationURL -replace '%20', ' '
         if ($normalizedWindowURL -eq $normalizedFolderPath) {
             $window.Quit() # Cerrar la ventana si ya está abierta
-            $window = $openWindows.ShellExecute("explorer.exe", $folderPath, "", "open", 1)
-            $found = $true
             break
         }
     }
+    
+    # Abrir ventana ./release
+    $window = $openWindows.ShellExecute("explorer.exe", $folderPath, "", "open", 1)
 
     Write-Host "=======================================" -ForegroundColor Yellow
 }
