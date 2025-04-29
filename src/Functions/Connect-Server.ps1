@@ -13,17 +13,26 @@ Connect-Server -server "isabel"
 Se conecta al servidor "isabel" usando SSH con la clave privada especificada.
 
 .NOTES
-Versión: 1.0.0
+Versión: 1.1.0
 Autor: @ccisnedev
 #>
 function Connect-Server {
     param(
-        [Parameter(Mandatory=$true)]
-        [string]$server
+        [Parameter(Mandatory=$true, ParameterSetName="Connect")]
+        [string]$server,
+        [Parameter(Mandatory=$true, ParameterSetName="List")]
+        [switch]$list
     )
     
     # Importar el archivo de configuración
     . "$PSScriptRoot/../Private/SSHConfig.ps1"
+    
+    if ($list) {
+        $servers.GetEnumerator() | ForEach-Object {
+            Write-Host "Nombre: $($_.Key) - Usuario: $($_.Value.username) - IP: $($_.Value.ip) - Puerto: $($_.Value.port)"
+        }
+        return
+    }
     
     if ($servers.ContainsKey($server)) {
         $serverInfo = $servers[$server]
