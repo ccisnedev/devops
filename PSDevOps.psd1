@@ -18,6 +18,7 @@
         , 'Get-SQLiteDB'
         , 'Merge-DevToMain'
         , 'Export-FileTree'
+        , 'Copy-FromServer'
     )
     CmdletsToExport = @()                          # En este caso no hay cmdlets, pero si existieran se listarían aquí
     AliasesToExport = @('server')                  # Aliases que exporta el módulo (si los hay)
