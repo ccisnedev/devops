@@ -1,11 +1,11 @@
 # SSHConfig.ps1
 
 # Ruta de la clave privada
-$privateKeyPath = "E:/Documents/cacsi_dev/linux/ssh_key/privatekey.key"
+$privateKeyPath = "D:/Documents/cacsi_dev/linux/ssh_key/privatekey.key"
 
 # Información de los servidores
 $servers = @{
-    "isabel" = @{
+    "app-server" = @{
         "username" = "cacsiadmin"
         "ip" = "192.168.10.18"
         "port" = 22
@@ -28,6 +28,21 @@ $servers = @{
     "10.3" = @{
         "username" = "apiController"
         "ip" = "192.168.10.3"
+        "port" = 22
+    };
+    "cacsiai" = @{
+        "username" = "cacsiai"
+        "ip" = "192.168.5.84"
+        "port" = 22
+    };
+    "hostinger1" = @{
+        "username" = "root"
+        "ip" = "srv840556.hstgr.cloud"
+        "port" = 22
+    };
+    "web-server" = @{
+        "username" = "ccisneros"
+        "ip" = "192.168.10.14"
         "port" = 22
     }
 }
