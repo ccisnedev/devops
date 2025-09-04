@@ -67,7 +67,7 @@ function Publish-FlutterWeb {
     Write-Host "Conectando al servidor '$server'..." -ForegroundColor Cyan
     
     # Comando SCP para copiar la carpeta web al servidor remoto
-    $destinationPath = "/home/cacsiadmin/frontend/$webFolder"
+        $destinationPath = "/home/$username/frontend/$webFolder"
     $scpCommand = "scp -i ${privateKeyPath} -P ${port} -r ${localWebPath} ${username}@${ip}:${destinationPath}"
     Write-Host $scpCommand -ForegroundColor Cyan
 
