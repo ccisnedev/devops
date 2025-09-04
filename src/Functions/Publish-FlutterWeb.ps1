@@ -35,11 +35,6 @@ function Publish-FlutterWeb {
     $nameLine = $content | Where-Object { $_ -match "name:" }
     $name = $nameLine -replace "name: ", ""
     
-    # Variables de la carpeta de lanzamiento y el nombre de la carpeta web
-    $webFolder = "app_${name}_v${version}_web"
-    $localWebPath = "./release/$webFolder"
-    $remoteWebPath = "/home/cacsiadmin/frontend/${name}_web"
-
     # Verificar si la carpeta web existe en local
     if (!(Test-Path -Path $localWebPath)) {
         Write-Host "La carpeta web '$localWebPath' no existe." -ForegroundColor Red
@@ -47,27 +42,32 @@ function Publish-FlutterWeb {
     } else {
         Write-Host "La carpeta web '$localWebPath' encontrada." -ForegroundColor Green
     }
-
+    
     # Importar el archivo de configuración
     . "$PSScriptRoot/../Private/SSHConfig.ps1"
-
+    
     # Verificar si el servidor existe en la configuración
     if ($servers.ContainsKey($server)) {
         $serverInfo = $servers[$server]
         $username = $serverInfo["username"]
         $ip = $serverInfo["ip"]
         $port = $serverInfo["port"]
-
+        
     } else {
         Write-Host "Servidor desconocido: $server" -ForegroundColor Red
         return
     }
-
+    
     # Si el servidor existe continua con el despliegue
     Write-Host "Conectando al servidor '$server'..." -ForegroundColor Cyan
     
+    # Variables de la carpeta de lanzamiento y el nombre de la carpeta web
+    $webFolder = "app_${name}_v${version}_web"
+    $localWebPath = "./release/$webFolder"
+    $remoteWebPath = "/home/$username/frontend/${name}_web"
+    
     # Comando SCP para copiar la carpeta web al servidor remoto
-        $destinationPath = "/home/$username/frontend/$webFolder"
+    $destinationPath = "/home/$username/frontend/$webFolder"
     $scpCommand = "scp -i ${privateKeyPath} -P ${port} -r ${localWebPath} ${username}@${ip}:${destinationPath}"
     Write-Host $scpCommand -ForegroundColor Cyan
 
