@@ -35,9 +35,9 @@ $servers = @{
         "ip" = "192.168.5.84"
         "port" = 22
     };
-    "hostinger1" = @{
-        "username" = "root"
-        "ip" = "srv840556.hstgr.cloud"
+    "cacsi-test" = @{
+        "username" = "ccisnedev"
+        "ip" = "136.115.243.104"
         "port" = 22
     };
     "web-server" = @{
