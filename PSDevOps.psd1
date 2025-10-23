@@ -15,7 +15,7 @@
         'Invoke-FlutterBuild'
         , 'Connect-Server'
         , 'Publish-FlutterWeb'
-        , 'Publish-ShelfServer'
+        , 'Publish-ShelfApi'
         , 'Get-SQLiteDB'
         , 'Merge-DevToMain'
         , 'Export-FileTree'
