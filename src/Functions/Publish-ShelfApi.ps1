@@ -1,11 +1,11 @@
 <#
 .SYNOPSIS
-Compila en WSL, sube release a /opt/apps/<app>_server/releases/vX.Y.Z/bin/server,
+Compila en WSL, sube release a /opt/apps/<app>_api/releases/vX.Y.Z/bin/server,
 actualiza symlink 'current', reinicia con PM2 (sin ecosystem) y verifica con curl.
 
 .DESCRIPTION
 Ejecutar DESDE la carpeta del proyecto Shelf (donde están pubspec.yaml y .env):
-Publish-ShelfServer <server-name>
+Publish-ShelfApi <server-name>
 
 - Obtiene name/version de pubspec.yaml.
 - Obtiene PORT de .env (si no, 8080).
@@ -17,14 +17,14 @@ Publish-ShelfServer <server-name>
 El nombre del servidor al que se desea desplegar el servidor Shelf. Este parámetro es obligatorio.
 
 .EXAMPLE
-Publish-ShelfServer app-server
+Publish-ShelfApi app-server
 Compila y despliega el servidor Shelf al servidor "app-server".
 
 .NOTES
 Versión: 1.0.0
 Autor: @ccisnedev
 #>
-function Publish-ShelfServer {
+function Publish-ShelfApi {
 
     [CmdletBinding()]
     param(
@@ -33,9 +33,10 @@ function Publish-ShelfServer {
     )
 
     # ====== CONFIGURABLES (internos, sin parámetros) ======
-    $WSLDistro     = "Ubuntu-22.04"       # Nombre de la distro WSL a usar
-    $RemoteRoot    = "/opt/apps"          # Raíz para apps en el servidor
-    $HealthPath    = "/healthz"           # Ruta de healthcheck
+    $WSLDistro     = "Ubuntu"       # Nombre de la distro WSL a usar
+    # Usar la ruta esperada en el servidor remoto. Nota: usar '/opt/app' (singular) según convención.
+    $RemoteRoot    = "/opt/app"          # Raíz para apps en el servidor
+    $HealthPath    = "/health"           # Ruta de healthcheck
     $BuildOutRel   = "build/server"       # Ruta de salida local del binario
     # ======================================================
 
@@ -162,11 +163,17 @@ command -v strip >/dev/null && strip build/server || true
     $buildScriptUnix = $buildScriptUnix -replace "\r", ""
 
     $tmpFile = [IO.Path]::Combine($env:TEMP, "psdevops_publish_build_{0}.sh" -f ([guid]::NewGuid().ToString()))
-    [System.IO.File]::WriteAllText($tmpFile, $buildScriptUnix)
+    # Escribir el script en UTF8 sin BOM para evitar problemas si el archivo es leído en Linux
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($tmpFile, $buildScriptUnix, $utf8NoBom)
 
     try {
-        # Ejecutar el script en WSL pasando el contenido como stdin mediante pipeline
-        Get-Content -Raw -LiteralPath $tmpFile | & wsl.exe -d $WSLDistro bash -s
+        # Convertir la ruta Windows del archivo temporal a ruta WSL y ejecutar directamente en bash
+        $wslTmpFile = ConvertTo-WSLPath -winPath $tmpFile -WSLDistro $WSLDistro
+        $wslTmpFile = $wslTmpFile -replace "\r", ''
+    # Ejecutar en WSL pasando argumentos separados para evitar que PowerShell forme un único token
+    Write-Host "Ejecutando build en WSL: bash $wslTmpFile" -ForegroundColor DarkGray
+    & wsl.exe -d $WSLDistro -- bash $wslTmpFile
     } finally {
         Remove-Item -LiteralPath $tmpFile -ErrorAction SilentlyContinue
     }
@@ -174,47 +181,106 @@ command -v strip >/dev/null && strip build/server || true
     $localExe = Join-Path $cwd $BuildOutRel
     if (!(Test-Path $localExe)) { throw "No se generó el ejecutable: $localExe" }
 
-    # 6) Variables remotas
-    $AppServerRoot = Join-Path $RemoteRoot ("{0}_server" -f $AppName)    # /opt/apps/<app>_server
+    # 6) Variables remotas — construir rutas POSIX usando slash para evitar backslashes en Windows
+    # Evitar usar Join-Path porque en Windows produce backslashes que luego se interpretan como escapes en el shell remoto
+    $AppServerRoot = "$RemoteRoot/$($AppName)_api"    # /opt/app/<app>_api
     $RemoteRelease = "$AppServerRoot/releases/$Release"
-    $RemoteTmp     = "/tmp/${AppName}_server-${Release}"
+    $RemoteTmp     = "/tmp/$($AppName)_api-$Release"
 
     $sshCmd = "ssh -i `"$privateKeyPath`" -p $sshPort $user@$ip"
 
     # 7) Upload binario
     Write-Host "Subiendo release $Release a $ip..." -ForegroundColor Cyan
-    $scpCmd = "scp -i `"$privateKeyPath`" -P $sshPort `"$localExe`" `"${user}@${ip}:$RemoteTmp`""
-    Write-Host $scpCmd -ForegroundColor DarkGray
-    Invoke-Expression $scpCmd
+    $scpArgs = @('-i', $privateKeyPath, '-P', $sshPort, $localExe, "$($user)@$($ip):$RemoteTmp")
+    Write-Host ('scp {0} {1} {2} {3} {4}' -f '-i', $privateKeyPath, '-P', $sshPort, $localExe) -ForegroundColor DarkGray
+    & scp @scpArgs
 
     # 8) Instalar release y promover 'current'
-    $remoteInstall = @"
+        # Construir el script remoto con las rutas ya expandidas para evitar variables literales
+        # Build remote install script as literal with placeholders, then replace them to avoid PowerShell expanding bash $() or other tokens
+        $remoteInstall = @'
 set -e
-mkdir -p '$RemoteRelease/bin'
-mv '$RemoteTmp' '$RemoteRelease/bin/server'
-chmod +x '$RemoteRelease/bin/server'
-ln -sfn '$RemoteRelease' '$AppServerRoot/current'
-"@
-    Invoke-Expression "$sshCmd '$remoteInstall'"
+sudo mkdir -p '__REMOTE_RELEASE__'/bin
+# Backup del binario actual si existe
+if [ -f '__APP_SERVER_ROOT__/current/bin/server' ]; then
+    ts=$(date +%Y%m%d%H%M%S)
+    sudo cp -v '__APP_SERVER_ROOT__/current/bin/server' '__APP_SERVER_ROOT__/current/bin/server.bak.$ts' || true
+fi
+sudo mv '__REMOTE_TMP__' '__REMOTE_RELEASE__'/bin/server
+sudo chmod +x '__REMOTE_RELEASE__'/bin/server
+sudo chown -R __USER__:__USER__ '__REMOTE_RELEASE__'
+sudo ln -sfn '__REMOTE_RELEASE__' '__APP_SERVER_ROOT__/current'
+'@
+
+    # Replace placeholders with real values
+    $remoteInstall = $remoteInstall -replace '__REMOTE_RELEASE__', $RemoteRelease -replace '__APP_SERVER_ROOT__', $AppServerRoot -replace '__REMOTE_TMP__', $RemoteTmp -replace '__USER__', $user
+    $remoteInstallUnix = $remoteInstall -replace "`r`n", "`n" -replace "`r", ""
+    $tmpRemoteInstall = [IO.Path]::Combine($env:TEMP, "psdevops_remote_install_{0}.sh" -f ([guid]::NewGuid().ToString()))
+    [System.IO.File]::WriteAllText($tmpRemoteInstall, $remoteInstallUnix, $utf8NoBom)
+    try {
+        $remoteScriptName = [IO.Path]::GetFileName($tmpRemoteInstall)
+    & scp -i $privateKeyPath -P $sshPort $tmpRemoteInstall "$($user)@$($ip):/tmp/$remoteScriptName"
+    & ssh -i $privateKeyPath -p $sshPort "$($user)@$($ip)" "bash /tmp/$remoteScriptName && rm -f /tmp/$remoteScriptName"
+    } finally {
+        Remove-Item -LiteralPath $tmpRemoteInstall -ErrorAction SilentlyContinue
+    }
 
     # 9) PM2 sin ecosystem (start si no existe; si existe, restart)
     Write-Host "Aplicando PM2 (sin ecosystem)..." -ForegroundColor Yellow
-    $AppPM2 = "${AppName}_server"
-    $pm2Cmd = @"
-if ! pm2 describe $AppPM2 >/dev/null; then
-  pm2 start '$AppServerRoot/current/bin/server' --name $AppPM2 --interpreter none
-  pm2 save
+    $AppPM2 = "${AppName}_api"
+        $pm2Cmd = @"
+if ! pm2 describe $AppPM2 >/dev/null 2>&1; then
+    pm2 start '$AppServerRoot/current/bin/server' --name $AppPM2 --interpreter none
+    pm2 save
 else
-  pm2 restart $AppPM2
+    pm2 restart $AppPM2
 fi
 "@
-    Invoke-Expression "$sshCmd '$pm2Cmd'"
+    # Normalizar y ejecutar script PM2 via archivo temporal (UTF-8 sin BOM) para evitar CRLF/encoding issues
+    $pm2Unix = $pm2Cmd -replace "`r`n", "`n" -replace "`r", ""
+    $tmpPm2 = [IO.Path]::Combine($env:TEMP, "psdevops_remote_pm2_{0}.sh" -f ([guid]::NewGuid().ToString()))
+    # Reusar el encoding UTF8 sin BOM
+    if (-not $utf8NoBom) { $utf8NoBom = New-Object System.Text.UTF8Encoding($false) }
+    [System.IO.File]::WriteAllText($tmpPm2, $pm2Unix, $utf8NoBom)
+    try {
+        $remotePm2Name = [IO.Path]::GetFileName($tmpPm2)
+    & scp -i $privateKeyPath -P $sshPort $tmpPm2 "$($user)@$($ip):/tmp/$remotePm2Name"
+    & ssh -i $privateKeyPath -p $sshPort "$($user)@$($ip)" "bash /tmp/$remotePm2Name && rm -f /tmp/$remotePm2Name"
+    } finally {
+        Remove-Item -LiteralPath $tmpPm2 -ErrorAction SilentlyContinue
+    }
 
-    # 10) Healthcheck
-    $healthUrl = "http://127.0.0.1:$Port$HealthPath"
-    Write-Host "Verificando: $healthUrl" -ForegroundColor Cyan
-    $curl = "curl -fsS '$healthUrl' || (sleep 2 && curl -fsS '$healthUrl') || true"
-    Invoke-Expression "$sshCmd '$curl'"
+        # 10) Healthcheck con reintentos
+        $healthUrl = "http://127.0.0.1:$Port$HealthPath"
+        Write-Host "Verificando: $healthUrl" -ForegroundColor Cyan
+        # Health script: usar here-string literal y reemplazar el placeholder con la URL concreta
+        $healthScript = @'
+set -e
+tries=0
+until [ $tries -ge 6 ]
+do
+    if curl -fsS '__HEALTHURL__' >/dev/null 2>&1; then
+        echo OK
+        exit 0
+    fi
+    tries=$((tries+1))
+    sleep 2
+done
+exit 1
+'@
+        $healthScript = $healthScript -replace '__HEALTHURL__', $healthUrl
+        $healthScript = $healthScript -replace "`r`n", "`n" -replace "`r", ""
+        $tmpHealth = [IO.Path]::Combine($env:TEMP, "psdevops_remote_health_{0}.sh" -f ([guid]::NewGuid().ToString()))
+        [System.IO.File]::WriteAllText($tmpHealth, $healthScript, $utf8NoBom)
+    try {
+        $remoteHealthName = [IO.Path]::GetFileName($tmpHealth)
+                & scp -i $privateKeyPath -P $sshPort $tmpHealth "$($user)@$($ip):/tmp/$remoteHealthName"
+                # Build remote command by concatenation so any $... tokens remain literal for the remote shell
+                $remoteCmd = 'bash /tmp/' + $remoteHealthName + ' ; rc=$?; rm -f /tmp/' + $remoteHealthName + '; exit $rc'
+                & ssh -i $privateKeyPath -p $sshPort "$($user)@$($ip)" $remoteCmd
+    } finally {
+        Remove-Item -LiteralPath $tmpHealth -ErrorAction SilentlyContinue
+    }
 
-    Write-Host "OK → Deploy $Release de ${AppName}_server" -ForegroundColor Green
+    Write-Host "OK → Deploy $Release de ${AppName}_api" -ForegroundColor Green
 }
