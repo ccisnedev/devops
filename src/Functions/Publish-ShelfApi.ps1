@@ -119,20 +119,37 @@ function Publish-ShelfApi {
     # 5) Build en WSL (binario Linux)
     Write-Host "Compilando en WSL ($WSLDistro)..." -ForegroundColor Cyan
 
+    # Compilación en WSL en un directorio nativo (/tmp) para evitar problemas con /mnt (mount flags, locking, permisos)
+    # Generamos también una ruta de salida en Windows ($outWin) y la convertimos a WSL ($wslOut) para que el script WSL copie
+    # el binario ya generado a la ruta Windows temporal, de forma que el flujo de scp desde Windows siga funcionando.
+    $outWin = [IO.Path]::Combine($env:TEMP, "psdevops_publish_binary_{0}.server" -f ([guid]::NewGuid().ToString()))
+    $wslOut = ConvertTo-WSLPath -winPath $outWin -WSLDistro $WSLDistro
+    $wslOut = $wslOut -replace "\r", ''
+
     $buildScript = @'
 set -e
-cd '__WSLPROJECT__'
+# Variables pasadas por sustitución: __WSLPROJECT__ y __WSLWINOUT__
+SRC='__WSLPROJECT__'
+OUT='__WSLWINOUT__'
+
+TMPDIR=$(mktemp -d /tmp/psdevops_build.XXXXXX)
+echo "Using TMPDIR=$TMPDIR"
+mkdir -p "$TMPDIR/src"
+# Copiar proyecto al TMPDIR para compilar sobre FS nativo
+cp -a "$SRC/." "$TMPDIR/src/"
+cd "$TMPDIR/src"
+
 dart --version
 dart pub get
 mkdir -p build
-# Detectar automáticamente el archivo de entrada dentro de bin/
+
+# Detectar entrypoint
 ENTRY_CANDIDATE=""
 if [ -f bin/server.dart ]; then
     ENTRY_CANDIDATE="bin/server.dart"
 elif [ -f bin/main.dart ]; then
     ENTRY_CANDIDATE="bin/main.dart"
 else
-    # buscar coincidencias más flexibles
     first=$(ls bin/*server*.dart 2>/dev/null | head -n1 || true)
     if [ -n "$first" ]; then
         ENTRY_CANDIDATE="$first"
@@ -150,17 +167,57 @@ if [ -z "$ENTRY_CANDIDATE" ]; then
 fi
 
 echo "Usando entrypoint: $ENTRY_CANDIDATE"
-dart compile exe "$ENTRY_CANDIDATE" -o build/server
-# optimiza tamaño si existe strip
-command -v strip >/dev/null && strip build/server || true
+# Compilar con verificación explícita de éxito
+if ! dart compile exe "$ENTRY_CANDIDATE" -o build/server; then
+    echo "ERROR: dart compile exe falló para $ENTRY_CANDIDATE" >&2
+    exit 3
+fi
+
+# Verificar que el binario se generó y tiene tamaño razonable
+if [ ! -f build/server ]; then
+    echo "ERROR: build/server no existe después de compilar" >&2
+    exit 4
+fi
+
+size=$(stat -c%s build/server 2>/dev/null || stat -f%z build/server 2>/dev/null || echo 0)
+if [ "$size" -lt 100000 ]; then
+    echo "ERROR: build/server parece incompleto (tamaño: $size bytes)" >&2
+    exit 5
+fi
+
+echo "Binario generado exitosamente (tamaño: $size bytes)"
+# NO usar strip: destruye el snapshot AOT embebido en binarios Dart
+
+# Verificar que el binario arranca correctamente ANTES de copiarlo
+echo "Verificando que el binario arranca..."
+tmp_verify=$(mktemp)
+set +e
+timeout 3 ./build/server >"$tmp_verify" 2>&1
+verify_status=$?
+set -e
+if [ "$verify_status" -ne 124 ]; then
+    echo "ERROR: El binario no arranca correctamente (exit=$verify_status)" >&2
+    cat "$tmp_verify" >&2
+    rm -f "$tmp_verify"
+    exit 7
+fi
+rm -f "$tmp_verify"
+echo "Verificación exitosa: binario arranca correctamente"
+
+# Informar ruta nativa del binario antes de moverlo al path Windows
+echo "BUILT_NATIVE:$TMPDIR/src/build/server"
+
+# Copiar el binario al path Windows temporal (convertido a /mnt/..). 
+mkdir -p "$(dirname "$OUT")"
+cp build/server "$OUT"
+chmod +x "$OUT"
+echo "BUILT:$OUT"
 '@
 
-    # Reemplazar placeholder con la ruta WSL (ya sanitizada)
-    $buildScript = $buildScript -replace '__WSLPROJECT__', $wslProject
-
+    # Reemplazar placeholders con valores concretos
+    $buildScript = $buildScript -replace '__WSLPROJECT__', $wslProject -replace '__WSLWINOUT__', $wslOut
     # Forzar finales de línea LF y escribir a un archivo temporal en Windows
-    $buildScriptUnix = $buildScript -replace "\r\n", "`n"
-    $buildScriptUnix = $buildScriptUnix -replace "\r", ""
+    $buildScriptUnix = $buildScript -replace "`r`n", "`n" -replace "`r", ""
 
     $tmpFile = [IO.Path]::Combine($env:TEMP, "psdevops_publish_build_{0}.sh" -f ([guid]::NewGuid().ToString()))
     # Escribir el script en UTF8 sin BOM para evitar problemas si el archivo es leído en Linux
@@ -171,15 +228,42 @@ command -v strip >/dev/null && strip build/server || true
         # Convertir la ruta Windows del archivo temporal a ruta WSL y ejecutar directamente en bash
         $wslTmpFile = ConvertTo-WSLPath -winPath $tmpFile -WSLDistro $WSLDistro
         $wslTmpFile = $wslTmpFile -replace "\r", ''
-    # Ejecutar en WSL pasando argumentos separados para evitar que PowerShell forme un único token
-    Write-Host "Ejecutando build en WSL: bash $wslTmpFile" -ForegroundColor DarkGray
-    & wsl.exe -d $WSLDistro -- bash $wslTmpFile
+        Write-Host "Ejecutando build en WSL: bash $wslTmpFile" -ForegroundColor DarkGray
+        # Ejecutar en WSL; el script bash ya verifica el binario antes de copiarlo a Windows
+        & wsl.exe -d $WSLDistro -- bash $wslTmpFile 2>&1 | Tee-Object -Variable wslOutput
+        
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Build en WSL falló. Salida completa:" -ForegroundColor Red
+            $wslOutput | ForEach-Object { Write-Host $_ }
+            throw "Build en WSL falló con código $LASTEXITCODE. Revisa la salida anterior."
+        }
+        
+        # Buscar la línea BUILT para confirmar que el binario se copió a Windows temp
+        $builtLine = ($wslOutput | Where-Object { $_ -match '^BUILT:' }) -join "`n"
+        if (-not $builtLine) {
+            Write-Host "Salida completa de WSL:" -ForegroundColor Yellow
+            $wslOutput | ForEach-Object { Write-Host $_ }
+            throw "No se detectó 'BUILT:' en la salida del build. Abortando." 
+        }
+        
+        # Extraer la ruta del binario en Windows temp
+        $localExe = ($builtLine -replace '^BUILT:', '').Trim()
+        # Convertir de ruta WSL a ruta Windows si es necesario
+        if ($localExe -match '^/mnt/') {
+            # Convertir /mnt/c/... a C:\...
+            $localExe = $localExe -replace '^/mnt/([a-z])/', '$1:\'
+            $localExe = $localExe -replace '/', '\'
+        }
+        
+        Write-Host "Build completado y verificado en WSL. Binario en: $localExe" -ForegroundColor Green
     } finally {
         Remove-Item -LiteralPath $tmpFile -ErrorAction SilentlyContinue
     }
 
-    $localExe = Join-Path $cwd $BuildOutRel
-    if (!(Test-Path $localExe)) { throw "No se generó el ejecutable: $localExe" }
+    # Verificar que el binario se copió a Windows
+    if (!(Test-Path $localExe)) { 
+        throw "No se generó el ejecutable en la ruta esperada: $localExe" 
+    }
 
     # 6) Variables remotas — construir rutas POSIX usando slash para evitar backslashes en Windows
     # Evitar usar Join-Path porque en Windows produce backslashes que luego se interpretan como escapes en el shell remoto
@@ -228,24 +312,50 @@ sudo ln -sfn '__REMOTE_RELEASE__' '__APP_SERVER_ROOT__/current'
     # 9) PM2 sin ecosystem (start si no existe; si existe, restart)
     Write-Host "Aplicando PM2 (sin ecosystem)..." -ForegroundColor Yellow
     $AppPM2 = "${AppName}_api"
-        $pm2Cmd = @"
-if ! pm2 describe $AppPM2 >/dev/null 2>&1; then
-    pm2 start '$AppServerRoot/current/bin/server' --name $AppPM2 --interpreter none
-    pm2 save
-else
-    pm2 restart $AppPM2
+    # Mejor comportamiento:
+    # - Si ya existe un proceso con ese nombre, lo eliminamos para evitar reaplicar un 'interpreter' antiguo.
+    # - Verificamos que el archivo desplegado sea un ELF antes de arrancar; si no, salimos con error y mostramos diagnóstico.
+    $pm2Cmd = @'
+set -e
+APP_BIN="__APP_BIN__"
+APP_NAME="__APP_NAME__"
+
+# Si existe proceso anterior, borrarlo para forzar un arranque limpio con las opciones correctas
+if pm2 describe "$APP_NAME" >/dev/null 2>&1; then
+    pm2 delete "$APP_NAME" || true
 fi
-"@
-    # Normalizar y ejecutar script PM2 via archivo temporal (UTF-8 sin BOM) para evitar CRLF/encoding issues
+
+# Verificar tipo de archivo: debe ser ELF (ejecutable nativo)
+if ! command -v file >/dev/null 2>&1; then
+    echo "Aviso: 'file' no está disponible en el servidor; no puedo verificar el tipo de binario." >&2
+else
+    ft=$(file -b "$APP_BIN" || true)
+    echo "file: $ft"
+    echo "$ft" | grep -q ELF >/dev/null 2>&1 || {
+        echo "ERROR: El artefacto desplegado no parece ser un ejecutable ELF: $APP_BIN" >&2
+        ls -l "$APP_BIN" || true
+        echo "Contenido (head) para diagnóstico:" >&2
+        head -c 4096 "$APP_BIN" | sed -n '1,200p' || true
+        exit 3
+    }
+fi
+
+# Arrancar de forma explícita como binario nativo (no intérprete)
+pm2 start "$APP_BIN" --name "$APP_NAME" --interpreter none --update-env
+pm2 save
+'@
+
+    # Rellenar placeholders con las rutas reales y normalizar LF
+    $appBinPosix = "$AppServerRoot/current/bin/server"
+    $pm2Cmd = $pm2Cmd -replace '__APP_BIN__', $appBinPosix -replace '__APP_NAME__', $AppPM2
     $pm2Unix = $pm2Cmd -replace "`r`n", "`n" -replace "`r", ""
     $tmpPm2 = [IO.Path]::Combine($env:TEMP, "psdevops_remote_pm2_{0}.sh" -f ([guid]::NewGuid().ToString()))
-    # Reusar el encoding UTF8 sin BOM
     if (-not $utf8NoBom) { $utf8NoBom = New-Object System.Text.UTF8Encoding($false) }
     [System.IO.File]::WriteAllText($tmpPm2, $pm2Unix, $utf8NoBom)
     try {
         $remotePm2Name = [IO.Path]::GetFileName($tmpPm2)
-    & scp -i $privateKeyPath -P $sshPort $tmpPm2 "$($user)@$($ip):/tmp/$remotePm2Name"
-    & ssh -i $privateKeyPath -p $sshPort "$($user)@$($ip)" "bash /tmp/$remotePm2Name && rm -f /tmp/$remotePm2Name"
+        & scp -i $privateKeyPath -P $sshPort $tmpPm2 "$($user)@$($ip):/tmp/$remotePm2Name"
+        & ssh -i $privateKeyPath -p $sshPort "$($user)@$($ip)" "bash /tmp/$remotePm2Name && rm -f /tmp/$remotePm2Name"
     } finally {
         Remove-Item -LiteralPath $tmpPm2 -ErrorAction SilentlyContinue
     }
