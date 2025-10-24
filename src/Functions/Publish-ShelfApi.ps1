@@ -388,6 +388,9 @@ exit 1
                 # Build remote command by concatenation so any $... tokens remain literal for the remote shell
                 $remoteCmd = 'bash /tmp/' + $remoteHealthName + ' ; rc=$?; rm -f /tmp/' + $remoteHealthName + '; exit $rc'
                 & ssh -i $privateKeyPath -p $sshPort "$($user)@$($ip)" $remoteCmd
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Healthcheck falló: el servidor no responde en $healthUrl después de múltiples intentos. Revisa los logs de PM2 con: ssh $user@$ip 'pm2 logs ${AppName}_api --lines 50'"
+                }
     } finally {
         Remove-Item -LiteralPath $tmpHealth -ErrorAction SilentlyContinue
     }
