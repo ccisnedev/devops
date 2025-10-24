@@ -5,24 +5,25 @@ actualiza symlink 'current', reinicia con PM2 (sin ecosystem) y verifica con cur
 
 .DESCRIPTION
 Ejecutar DESDE la carpeta del proyecto Shelf (donde están pubspec.yaml y .env):
-Publish-ShelfApi <server-name>
+Publish-ShelfApi <host-alias>
 
 - Obtiene name/version de pubspec.yaml.
 - Obtiene PORT de .env (si no, 8080).
-- Usa SSHConfig.ps1 para credenciales/hosts.
+- Lee credenciales/hosts desde ~/.ssh/config (C:\Users\<user>\.ssh\config).
 - Compila en WSL (distro configurable adentro).
 - Sube binario, promueve 'current', pm2 start/restart, hace healthcheck.
 
-.PARAMETER server
-El nombre del servidor al que se desea desplegar el servidor Shelf. Este parámetro es obligatorio.
+.PARAMETER Server
+El alias del host definido en ~/.ssh/config al que se desea desplegar. Este parámetro es obligatorio.
 
 .EXAMPLE
-Publish-ShelfApi app-server
-Compila y despliega el servidor Shelf al servidor "app-server".
+Publish-ShelfApi cacsi-test
+Compila y despliega el servidor Shelf al host "cacsi-test" definido en ~/.ssh/config.
 
 .NOTES
-Versión: 1.0.0
+Versión: 2.0.0
 Autor: @ccisnedev
+Requiere: Configuración del host en ~/.ssh/config con Host, HostName, User, Port e IdentityFile.
 #>
 function Publish-ShelfApi {
 
@@ -50,14 +51,17 @@ function Publish-ShelfApi {
 
     $dotenvPath = Join-Path $cwd ".env"   # opcional
 
-    # 1) Cargar configuraciones privadas y helpers
-    . "$PSScriptRoot/../Private/SSHConfig.ps1"
+    # 1) Cargar helpers
     . "$PSScriptRoot/../Private/ConvertTo-WSLPath.ps1"
     . "$PSScriptRoot/../Private/PublishHelpers.ps1"
+    . "$PSScriptRoot/../Private/Read-SSHConfig.ps1"
     
-    if (-not $servers.ContainsKey($Server)) { throw "Servidor desconocido: $Server" }
-    $s = $servers[$Server]
-    $user = $s.username; $ip = $s.ip; $sshPort = $s.port
+    # Leer configuración SSH desde ~/.ssh/config
+    $sshConfig = Read-SSHConfig -HostAlias $Server
+    $user = $sshConfig.User
+    $ip = $sshConfig.HostName
+    $sshPort = $sshConfig.Port
+    $privateKeyPath = $sshConfig.IdentityFile
 
     # 2) Leer pubspec.yaml (name / version)
     $pubspecContent = Get-Content $pubspec -Raw
@@ -159,8 +163,6 @@ function Publish-ShelfApi {
     $AppServerRoot = "$RemoteRoot/$($AppName)_api"    # /opt/app/<app>_api
     $RemoteRelease = "$AppServerRoot/releases/$Release"
     $RemoteTmp     = "/tmp/$($AppName)_api-$Release"
-
-    $sshCmd = "ssh -i `"$privateKeyPath`" -p $sshPort $user@$ip"
 
     # 7) Upload binario
     Write-Host "Subiendo release $Release a $ip..." -ForegroundColor Cyan
