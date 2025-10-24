@@ -66,15 +66,31 @@ function Publish-ShelfApi {
     $Version = $Version.Split('+')[0]  # sin build metadata
     $Release = "v$Version"
 
-    # 3) Leer PORT desde .env (si existe), fallback 8080
+    # 3) Leer todas las variables desde .env y extraer PORT
     $Port = 8080
+    $EnvVars = @{}
     if (Test-Path $dotenvPath) {
         $envLines = Get-Content $dotenvPath | Where-Object { $_ -and ($_ -notmatch '^\s*#') }
-        $kv = $envLines | Where-Object { $_ -match '^\s*PORT\s*=' }
-        if ($kv) {
-            $val = ($kv -split '=',2)[1].Trim()
-            if ($val -match '^\d+$') { $Port = [int]$val }
+        foreach ($line in $envLines) {
+            if ($line -match '^\s*([^=]+)\s*=\s*(.*)$') {
+                $key = $Matches[1].Trim()
+                $value = $Matches[2].Trim()
+                # Remover comillas si existen
+                if ($value -match '^["''](.+)["'']$') {
+                    $value = $Matches[1]
+                }
+                $EnvVars[$key] = $value
+                
+                # Extraer PORT específicamente
+                if ($key -eq 'PORT' -and $value -match '^\d+$') {
+                    $Port = [int]$value
+                }
+            }
         }
+    }
+    
+    if ($EnvVars.Count -gt 0) {
+        Write-Host "Variables de entorno detectadas en .env: $($EnvVars.Keys -join ', ')" -ForegroundColor Cyan
     }
 
     # 4) Verificar que wsl.exe y la distro existen (fallback si es posible)
@@ -340,14 +356,27 @@ else
     }
 fi
 
-# Arrancar de forma explícita como binario nativo (no intérprete)
-pm2 start "$APP_BIN" --name "$APP_NAME" --interpreter none --update-env
+# Arrancar de forma explícita como binario nativo (no intérprete) con variables de entorno
+pm2 start "$APP_BIN" --name "$APP_NAME" --interpreter none --update-env __ENV_VARS__
 pm2 save
 '@
 
+    # Construir string de variables de entorno para PM2
+    $envVarString = ""
+    if ($EnvVars.Count -gt 0) {
+        $envParts = @()
+        foreach ($key in $EnvVars.Keys) {
+            $value = $EnvVars[$key]
+            # Escapar comillas simples en el valor
+            $escapedValue = $value -replace "'", "'\\''"
+            $envParts += "--env $key='$escapedValue'"
+        }
+        $envVarString = $envParts -join " "
+    }
+    
     # Rellenar placeholders con las rutas reales y normalizar LF
     $appBinPosix = "$AppServerRoot/current/bin/server"
-    $pm2Cmd = $pm2Cmd -replace '__APP_BIN__', $appBinPosix -replace '__APP_NAME__', $AppPM2
+    $pm2Cmd = $pm2Cmd -replace '__APP_BIN__', $appBinPosix -replace '__APP_NAME__', $AppPM2 -replace '__ENV_VARS__', $envVarString
     $pm2Unix = $pm2Cmd -replace "`r`n", "`n" -replace "`r", ""
     $tmpPm2 = [IO.Path]::Combine($env:TEMP, "psdevops_remote_pm2_{0}.sh" -f ([guid]::NewGuid().ToString()))
     if (-not $utf8NoBom) { $utf8NoBom = New-Object System.Text.UTF8Encoding($false) }
