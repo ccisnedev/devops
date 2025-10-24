@@ -9,6 +9,9 @@ utilizando el comando wslpath interno de WSL.
 .PARAMETER winPath
 La ruta de Windows que se desea convertir.
 
+.PARAMETER WSLDistro
+Nombre de la distribución WSL a usar (default: "Ubuntu-22.04").
+
 .EXAMPLE
 ConvertTo-WSLPath "C:\Users\usuario\proyecto"
 Devuelve la ruta equivalente en formato WSL.
@@ -26,8 +29,12 @@ function ConvertTo-WSLPath {
         [string]$WSLDistro = "Ubuntu-22.04"
     )
     
-    $p = $winPath.Replace('\','/')
-    $cmd = "wsl.exe -d $WSLDistro wslpath -a `"$p`""
-    $out = & cmd /c $cmd
-    return $out.Trim()
+    # Normalizar separadores a forward slash
+    $normalized = $winPath.Replace('\','/')
+    
+    # Ejecutar wslpath directamente (sin cmd /c innecesario)
+    $result = & wsl.exe -d $WSLDistro wslpath -a $normalized 2>&1
+    
+    # Limpiar caracteres de control y espacios
+    return ($result -replace '\p{C}', '').Trim()
 }
