@@ -16,6 +16,7 @@
         , 'Connect-Server'
         , 'Publish-FlutterWeb'
         , 'Publish-ShelfApi'
+        , 'Publish-Web'
         , 'Get-SQLiteDB'
         , 'Merge-DevToMain'
         , 'Export-FileTree'
