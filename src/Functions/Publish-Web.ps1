@@ -3,18 +3,18 @@
 Despliega contenido web estático directamente a /var/www/<nombre> en el servidor remoto.
 
 .DESCRIPTION
-El cmdlet `Publish-Web` lee la configuración del proyecto desde pubspec.yaml (name, version, server),
+El cmdlet `Publish-Web` lee la configuración del proyecto desde deploy.yaml (name, version, server),
 comprime la carpeta de build/web, la sube al servidor remoto mediante SSH/SCP y la despliega 
 directamente en /var/www/<nombre> para servir con nginx/apache.
 
-Se debe ejecutar desde la raíz del proyecto donde existe pubspec.yaml con:
+Se debe ejecutar desde la raíz del proyecto donde existe deploy.yaml con:
 - name: nombre del proyecto
 - version: versión de la aplicación
 - server: alias del servidor configurado en ~/.ssh/config
 
 .EXAMPLE
 Publish-Web
-Lee pubspec.yaml, detecta el servidor y despliega el contenido web.
+Lee deploy.yaml, detecta el servidor y despliega el contenido web.
 
 .NOTES
 Versión: 1.0.0
@@ -32,36 +32,91 @@ function Publish-Web {
     $RemoteWebRoot = "/var/www"       # Raíz web en el servidor
     # ===========================
 
-    # 0) Validar que estamos en un proyecto con pubspec.yaml
+    # 0) Validar que estamos en un proyecto con deploy.yaml
     $cwd = (Get-Location).Path
-    $pubspec = Join-Path $cwd "pubspec.yaml"
+    $deployYaml = Join-Path $cwd "deploy.yaml"
     
-    if (!(Test-Path $pubspec)) { 
-        throw "No se encontró pubspec.yaml en $cwd. Ejecuta este cmdlet dentro del proyecto web." 
+    if (!(Test-Path $deployYaml)) {
+        # Crear archivo deploy.yaml de ejemplo
+        $exampleContent = @"
+name: my_web_app
+version: 1.0.0
+server: web-server
+"@
+        
+        Set-Content -Path $deployYaml -Value $exampleContent -Encoding UTF8
+        
+        Write-Host ""
+        Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Red
+        Write-Host "  ⚠ ERROR: No se encontró deploy.yaml" -ForegroundColor Yellow
+        Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "  Se ha creado un archivo 'deploy.yaml' de ejemplo en:" -ForegroundColor White
+        Write-Host "  $deployYaml" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "  Por favor, edita este archivo con la siguiente información:" -ForegroundColor White
+        Write-Host ""
+        Write-Host "  name: my_web_app" -ForegroundColor Gray
+        Write-Host "    └─ Nombre con el que se configurará en nginx (será la URL)" -ForegroundColor DarkGray
+        Write-Host ""
+        Write-Host "  version: x.y.z" -ForegroundColor Gray
+        Write-Host "    └─ Versión del proyecto" -ForegroundColor DarkGray
+        Write-Host ""
+        Write-Host "  server: example-server" -ForegroundColor Gray
+        Write-Host "    └─ Nombre del servidor que debe estar en ~/.ssh/config" -ForegroundColor DarkGray
+        Write-Host ""
+        Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Red
+        Write-Host ""
+        
+        throw "Configura deploy.yaml y vuelve a ejecutar Publish-Web"
     }
 
     # 1) Cargar helpers
     . "$PSScriptRoot/../Private/PublishHelpers.ps1"
     . "$PSScriptRoot/../Private/Read-SSHConfig.ps1"
     
-    # 2) Leer pubspec.yaml (name, version, server)
-    $pubspecContent = Get-Content $pubspec -Raw
-    if (-not $pubspecContent) { 
-        throw "No se pudo leer pubspec.yaml en '$pubspec'. Verifica que el archivo existe y no está vacío." 
+    # 2) Leer deploy.yaml (name, version, server)
+    $deployContent = Get-Content $deployYaml -Raw
+    if (-not $deployContent) { 
+        throw "No se pudo leer deploy.yaml en '$deployYaml'. Verifica que el archivo existe y no está vacío." 
     }
     
-    $pubspecLines = $pubspecContent -split "`r?`n" | Where-Object { $_ }
-    if (-not $pubspecLines -or $pubspecLines.Count -eq 0) {
-        throw "pubspec.yaml está vacío o solo contiene líneas en blanco en '$pubspec'"
+    $deployLines = $deployContent -split "`r?`n" | Where-Object { $_ }
+    if (-not $deployLines -or $deployLines.Count -eq 0) {
+        throw "deploy.yaml está vacío o solo contiene líneas en blanco en '$deployYaml'"
     }
     
-    $AppName = Get-YamlValue -Content $pubspecLines -Key 'name'
-    $versionRaw = Get-YamlValue -Content $pubspecLines -Key 'version'
-    $Server = Get-YamlValue -Content $pubspecLines -Key 'server'
+    $AppName = Get-YamlValue -Content $deployLines -Key 'name'
+    $versionRaw = Get-YamlValue -Content $deployLines -Key 'version'
+    $Server = Get-YamlValue -Content $deployLines -Key 'server'
     
-    if (-not $AppName) { throw "No se encontró 'name:' en pubspec.yaml" }
-    if (-not $versionRaw) { throw "No se encontró 'version:' en pubspec.yaml" }
-    if (-not $Server) { throw "No se encontró 'server:' en pubspec.yaml. Especifica el alias del servidor." }
+    if (-not $AppName) { throw "No se encontró 'name:' en deploy.yaml" }
+    if (-not $versionRaw) { throw "No se encontró 'version:' en deploy.yaml" }
+    if (-not $Server) { throw "No se encontró 'server:' en deploy.yaml. Especifica el alias del servidor." }
+    
+    # Validar que no sean los valores de ejemplo
+    if ($AppName -eq 'my_web_app' -and $versionRaw -eq '1.0.0' -and $Server -eq 'web-server') {
+        Write-Host ""
+        Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Red
+        Write-Host "  ⚠ ERROR: deploy.yaml contiene valores de ejemplo" -ForegroundColor Yellow
+        Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "  El archivo deploy.yaml no ha sido modificado." -ForegroundColor White
+        Write-Host "  Por favor, edita el archivo con valores reales:" -ForegroundColor White
+        Write-Host ""
+        Write-Host "  name: my_web_app" -ForegroundColor Gray
+        Write-Host "    └─ Cambia 'my_web_app' por el nombre de tu proyecto" -ForegroundColor DarkGray
+        Write-Host ""
+        Write-Host "  version: x.y.z" -ForegroundColor Gray
+        Write-Host "    └─ Cambia 'x.y.z' por la versión actual" -ForegroundColor DarkGray
+        Write-Host ""
+        Write-Host "  server: example-server" -ForegroundColor Gray
+        Write-Host "    └─ Verifica que el servidor existe en ~/.ssh/config" -ForegroundColor DarkGray
+        Write-Host ""
+        Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Red
+        Write-Host ""
+        throw "Configura deploy.yaml con valores reales y vuelve a ejecutar Publish-Web"
+    }
     
     $Version = $versionRaw.Split('+')[0]  # sin build metadata
     
@@ -87,36 +142,53 @@ function Publish-Web {
     $RemoteTempPath = "/tmp/${AppName}_web_v${Version}"
     
     # 6) Crear archivo temporal con lista de archivos web a subir
-    # Excluir pubspec.yaml, README.md y otros archivos de configuración
+    # Excluir deploy.yaml, README.md y otros archivos de configuración
     Write-Host "Preparando archivos para subir..." -ForegroundColor Cyan
-    $excludePatterns = @('pubspec.yaml', 'README.md', '.git*', '*.ps1', '*.md', '*.conf')
+    $excludePatterns = @('deploy.yaml', 'README.md', '.git*', '*.ps1', '*.md', '*.conf')
     $tempDir = Join-Path $env:TEMP "psdevops_web_staging_$([guid]::NewGuid().ToString())"
     New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
     
-    # Copiar archivos web al directorio temporal (excluyendo patrones)
-    Get-ChildItem -Path $cwd -File | Where-Object {
-        $fileName = $_.Name
+    # Copiar TODO el contenido (archivos y carpetas) excluyendo patrones
+    Get-ChildItem -Path $cwd | Where-Object {
+        $itemName = $_.Name
         $shouldExclude = $false
         foreach ($pattern in $excludePatterns) {
-            if ($fileName -like $pattern) {
+            if ($itemName -like $pattern) {
                 $shouldExclude = $true
                 break
             }
         }
         -not $shouldExclude
     } | ForEach-Object {
-        Copy-Item -Path $_.FullName -Destination $tempDir -Force
+        if ($_.PSIsContainer) {
+            # Es una carpeta, copiar recursivamente
+            Copy-Item -Path $_.FullName -Destination $tempDir -Recurse -Force
+        } else {
+            # Es un archivo, copiar directamente
+            Copy-Item -Path $_.FullName -Destination $tempDir -Force
+        }
     }
     
     # Verificar que hay archivos para subir
-    $webFiles = Get-ChildItem -Path $tempDir -File
+    $webFiles = Get-ChildItem -Path $tempDir -File -Recurse
     if ($webFiles.Count -eq 0) {
         Remove-Item -Path $tempDir -Recurse -Force
         throw "No se encontraron archivos web para subir. Asegúrate de tener index.html, css, js, etc."
     }
     
-    Write-Host "Archivos a subir: $($webFiles.Count)" -ForegroundColor Green
-    $webFiles | ForEach-Object { Write-Host "  - $($_.Name)" -ForegroundColor DarkGray }
+    Write-Host "Archivos totales a subir: $($webFiles.Count)" -ForegroundColor Green
+    
+    # Mostrar estructura de carpetas
+    $folders = Get-ChildItem -Path $tempDir -Directory
+    if ($folders.Count -gt 0) {
+        Write-Host "Carpetas: $($folders.Count)" -ForegroundColor Cyan
+        $folders | ForEach-Object { Write-Host "  📁 $($_.Name)/" -ForegroundColor DarkCyan }
+    }
+    
+    # Mostrar archivos raíz
+    $rootFiles = Get-ChildItem -Path $tempDir -File
+    Write-Host "Archivos raíz: $($rootFiles.Count)" -ForegroundColor Cyan
+    $rootFiles | ForEach-Object { Write-Host "  📄 $($_.Name)" -ForegroundColor DarkGray }
     
     # 7) Comprimir carpeta web para transferencia eficiente
     Write-Host "Comprimiendo carpeta web..." -ForegroundColor Cyan
@@ -128,9 +200,8 @@ function Publish-Web {
         Remove-Item $zipPath -Force
     }
     
-    # Comprimir usando .NET (más rápido y confiable que Compress-Archive para muchos archivos)
-    Add-Type -Assembly System.IO.Compression.FileSystem
-    [System.IO.Compression.ZipFile]::CreateFromDirectory($tempDir, $zipPath, 'Optimal', $false)
+    # Usar Compress-Archive que maneja correctamente las rutas para Linux
+    Compress-Archive -Path "$tempDir\*" -DestinationPath $zipPath -CompressionLevel Optimal -Force
     
     # Limpiar directorio temporal
     Remove-Item -Path $tempDir -Recurse -Force
@@ -156,7 +227,6 @@ function Publish-Web {
     # Script de despliegue remoto
     $deployScript = @"
 #!/bin/bash
-set -e
 
 # Variables
 REMOTE_ZIP='$remoteZipPath'
@@ -165,7 +235,7 @@ REMOTE_PROJECT='$RemoteProjectPath'
 
 echo "Descomprimiendo archivo..."
 mkdir -p "`$REMOTE_TEMP"
-unzip -q -o "`$REMOTE_ZIP" -d "`$REMOTE_TEMP"
+unzip -q -o "`$REMOTE_ZIP" -d "`$REMOTE_TEMP" 2>&1 | grep -v "backslashes as path separators" || true
 
 echo "Creando carpeta de destino si no existe..."
 sudo mkdir -p "`$REMOTE_PROJECT"
@@ -259,7 +329,13 @@ cat > /tmp/nginx_location_$AppName.conf <<'ENDCONFIG'
 	location /$AppName/ {
 		alias /var/www/$AppName/;
 		index index.html index.htm;
-		try_files `$uri `$uri/ =404;
+		
+		# Reescribir base href dinámicamente para Flutter/SPA
+		sub_filter '<base href="/">' '<base href="/$AppName/">';
+		sub_filter_once on;
+		
+		# Para aplicaciones SPA: servir index.html para rutas no encontradas
+		try_files `$uri `$uri/ /$AppName/index.html;
 		
 		access_log /var/log/nginx/$AppName.access.log;
 		error_log  /var/log/nginx/$AppName.error.log;
