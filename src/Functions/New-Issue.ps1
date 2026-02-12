@@ -24,6 +24,10 @@ function New-Issue {
         Formato: owner/repo
         Si no se especifica, usa el repositorio del directorio actual.
     
+    .PARAMETER Template
+        Crea un archivo template de issue en .dev/issues/issue-template.md
+        Útil para empezar a crear nuevas issues con el formato correcto.
+    
     .PARAMETER WhatIf
         Muestra qué se haría sin crear realmente la issue.
     
@@ -31,6 +35,11 @@ function New-Issue {
         New-Issue -Path .\issues\bug-login.md
 
         Crea una issue en el repositorio actual usando el archivo especificado.
+    
+    .EXAMPLE
+        New-Issue -Template
+
+        Crea un archivo template en .dev/issues/issue-template.md para empezar a escribir nuevas issues.
 
     .EXAMPLE
         New-Issue -Path .\issues\feature-dark-mode.md -Repository "usuario/proyecto"
@@ -49,13 +58,17 @@ function New-Issue {
         Author: @ccisnedev
         Version: 1.0.0
     #>
-    [CmdletBinding(SupportsShouldProcess)]
+    [CmdletBinding(
+        SupportsShouldProcess,
+        DefaultParameterSetName = 'CreateIssue'
+    )]
     param(
         [Parameter(
             Mandatory,
             Position = 0,
             ValueFromPipeline,
             ValueFromPipelineByPropertyName,
+            ParameterSetName = 'CreateIssue',
             HelpMessage = "Ruta al archivo de issue con formato frontmatter YAML"
         )]
         [ValidateScript({
@@ -70,10 +83,18 @@ function New-Issue {
         [string]$Path,
 
         [Parameter(
+            ParameterSetName = 'CreateIssue',
             HelpMessage = "Repositorio GitHub (formato: owner/repo)"
         )]
         [ValidatePattern('^[\w-]+/[\w-]+$')]
-        [string]$Repository
+        [string]$Repository,
+
+        [Parameter(
+            Mandatory,
+            ParameterSetName = 'CreateTemplate',
+            HelpMessage = "Crea un archivo template en .dev/issues/issue-template.md"
+        )]
+        [switch]$Template
     )
 
     begin {
@@ -83,6 +104,62 @@ function New-Issue {
 
     process {
         try {
+            # ParameterSet: CreateTemplate - Crear archivo template
+            if ($PSCmdlet.ParameterSetName -eq 'CreateTemplate') {
+                Write-Host ""
+                Write-Host "╔════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+                Write-Host "║         📝 CREAR TEMPLATE DE ISSUE                        ║" -ForegroundColor Cyan
+                Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+                Write-Host ""
+
+                $targetDir = ".dev\issues"
+                $targetFile = Join-Path $targetDir "issue-template.md"
+                $sourceTemplate = Join-Path $PSScriptRoot "..\Resources\New-Issue\templates\issue-template.md"
+
+                # Verificar si ya existe
+                if (Test-Path $targetFile) {
+                    Write-Host "⚠️  El archivo ya existe: $targetFile" -ForegroundColor Yellow
+                    Write-Host ""
+                    $overwrite = Read-Host "¿Deseas sobrescribirlo? (s/N)"
+                    if ($overwrite -notmatch '^s|si|y|yes$') {
+                        Write-Host ""
+                        Write-Host "❌ Operación cancelada" -ForegroundColor Red
+                        return
+                    }
+                }
+
+                # Crear directorio si no existe
+                if (-not (Test-Path $targetDir)) {
+                    Write-Host "📁 Creando directorio: $targetDir" -ForegroundColor Yellow
+                    New-Item -Path $targetDir -ItemType Directory -Force | Out-Null
+                    Write-Host "   ✅ Directorio creado" -ForegroundColor Green
+                }
+
+                # Copiar template
+                Write-Host "📄 Creando template..." -ForegroundColor Yellow
+                Copy-Item -Path $sourceTemplate -Destination $targetFile -Force
+                Write-Host "   ✅ Template creado" -ForegroundColor Green
+                Write-Host ""
+
+                Write-Host "╔════════════════════════════════════════════════════════════╗" -ForegroundColor Green
+                Write-Host "║            ✅ TEMPLATE CREADO EXITOSAMENTE                ║" -ForegroundColor Green
+                Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Green
+                Write-Host ""
+                Write-Host "📍 Ubicación: " -NoNewline -ForegroundColor Yellow
+                Write-Host $targetFile -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host "💡 Edita el archivo y luego crea la issue con:" -ForegroundColor Yellow
+                Write-Host "   New-Issue -Path $targetFile" -ForegroundColor Cyan
+                Write-Host ""
+
+                return [PSCustomObject]@{
+                    Success = $true
+                    TemplatePath = $targetFile
+                    Action = "Template Created"
+                }
+            }
+
+            # ParameterSet: CreateIssue - Crear issue en GitHub
             # Banner
             Write-Host ""
             Write-Host "╔════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan

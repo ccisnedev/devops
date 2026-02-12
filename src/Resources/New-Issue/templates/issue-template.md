@@ -1,26 +1,41 @@
 ---
-title: 🐛 [Bug] Título descriptivo del problema
-labels: bug,enhancement,documentation
+title: 🐛 [Bug] Título corto y descriptivo
+labels: bug
 ---
 
-# Descripción
+## Descripción
 
-Descripción detallada del problema o feature request.
+¿Qué problema estás encontrando o qué funcionalidad necesitas?
 
-## Pasos para reproducir
+## Pasos para reproducir (solo para bugs)
 
-1. Primer paso
-2. Segundo paso
-3. Tercer paso
+1. ...
+2. ...
+3. ...
 
-## Comportamiento esperado
+## Resultado esperado vs actual
 
-Describe qué debería suceder.
+**Esperado:** ¿Qué debería pasar?
 
-## Comportamiento actual
-
-Describe qué está sucediendo actualmente.
+**Actual:** ¿Qué está pasando?
 
 ## Contexto adicional
 
-Información adicional, screenshots, logs, etc.
+- Versión/entorno:
+- Logs o errores:
+- Screenshots:
+
+---
+
+### 💡 Ayuda rápida
+
+**Tipos de issue:**
+- 🐛 `bug` - Algo no funciona
+- ✨ `enhancement` - Nueva funcionalidad
+- ♻️ `refactor` - Mejora de código existente
+
+**Tips:**
+- Cambia el título según el tipo: `[Bug]`, `[Feature]`, `[Refactor]`
+- Ajusta los labels según corresponda
+- Borra las secciones que no apliquen
+
