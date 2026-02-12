@@ -9,4 +9,6 @@ Get-ChildItem -Path "$PSScriptRoot\src\Functions\*.ps1" | ForEach-Object {
 }
 
 # Importar todas las funciones privadas
-# Get-ChildItem -Path "$PSScriptRoot\src\Private\*.ps1" | ForEach-Object { . $_.FullName }
+Get-ChildItem -Path "$PSScriptRoot\src\Private\*.ps1" -Recurse | ForEach-Object { 
+    . $_.FullName 
+}
