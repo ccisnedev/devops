@@ -108,10 +108,6 @@ function Invoke-SqlPackage {
 
     begin {
         $ErrorActionPreference = 'Stop'
-
-        # Cargar helpers
-        . "$PSScriptRoot/../Private/SqlPackageHelpers.ps1"
-        . "$PSScriptRoot/../Private/PublishHelpers.ps1"
     }
 
     process {
@@ -151,56 +147,56 @@ function Invoke-SqlPackage {
                 $envConfig = Read-DotEnv -Path ".\.env"
                 $envVars = $envConfig.Env
 
-                Write-Host "  Servidor:  $($envVars['DB_SERVER'])" -ForegroundColor Cyan
-                Write-Host "  Base datos: $($envVars['DB_NAME'])" -ForegroundColor Cyan
-                Write-Host "  Usuario:   $($envVars['DB_USER'])" -ForegroundColor Cyan
-                Write-Host ""
-
-                # 1. Build
-                Write-Host "  Compilando proyecto..." -ForegroundColor Cyan
-                $buildResult = dotnet build 2>&1
-                if ($LASTEXITCODE -ne 0) {
-                    Write-Host "  ERROR: La compilación falló" -ForegroundColor Red
-                    $buildResult | Write-Host
-                    throw "Build fallido"
-                }
-                Write-Host "  Build exitoso" -ForegroundColor Green
-                Write-Host ""
-
-                # 2. DeployReport
-                Write-Host "  Generando reporte de cambios..." -ForegroundColor Cyan
-                $dacpacPath = Find-DacpacPath
-                if (-not (Test-Path $dacpacPath)) { throw "No se encontró $dacpacPath" }
-
-                $reportPath = ".\deploy_report_$(Get-Date -Format 'yyyyMMdd_HHmmss').xml"
-                $reportArgs = Build-SqlPackageArgs -Action 'DeployReport' -Config $config -EnvVars $envVars -DacpacPath $dacpacPath -OutputPath $reportPath
-
-                & sqlpackage @reportArgs 2>&1 | Tee-Object -Variable reportOutput
-                if ($LASTEXITCODE -ne 0) {
-                    throw "No se pudo generar el reporte. Verifique la conexión y permisos."
-                }
-
-                # 3. Mostrar cambios
-                $changes = Show-DeployReport -ReportPath $reportPath
-                if ($null -eq $changes) {
-                    Remove-Item $reportPath -ErrorAction SilentlyContinue
-                    return
-                }
-
-                # 4. Confirmación
-                $confirm = Read-Host "  ¿Aplicar estos cambios? (S/N)"
-                if ($confirm -notmatch '^[Ss]$') {
-                    Write-Host "  Despliegue cancelado." -ForegroundColor Yellow
-                    Remove-Item $reportPath -ErrorAction SilentlyContinue
-                    return
-                }
-
-                # 5. Publish
-                Write-Host ""
-                Write-Host "  Iniciando despliegue..." -ForegroundColor Cyan
-                $publishArgs = Build-SqlPackageArgs -Action 'Publish' -Config $config -EnvVars $envVars -DacpacPath $dacpacPath
-
                 try {
+                    Write-Host "  Servidor:  $($envVars['DB_SERVER'])" -ForegroundColor Cyan
+                    Write-Host "  Base datos: $($envVars['DB_NAME'])" -ForegroundColor Cyan
+                    Write-Host "  Usuario:   $($envVars['DB_USER'])" -ForegroundColor Cyan
+                    Write-Host ""
+
+                    # 1. Build
+                    Write-Host "  Compilando proyecto..." -ForegroundColor Cyan
+                    $buildResult = dotnet build 2>&1
+                    if ($LASTEXITCODE -ne 0) {
+                        Write-Host "  ERROR: La compilación falló" -ForegroundColor Red
+                        $buildResult | Write-Host
+                        throw "Build fallido"
+                    }
+                    Write-Host "  Build exitoso" -ForegroundColor Green
+                    Write-Host ""
+
+                    # 2. DeployReport
+                    Write-Host "  Generando reporte de cambios..." -ForegroundColor Cyan
+                    $dacpacPath = Find-DacpacPath
+                    if (-not (Test-Path $dacpacPath)) { throw "No se encontró $dacpacPath" }
+
+                    $reportPath = ".\deploy_report_$(Get-Date -Format 'yyyyMMdd_HHmmss').xml"
+                    $reportArgs = Build-SqlPackageArgs -Action 'DeployReport' -Config $config -EnvVars $envVars -DacpacPath $dacpacPath -OutputPath $reportPath
+
+                    & sqlpackage @reportArgs 2>&1 | Tee-Object -Variable reportOutput
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "No se pudo generar el reporte. Verifique la conexión y permisos."
+                    }
+
+                    # 3. Mostrar cambios
+                    $changes = Show-DeployReport -ReportPath $reportPath
+                    if ($null -eq $changes) {
+                        Remove-Item $reportPath -ErrorAction SilentlyContinue
+                        return
+                    }
+
+                    # 4. Confirmación
+                    $confirm = Read-Host "  ¿Aplicar estos cambios? (S/N)"
+                    if ($confirm -notmatch '^[Ss]$') {
+                        Write-Host "  Despliegue cancelado." -ForegroundColor Yellow
+                        Remove-Item $reportPath -ErrorAction SilentlyContinue
+                        return
+                    }
+
+                    # 5. Publish
+                    Write-Host ""
+                    Write-Host "  Iniciando despliegue..." -ForegroundColor Cyan
+                    $publishArgs = Build-SqlPackageArgs -Action 'Publish' -Config $config -EnvVars $envVars -DacpacPath $dacpacPath
+
                     & sqlpackage @publishArgs 2>&1 | Tee-Object -Variable publishOutput
                     if ($LASTEXITCODE -eq 0) {
                         Write-Host ""
@@ -213,7 +209,7 @@ function Invoke-SqlPackage {
                 }
                 finally {
                     # Limpiar contraseña de memoria
-                    $envVars['DB_PASSWORD'] = $null
+                    if ($envVars) { $envVars['DB_PASSWORD'] = $null }
                     [System.GC]::Collect()
                 }
             }
@@ -227,42 +223,49 @@ function Invoke-SqlPackage {
                 $envConfig = Read-DotEnv -Path ".\.env"
                 $envVars = $envConfig.Env
 
-                Write-Host "  Servidor:  $($envVars['DB_SERVER'])" -ForegroundColor Cyan
-                Write-Host "  Base datos: $($envVars['DB_NAME'])" -ForegroundColor Cyan
-                Write-Host "  Modo: SOLO REPORTE" -ForegroundColor Cyan
-                Write-Host ""
+                try {
+                    Write-Host "  Servidor:  $($envVars['DB_SERVER'])" -ForegroundColor Cyan
+                    Write-Host "  Base datos: $($envVars['DB_NAME'])" -ForegroundColor Cyan
+                    Write-Host "  Modo: SOLO REPORTE" -ForegroundColor Cyan
+                    Write-Host ""
 
-                # Build
-                Write-Host "  Compilando proyecto..." -ForegroundColor Cyan
-                $buildResult = dotnet build 2>&1
-                if ($LASTEXITCODE -ne 0) {
-                    Write-Host "  ERROR: La compilación falló" -ForegroundColor Red
-                    $buildResult | Write-Host
-                    throw "Build fallido"
+                    # Build
+                    Write-Host "  Compilando proyecto..." -ForegroundColor Cyan
+                    $buildResult = dotnet build 2>&1
+                    if ($LASTEXITCODE -ne 0) {
+                        Write-Host "  ERROR: La compilación falló" -ForegroundColor Red
+                        $buildResult | Write-Host
+                        throw "Build fallido"
+                    }
+                    Write-Host "  Build exitoso" -ForegroundColor Green
+                    Write-Host ""
+
+                    $dacpacPath = Find-DacpacPath
+                    if (-not (Test-Path $dacpacPath)) { throw "No se encontró $dacpacPath" }
+
+                    $outputDir = "."
+                    if ($config.deployReport -and $config.deployReport.outputDir) {
+                        $outputDir = $config.deployReport.outputDir
+                    }
+                    $reportPath = Join-Path $outputDir "deploy_report_$(Get-Date -Format 'yyyyMMdd_HHmmss').xml"
+
+                    Write-Host "  Generando reporte de cambios..." -ForegroundColor Cyan
+                    $reportArgs = Build-SqlPackageArgs -Action 'DeployReport' -Config $config -EnvVars $envVars -DacpacPath $dacpacPath -OutputPath $reportPath
+
+                    & sqlpackage @reportArgs 2>&1 | Tee-Object -Variable reportOutput
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "No se pudo generar el reporte. Verifique la conexión y permisos."
+                    }
+
+                    $changes = Show-DeployReport -ReportPath $reportPath
+                    Write-Host "  Reporte guardado en: $reportPath" -ForegroundColor DarkGray
+                    Write-Host ""
                 }
-                Write-Host "  Build exitoso" -ForegroundColor Green
-                Write-Host ""
-
-                $dacpacPath = Find-DacpacPath
-                if (-not (Test-Path $dacpacPath)) { throw "No se encontró $dacpacPath" }
-
-                $outputDir = "."
-                if ($config.deployReport -and $config.deployReport.outputDir) {
-                    $outputDir = $config.deployReport.outputDir
+                finally {
+                    # Limpiar contraseña de memoria
+                    if ($envVars) { $envVars['DB_PASSWORD'] = $null }
+                    [System.GC]::Collect()
                 }
-                $reportPath = Join-Path $outputDir "deploy_report_$(Get-Date -Format 'yyyyMMdd_HHmmss').xml"
-
-                Write-Host "  Generando reporte de cambios..." -ForegroundColor Cyan
-                $reportArgs = Build-SqlPackageArgs -Action 'DeployReport' -Config $config -EnvVars $envVars -DacpacPath $dacpacPath -OutputPath $reportPath
-
-                & sqlpackage @reportArgs 2>&1 | Tee-Object -Variable reportOutput
-                if ($LASTEXITCODE -ne 0) {
-                    throw "No se pudo generar el reporte. Verifique la conexión y permisos."
-                }
-
-                $changes = Show-DeployReport -ReportPath $reportPath
-                Write-Host "  Reporte guardado en: $reportPath" -ForegroundColor DarkGray
-                Write-Host ""
             }
 
             'Script' {
@@ -273,42 +276,49 @@ function Invoke-SqlPackage {
                 $envConfig = Read-DotEnv -Path ".\.env"
                 $envVars = $envConfig.Env
 
-                Write-Host "  Servidor:  $($envVars['DB_SERVER'])" -ForegroundColor Cyan
-                Write-Host "  Base datos: $($envVars['DB_NAME'])" -ForegroundColor Cyan
-                Write-Host "  Modo: GENERAR SCRIPT SQL" -ForegroundColor Cyan
-                Write-Host ""
+                try {
+                    Write-Host "  Servidor:  $($envVars['DB_SERVER'])" -ForegroundColor Cyan
+                    Write-Host "  Base datos: $($envVars['DB_NAME'])" -ForegroundColor Cyan
+                    Write-Host "  Modo: GENERAR SCRIPT SQL" -ForegroundColor Cyan
+                    Write-Host ""
 
-                # Build
-                Write-Host "  Compilando proyecto..." -ForegroundColor Cyan
-                $buildResult = dotnet build 2>&1
-                if ($LASTEXITCODE -ne 0) {
-                    Write-Host "  ERROR: La compilación falló" -ForegroundColor Red
-                    $buildResult | Write-Host
-                    throw "Build fallido"
+                    # Build
+                    Write-Host "  Compilando proyecto..." -ForegroundColor Cyan
+                    $buildResult = dotnet build 2>&1
+                    if ($LASTEXITCODE -ne 0) {
+                        Write-Host "  ERROR: La compilación falló" -ForegroundColor Red
+                        $buildResult | Write-Host
+                        throw "Build fallido"
+                    }
+                    Write-Host "  Build exitoso" -ForegroundColor Green
+                    Write-Host ""
+
+                    $dacpacPath = Find-DacpacPath
+                    if (-not (Test-Path $dacpacPath)) { throw "No se encontró $dacpacPath" }
+
+                    $outputDir = "."
+                    if ($config.script -and $config.script.outputDir) {
+                        $outputDir = $config.script.outputDir
+                    }
+                    $scriptPath = Join-Path $outputDir "deploy_script_$(Get-Date -Format 'yyyyMMdd_HHmmss').sql"
+
+                    Write-Host "  Generando script SQL..." -ForegroundColor Cyan
+                    $scriptArgs = Build-SqlPackageArgs -Action 'Script' -Config $config -EnvVars $envVars -DacpacPath $dacpacPath -OutputPath $scriptPath
+
+                    & sqlpackage @scriptArgs 2>&1 | Tee-Object -Variable scriptOutput
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "No se pudo generar el script. Verifique la conexión y permisos."
+                    }
+
+                    Write-Host ""
+                    Write-Host "  Script generado en: $scriptPath" -ForegroundColor Green
+                    Write-Host ""
                 }
-                Write-Host "  Build exitoso" -ForegroundColor Green
-                Write-Host ""
-
-                $dacpacPath = Find-DacpacPath
-                if (-not (Test-Path $dacpacPath)) { throw "No se encontró $dacpacPath" }
-
-                $outputDir = "."
-                if ($config.script -and $config.script.outputDir) {
-                    $outputDir = $config.script.outputDir
+                finally {
+                    # Limpiar contraseña de memoria
+                    if ($envVars) { $envVars['DB_PASSWORD'] = $null }
+                    [System.GC]::Collect()
                 }
-                $scriptPath = Join-Path $outputDir "deploy_script_$(Get-Date -Format 'yyyyMMdd_HHmmss').sql"
-
-                Write-Host "  Generando script SQL..." -ForegroundColor Cyan
-                $scriptArgs = Build-SqlPackageArgs -Action 'Script' -Config $config -EnvVars $envVars -DacpacPath $dacpacPath -OutputPath $scriptPath
-
-                & sqlpackage @scriptArgs 2>&1 | Tee-Object -Variable scriptOutput
-                if ($LASTEXITCODE -ne 0) {
-                    throw "No se pudo generar el script. Verifique la conexión y permisos."
-                }
-
-                Write-Host ""
-                Write-Host "  Script generado en: $scriptPath" -ForegroundColor Green
-                Write-Host ""
             }
 
             'Extract' {
@@ -319,31 +329,38 @@ function Invoke-SqlPackage {
                 $envConfig = Read-DotEnv -Path ".\.env"
                 $envVars = $envConfig.Env
 
-                Write-Host "  Servidor:  $($envVars['DB_SERVER'])" -ForegroundColor Cyan
-                Write-Host "  Base datos: $($envVars['DB_NAME'])" -ForegroundColor Cyan
-                Write-Host "  Modo: EXTRACT (snapshot)" -ForegroundColor Cyan
-                Write-Host ""
+                try {
+                    Write-Host "  Servidor:  $($envVars['DB_SERVER'])" -ForegroundColor Cyan
+                    Write-Host "  Base datos: $($envVars['DB_NAME'])" -ForegroundColor Cyan
+                    Write-Host "  Modo: EXTRACT (snapshot)" -ForegroundColor Cyan
+                    Write-Host ""
 
-                $outputDir = "./snapshots"
-                if ($config.extract -and $config.extract.outputDir) {
-                    $outputDir = $config.extract.outputDir
+                    $outputDir = "./snapshots"
+                    if ($config.extract -and $config.extract.outputDir) {
+                        $outputDir = $config.extract.outputDir
+                    }
+                    if (-not (Test-Path $outputDir)) { New-Item -Path $outputDir -ItemType Directory -Force | Out-Null }
+
+                    $dbName = $envVars['DB_NAME']
+                    $extractPath = Join-Path $outputDir "$($dbName)_$(Get-Date -Format 'yyyyMMdd_HHmmss').dacpac"
+
+                    Write-Host "  Extrayendo esquema del servidor..." -ForegroundColor Cyan
+                    $extractArgs = Build-SqlPackageArgs -Action 'Extract' -Config $config -EnvVars $envVars -OutputPath $extractPath
+
+                    & sqlpackage @extractArgs 2>&1 | Tee-Object -Variable extractOutput
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "No se pudo extraer el esquema. Verifique la conexión y permisos."
+                    }
+
+                    Write-Host ""
+                    Write-Host "  Snapshot guardado en: $extractPath" -ForegroundColor Green
+                    Write-Host ""
                 }
-                if (-not (Test-Path $outputDir)) { New-Item -Path $outputDir -ItemType Directory -Force | Out-Null }
-
-                $dbName = $envVars['DB_NAME']
-                $extractPath = Join-Path $outputDir "$($dbName)_$(Get-Date -Format 'yyyyMMdd_HHmmss').dacpac"
-
-                Write-Host "  Extrayendo esquema del servidor..." -ForegroundColor Cyan
-                $extractArgs = Build-SqlPackageArgs -Action 'Extract' -Config $config -EnvVars $envVars -OutputPath $extractPath
-
-                & sqlpackage @extractArgs 2>&1 | Tee-Object -Variable extractOutput
-                if ($LASTEXITCODE -ne 0) {
-                    throw "No se pudo extraer el esquema. Verifique la conexión y permisos."
+                finally {
+                    # Limpiar contraseña de memoria
+                    if ($envVars) { $envVars['DB_PASSWORD'] = $null }
+                    [System.GC]::Collect()
                 }
-
-                Write-Host ""
-                Write-Host "  Snapshot guardado en: $extractPath" -ForegroundColor Green
-                Write-Host ""
             }
 
             'Export' {
@@ -354,31 +371,38 @@ function Invoke-SqlPackage {
                 $envConfig = Read-DotEnv -Path ".\.env"
                 $envVars = $envConfig.Env
 
-                Write-Host "  Servidor:  $($envVars['DB_SERVER'])" -ForegroundColor Cyan
-                Write-Host "  Base datos: $($envVars['DB_NAME'])" -ForegroundColor Cyan
-                Write-Host "  Modo: EXPORT (esquema + datos)" -ForegroundColor Cyan
-                Write-Host ""
+                try {
+                    Write-Host "  Servidor:  $($envVars['DB_SERVER'])" -ForegroundColor Cyan
+                    Write-Host "  Base datos: $($envVars['DB_NAME'])" -ForegroundColor Cyan
+                    Write-Host "  Modo: EXPORT (esquema + datos)" -ForegroundColor Cyan
+                    Write-Host ""
 
-                $outputDir = "./exports"
-                if ($config.export -and $config.export.outputDir) {
-                    $outputDir = $config.export.outputDir
+                    $outputDir = "./exports"
+                    if ($config.export -and $config.export.outputDir) {
+                        $outputDir = $config.export.outputDir
+                    }
+                    if (-not (Test-Path $outputDir)) { New-Item -Path $outputDir -ItemType Directory -Force | Out-Null }
+
+                    $dbName = $envVars['DB_NAME']
+                    $exportPath = Join-Path $outputDir "$($dbName)_$(Get-Date -Format 'yyyyMMdd_HHmmss').bacpac"
+
+                    Write-Host "  Exportando esquema y datos..." -ForegroundColor Cyan
+                    $exportArgs = Build-SqlPackageArgs -Action 'Export' -Config $config -EnvVars $envVars -OutputPath $exportPath
+
+                    & sqlpackage @exportArgs 2>&1 | Tee-Object -Variable exportOutput
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "No se pudo exportar. Verifique la conexión y permisos."
+                    }
+
+                    Write-Host ""
+                    Write-Host "  Exportación guardada en: $exportPath" -ForegroundColor Green
+                    Write-Host ""
                 }
-                if (-not (Test-Path $outputDir)) { New-Item -Path $outputDir -ItemType Directory -Force | Out-Null }
-
-                $dbName = $envVars['DB_NAME']
-                $exportPath = Join-Path $outputDir "$($dbName)_$(Get-Date -Format 'yyyyMMdd_HHmmss').bacpac"
-
-                Write-Host "  Exportando esquema y datos..." -ForegroundColor Cyan
-                $exportArgs = Build-SqlPackageArgs -Action 'Export' -Config $config -EnvVars $envVars -OutputPath $exportPath
-
-                & sqlpackage @exportArgs 2>&1 | Tee-Object -Variable exportOutput
-                if ($LASTEXITCODE -ne 0) {
-                    throw "No se pudo exportar. Verifique la conexión y permisos."
+                finally {
+                    # Limpiar contraseña de memoria
+                    if ($envVars) { $envVars['DB_PASSWORD'] = $null }
+                    [System.GC]::Collect()
                 }
-
-                Write-Host ""
-                Write-Host "  Exportación guardada en: $exportPath" -ForegroundColor Green
-                Write-Host ""
             }
 
             'Import' {
@@ -398,25 +422,25 @@ function Invoke-SqlPackage {
                     throw "Configure 'import.sourcePath' en sqlpackage.yaml con la ruta al archivo .bacpac"
                 }
 
-                Write-Host "  Servidor:  $($envVars['DB_SERVER'])" -ForegroundColor Cyan
-                Write-Host "  Base datos: $($envVars['DB_NAME'])" -ForegroundColor Cyan
-                Write-Host "  Fuente:    $sourcePath" -ForegroundColor Cyan
-                Write-Host "  Modo: IMPORT (.bacpac → servidor)" -ForegroundColor Yellow
-                Write-Host ""
-                Write-Host "  ADVERTENCIA: Esta acción reemplazará la base de datos completa." -ForegroundColor Red
-                Write-Host ""
-
-                $confirm = Read-Host "  ¿Continuar con la importación? (S/N)"
-                if ($confirm -notmatch '^[Ss]$') {
-                    Write-Host "  Importación cancelada." -ForegroundColor Yellow
-                    return
-                }
-
-                Write-Host ""
-                Write-Host "  Importando .bacpac..." -ForegroundColor Cyan
-                $importArgs = Build-SqlPackageArgs -Action 'Import' -Config $config -EnvVars $envVars -SourcePath $sourcePath
-
                 try {
+                    Write-Host "  Servidor:  $($envVars['DB_SERVER'])" -ForegroundColor Cyan
+                    Write-Host "  Base datos: $($envVars['DB_NAME'])" -ForegroundColor Cyan
+                    Write-Host "  Fuente:    $sourcePath" -ForegroundColor Cyan
+                    Write-Host "  Modo: IMPORT (.bacpac → servidor)" -ForegroundColor Yellow
+                    Write-Host ""
+                    Write-Host "  ADVERTENCIA: Esta acción reemplazará la base de datos completa." -ForegroundColor Red
+                    Write-Host ""
+
+                    $confirm = Read-Host "  ¿Continuar con la importación? (S/N)"
+                    if ($confirm -notmatch '^[Ss]$') {
+                        Write-Host "  Importación cancelada." -ForegroundColor Yellow
+                        return
+                    }
+
+                    Write-Host ""
+                    Write-Host "  Importando .bacpac..." -ForegroundColor Cyan
+                    $importArgs = Build-SqlPackageArgs -Action 'Import' -Config $config -EnvVars $envVars -SourcePath $sourcePath
+
                     & sqlpackage @importArgs 2>&1 | Tee-Object -Variable importOutput
                     if ($LASTEXITCODE -eq 0) {
                         Write-Host ""
@@ -427,7 +451,8 @@ function Invoke-SqlPackage {
                     }
                 }
                 finally {
-                    $envVars['DB_PASSWORD'] = $null
+                    # Limpiar contraseña de memoria
+                    if ($envVars) { $envVars['DB_PASSWORD'] = $null }
                     [System.GC]::Collect()
                 }
             }

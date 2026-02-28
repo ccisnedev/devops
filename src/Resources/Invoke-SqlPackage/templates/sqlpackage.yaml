@@ -51,6 +51,6 @@ export:
 
 # Import: importa un archivo .bacpac (esquema + datos) al servidor
 # ADVERTENCIA: reemplaza la base de datos completa
-import: {}
+import:
   # Descomente y configure la ruta al .bacpac antes de usar -Import
   # sourcePath: "./exports/mi_backup.bacpac"

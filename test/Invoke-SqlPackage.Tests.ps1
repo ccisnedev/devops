@@ -390,4 +390,132 @@ Describe 'Etapa 4: Validaciones de prerequisitos' {
         }
         finally { Pop-Location }
     }
+
+    It '-Import falla sin sqlpackage.yaml' {
+        Push-Location $script:noYamlDir
+        try {
+            { Invoke-SqlPackage -Import } | Should -Throw "*sqlpackage.yaml*"
+        }
+        finally { Pop-Location }
+    }
+}
+
+# ═══════════════════════════════════════════════════════════════
+# ETAPA 5: Acciones destructivas (Publish, Import)
+# ═══════════════════════════════════════════════════════════════
+Describe 'Etapa 5: Flujo de acciones destructivas' {
+
+    BeforeAll {
+        . "$PSScriptRoot\..\src\Private\SqlPackageHelpers.ps1"
+        . "$PSScriptRoot\..\src\Private\PublishHelpers.ps1"
+    }
+
+    Context 'Build-SqlPackageArgs — seguridad en acciones destructivas' {
+
+        BeforeAll {
+            $script:config = @{
+                properties = @{
+                    BlockOnPossibleDataLoss    = $true
+                    DropObjectsNotInSource     = $true
+                    DropPermissionsNotInSource = $true
+                    DropRoleMembersNotInSource = $true
+                }
+            }
+            $script:envVars = @{
+                DB_SERVER   = "10.0.0.1"
+                DB_NAME     = "testdb"
+                DB_USER     = "sa"
+                DB_PASSWORD = "Pass123!"
+            }
+        }
+
+        It 'Publish incluye todas las propiedades de seguridad' {
+            $args = Build-SqlPackageArgs -Action 'Publish' -Config $script:config -EnvVars $script:envVars -DacpacPath ".\test.dacpac"
+            $args | Should -Contain "/p:BlockOnPossibleDataLoss=True"
+            $args | Should -Contain "/p:DropObjectsNotInSource=True"
+            $args | Should -Contain "/p:DropPermissionsNotInSource=True"
+            $args | Should -Contain "/p:DropRoleMembersNotInSource=True"
+        }
+
+        It 'Import NO incluye /p: properties (no aplican)' {
+            $args = Build-SqlPackageArgs -Action 'Import' -Config $script:config -EnvVars $script:envVars -SourcePath ".\backup.bacpac"
+            $propsArgs = $args | Where-Object { $_ -like "/p:*" }
+            $propsArgs | Should -BeNullOrEmpty
+        }
+
+        It 'Export NO incluye /p: properties' {
+            $args = Build-SqlPackageArgs -Action 'Export' -Config $script:config -EnvVars $script:envVars -OutputPath ".\out.bacpac"
+            $propsArgs = $args | Where-Object { $_ -like "/p:*" }
+            $propsArgs | Should -BeNullOrEmpty
+        }
+
+        It 'DeployReport incluye las mismas properties que Publish' {
+            $publishArgs = Build-SqlPackageArgs -Action 'Publish' -Config $script:config -EnvVars $script:envVars -DacpacPath ".\test.dacpac"
+            $reportArgs = Build-SqlPackageArgs -Action 'DeployReport' -Config $script:config -EnvVars $script:envVars -DacpacPath ".\test.dacpac" -OutputPath ".\report.xml"
+
+            $publishProps = $publishArgs | Where-Object { $_ -like "/p:*" } | Sort-Object
+            $reportProps = $reportArgs | Where-Object { $_ -like "/p:*" } | Sort-Object
+
+            $publishProps | Should -Be $reportProps
+        }
+
+        It 'La contraseña se incluye en los argumentos de conexión' {
+            $args = Build-SqlPackageArgs -Action 'Publish' -Config $script:config -EnvVars $script:envVars -DacpacPath ".\test.dacpac"
+            $args | Should -Contain "/TargetPassword:Pass123!"
+        }
+
+        It 'Conexión siempre usa TrustServerCertificate y EncryptConnection' {
+            $args = Build-SqlPackageArgs -Action 'Publish' -Config $script:config -EnvVars $script:envVars -DacpacPath ".\test.dacpac"
+            $args | Should -Contain "/TargetTrustServerCertificate:True"
+            $args | Should -Contain "/TargetEncryptConnection:True"
+        }
+    }
+
+    Context 'Import — validación de sourcePath' {
+
+        BeforeAll {
+            $script:importDir = Join-Path $env:TEMP "PSDevOps_Import_$(Get-Random)"
+            New-Item -Path $script:importDir -ItemType Directory -Force | Out-Null
+            "<Project/>" | Set-Content (Join-Path $script:importDir "test.sqlproj")
+
+            # .env válido
+            @"
+DB_SERVER=10.0.0.1
+DB_NAME=testdb
+DB_USER=sa
+DB_PASSWORD=Pass123!
+"@ | Set-Content (Join-Path $script:importDir ".env")
+
+            # sqlpackage.yaml SIN sourcePath configurado
+            @"
+properties:
+  BlockOnPossibleDataLoss: true
+import: {}
+"@ | Set-Content (Join-Path $script:importDir "sqlpackage.yaml")
+        }
+
+        AfterAll {
+            Remove-Item $script:importDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        It '-Import falla si sourcePath no está configurado' {
+            Push-Location $script:importDir
+            try {
+                { Invoke-SqlPackage -Import } | Should -Throw "*sourcePath*"
+            }
+            finally { Pop-Location }
+        }
+    }
+
+    Context 'Publish — estructura de argumentos completa' {
+
+        It 'Script genera argumentos con /p: (misma categoría que Publish)' {
+            $config = @{ properties = @{ BlockOnPossibleDataLoss = $true } }
+            $envVars = @{ DB_SERVER = "srv"; DB_NAME = "db"; DB_USER = "u"; DB_PASSWORD = "p" }
+            $args = Build-SqlPackageArgs -Action 'Script' -Config $config -EnvVars $envVars -DacpacPath ".\t.dacpac" -OutputPath ".\out.sql"
+            $args | Should -Contain "/Action:Script"
+            $args | Should -Contain "/p:BlockOnPossibleDataLoss=True"
+            $args | Should -Contain "/OutputPath:.\out.sql"
+        }
+    }
 }
