@@ -1,4 +1,4 @@
-# FlutterDevOps.psm1
+# PSDevOps.psm1
 
 # Importar todas las funciones públicas
 Get-ChildItem -Path "$PSScriptRoot\src\Functions\*.ps1" | ForEach-Object {
