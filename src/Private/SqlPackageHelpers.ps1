@@ -88,7 +88,7 @@ function Build-SqlPackageArgs {
         [string]$SourcePath
     )
 
-    $args = @("/Action:$Action")
+    $sqlArgs = @("/Action:$Action")
 
     # Conexión al servidor (credenciales desde .env)
     $server   = $EnvVars['DB_SERVER']
@@ -109,42 +109,42 @@ function Build-SqlPackageArgs {
         if (-not $DacpacPath) {
             throw "Se requiere -DacpacPath para la acción '$Action'"
         }
-        $args += "/SourceFile:$DacpacPath"
-        $args += "/TargetServerName:$server"
-        $args += "/TargetDatabaseName:$database"
-        $args += "/TargetUser:$user"
-        $args += "/TargetPassword:$password"
-        $args += "/TargetTrustServerCertificate:True"
-        $args += "/TargetEncryptConnection:True"
+        $sqlArgs += "/SourceFile:$DacpacPath"
+        $sqlArgs += "/TargetServerName:$server"
+        $sqlArgs += "/TargetDatabaseName:$database"
+        $sqlArgs += "/TargetUser:$user"
+        $sqlArgs += "/TargetPassword:$password"
+        $sqlArgs += "/TargetTrustServerCertificate:True"
+        $sqlArgs += "/TargetEncryptConnection:True"
     }
     elseif ($Action -in $serverSourceActions) {
-        $args += "/SourceServerName:$server"
-        $args += "/SourceDatabaseName:$database"
-        $args += "/SourceUser:$user"
-        $args += "/SourcePassword:$password"
-        $args += "/SourceTrustServerCertificate:True"
-        $args += "/SourceEncryptConnection:True"
+        $sqlArgs += "/SourceServerName:$server"
+        $sqlArgs += "/SourceDatabaseName:$database"
+        $sqlArgs += "/SourceUser:$user"
+        $sqlArgs += "/SourcePassword:$password"
+        $sqlArgs += "/SourceTrustServerCertificate:True"
+        $sqlArgs += "/SourceEncryptConnection:True"
     }
     elseif ($Action -eq 'Import') {
         if (-not $SourcePath) {
             throw "Se requiere la ruta al archivo .bacpac en la configuración (import.sourcePath)"
         }
-        $args += "/SourceFile:$SourcePath"
-        $args += "/TargetServerName:$server"
-        $args += "/TargetDatabaseName:$database"
-        $args += "/TargetUser:$user"
-        $args += "/TargetPassword:$password"
-        $args += "/TargetTrustServerCertificate:True"
-        $args += "/TargetEncryptConnection:True"
+        $sqlArgs += "/SourceFile:$SourcePath"
+        $sqlArgs += "/TargetServerName:$server"
+        $sqlArgs += "/TargetDatabaseName:$database"
+        $sqlArgs += "/TargetUser:$user"
+        $sqlArgs += "/TargetPassword:$password"
+        $sqlArgs += "/TargetTrustServerCertificate:True"
+        $sqlArgs += "/TargetEncryptConnection:True"
     }
 
     # Output path
     if ($OutputPath) {
         if ($Action -in $serverSourceActions) {
-            $args += "/TargetFile:$OutputPath"
+            $sqlArgs += "/TargetFile:$OutputPath"
         }
         else {
-            $args += "/OutputPath:$OutputPath"
+            $sqlArgs += "/OutputPath:$OutputPath"
         }
     }
 
@@ -152,11 +152,11 @@ function Build-SqlPackageArgs {
     $propsActions = @('Publish', 'DeployReport', 'Script')
     if ($Action -in $propsActions -and $Config.properties) {
         foreach ($key in $Config.properties.Keys) {
-            $args += "/p:$key=$($Config.properties[$key])"
+            $sqlArgs += "/p:$key=$($Config.properties[$key])"
         }
     }
 
-    return $args
+    return $sqlArgs
 }
 
 <#
