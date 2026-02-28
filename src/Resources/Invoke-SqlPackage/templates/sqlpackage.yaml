@@ -1,0 +1,57 @@
+# sqlpackage.yaml — Configuración de SqlPackage para este proyecto
+# Generado por: Invoke-SqlPackage -Init
+# Referencia: https://learn.microsoft.com/sql/tools/sqlpackage-publish
+#
+# Las credenciales (servidor, usuario, password) se leen del archivo .env
+# NO incluya credenciales en este archivo — este archivo SÍ se versiona.
+
+# ─── Propiedades compartidas (/p:) ───────────────────────────────────
+# Se aplican a las acciones: Publish, DeployReport, Script
+# Cada propiedad se traduce a /p:Nombre=Valor en sqlpackage.exe
+properties:
+  # Abortar si un cambio podría causar pérdida de datos
+  # Ejemplo: reducir tamaño de columna, eliminar tabla con datos
+  BlockOnPossibleDataLoss: true
+
+  # Eliminar objetos del servidor que no existen en el código fuente
+  # Convierte tu código en la fuente de verdad (gestión declarativa)
+  DropObjectsNotInSource: true
+
+  # Eliminar permisos del servidor que no existen en el código fuente
+  DropPermissionsNotInSource: true
+
+  # Eliminar membresías de roles que no existen en el código fuente
+  DropRoleMembersNotInSource: true
+
+# ─── Configuración por acción ────────────────────────────────────────
+
+# Publish: despliega el .dacpac al servidor
+# Flujo: build → deployReport → confirmación → publish
+# actualmente toda la configuracion de Publish se lee de .env
+publish: {}
+
+# DeployReport: genera un reporte XML con las diferencias (dry-run)
+deployReport:
+  # Directorio donde guardar los reportes XML generados
+  outputDir: "."
+
+# Script: genera el archivo .sql que Publish ejecutaría
+script:
+  # Directorio donde guardar los scripts SQL generados
+  outputDir: "."
+
+# Extract: captura el esquema actual del servidor como snapshot .dacpac
+extract:
+  # Directorio donde guardar los snapshots extraídos
+  outputDir: "./snapshots"
+
+# Export: exporta esquema + datos del servidor como archivo .bacpac
+export:
+  # Directorio donde guardar las exportaciones
+  outputDir: "./exports"
+
+# Import: importa un archivo .bacpac (esquema + datos) al servidor
+# ADVERTENCIA: reemplaza la base de datos completa
+import:
+  # Descomente y configure la ruta al .bacpac antes de usar -Import
+  # sourcePath: "./exports/mi_backup.bacpac"

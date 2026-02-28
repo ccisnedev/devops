@@ -22,6 +22,7 @@
         , 'Export-FileTree'
         , 'Copy-FromServer'
         , 'New-Issue'
+        , 'Invoke-SqlPackage'
     )
     CmdletsToExport = @()                          # En este caso no hay cmdlets, pero si existieran se listarían aquí
     AliasesToExport = @('server')                  # Aliases que exporta el módulo (si los hay)
@@ -32,7 +33,7 @@
     RootModule = 'PSDevOps.psm1'              # Archivo principal del módulo
 
     # Dependencias y Compatibilidad
-    RequiredModules = @()                          # Lista de módulos que este módulo necesita (ej: Pester para pruebas)
+    RequiredModules = @('powershell-yaml')          # powershell-yaml: parseo YAML anidado (ref: issue #1)
     RequiredAssemblies = @()                       # Lista de ensamblados .NET requeridos (rara vez se usa en módulos simples)
 
     # Información adicional
