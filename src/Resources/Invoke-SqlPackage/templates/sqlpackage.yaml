@@ -27,6 +27,7 @@ properties:
 
 # Publish: despliega el .dacpac al servidor
 # Flujo: build → deployReport → confirmación → publish
+# actualmente toda la configuracion de Publish se lee de .env
 publish: {}
 
 # DeployReport: genera un reporte XML con las diferencias (dry-run)
