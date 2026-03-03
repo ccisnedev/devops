@@ -1,0 +1,17 @@
+# deploy.yaml — Configuración de despliegue para Node.js/TypeScript API
+# Generado por: Publish-NodeApi -Init
+# name y version se leen siempre de package.json
+# NO incluya secretos en este archivo — este archivo SÍ se versiona.
+
+# ─── Servidor ─────────────────────────────────────────
+server: api-server            # alias en ~/.ssh/config
+
+# ─── Runtime ──────────────────────────────────────────
+runtime:
+  processManager: systemd     # systemd | pm2
+  nodeVersion: ">=18"
+
+# ─── Health Check ─────────────────────────────────────
+health:
+  retries: 6
+  interval: 3
