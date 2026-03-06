@@ -33,12 +33,12 @@ publish: {}
 # DeployReport: genera un reporte XML con las diferencias (dry-run)
 deployReport:
   # Directorio donde guardar los reportes XML generados
-  outputDir: "."
+  outputDir: "./deploy_reports"
 
 # Script: genera el archivo .sql que Publish ejecutaría
 script:
   # Directorio donde guardar los scripts SQL generados
-  outputDir: "."
+  outputDir: "./deploy_scripts"
 
 # Extract: captura el esquema actual del servidor como snapshot .dacpac
 extract:
