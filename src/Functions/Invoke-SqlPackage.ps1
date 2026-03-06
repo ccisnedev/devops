@@ -73,7 +73,7 @@ function Invoke-SqlPackage {
 
         Referencia: https://learn.microsoft.com/sql/tools/sqlpackage
         Author: @ccisnedev
-        Version: 1.0.0
+        Version: 1.0.1
     #>
     [CmdletBinding(DefaultParameterSetName = 'Publish')]
     param(
