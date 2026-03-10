@@ -398,6 +398,58 @@ Describe 'Etapa 4: Validaciones de prerequisitos' {
         }
         finally { Pop-Location }
     }
+
+    It '-DeployReport crea outputDir automáticamente si no existe' {
+        $baseDir = Join-Path $env:TEMP "PSDevOps_DRDir_$(Get-Random)"
+        New-Item -Path $baseDir -ItemType Directory -Force | Out-Null
+        $outputDir = Join-Path $baseDir "deploy_reports"
+        "<Project/>" | Set-Content (Join-Path $baseDir "test.sqlproj")
+        "DB_SERVER=x`nDB_NAME=y`nDB_USER=u`nDB_PASSWORD=p" | Set-Content (Join-Path $baseDir ".env")
+        @"
+properties:
+  BlockOnPossibleDataLoss: true
+deployReport:
+  outputDir: "$outputDir"
+"@ | Set-Content (Join-Path $baseDir "sqlpackage.yaml")
+        Push-Location $baseDir
+        try {
+            # El directorio no debe existir aún
+            Test-Path $outputDir | Should -BeFalse
+            # La llamada fallará por sqlpackage.exe no disponible, pero el dir debe crearse antes
+            try { Invoke-SqlPackage -DeployReport } catch {}
+            Test-Path $outputDir | Should -BeTrue
+        }
+        finally {
+            Pop-Location
+            Remove-Item $baseDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It '-Script crea outputDir automáticamente si no existe' {
+        $baseDir = Join-Path $env:TEMP "PSDevOps_ScriptDir_$(Get-Random)"
+        New-Item -Path $baseDir -ItemType Directory -Force | Out-Null
+        $outputDir = Join-Path $baseDir "deploy_scripts"
+        "<Project/>" | Set-Content (Join-Path $baseDir "test.sqlproj")
+        "DB_SERVER=x`nDB_NAME=y`nDB_USER=u`nDB_PASSWORD=p" | Set-Content (Join-Path $baseDir ".env")
+        @"
+properties:
+  BlockOnPossibleDataLoss: true
+script:
+  outputDir: "$outputDir"
+"@ | Set-Content (Join-Path $baseDir "sqlpackage.yaml")
+        Push-Location $baseDir
+        try {
+            # El directorio no debe existir aún
+            Test-Path $outputDir | Should -BeFalse
+            # La llamada fallará por sqlpackage.exe no disponible, pero el dir debe crearse antes
+            try { Invoke-SqlPackage -Script } catch {}
+            Test-Path $outputDir | Should -BeTrue
+        }
+        finally {
+            Pop-Location
+            Remove-Item $baseDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 # ═══════════════════════════════════════════════════════════════

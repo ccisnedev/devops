@@ -247,6 +247,7 @@ function Invoke-SqlPackage {
                     if ($config.deployReport -and $config.deployReport.outputDir) {
                         $outputDir = $config.deployReport.outputDir
                     }
+                    if (-not (Test-Path $outputDir)) { New-Item -Path $outputDir -ItemType Directory -Force | Out-Null }
                     $reportPath = Join-Path $outputDir "deploy_report_$(Get-Date -Format 'yyyyMMdd_HHmmss').xml"
 
                     Write-Host "  Generando reporte de cambios..." -ForegroundColor Cyan
@@ -300,6 +301,7 @@ function Invoke-SqlPackage {
                     if ($config.script -and $config.script.outputDir) {
                         $outputDir = $config.script.outputDir
                     }
+                    if (-not (Test-Path $outputDir)) { New-Item -Path $outputDir -ItemType Directory -Force | Out-Null }
                     $scriptPath = Join-Path $outputDir "deploy_script_$(Get-Date -Format 'yyyyMMdd_HHmmss').sql"
 
                     Write-Host "  Generando script SQL..." -ForegroundColor Cyan
