@@ -310,11 +310,16 @@ NODE_ENV=production
                     if ($LASTEXITCODE -ne 0) { throw "Error al subir tarball (scp exit: $LASTEXITCODE)" }
                     Write-Host "    Tarball subido" -ForegroundColor Green
 
-                    # Subir .env.production
-                    $scpEnvArgs = @('-i', $privateKeyPath, '-P', $sshPort, $envProdPath, "$($user)@$($ip):$remoteEnvFile")
-                    & scp @scpEnvArgs 2>&1 | Out-Null
-                    if ($LASTEXITCODE -ne 0) { throw "Error al subir .env.production (scp exit: $LASTEXITCODE)" }
-                    Write-Host "    .env.production subido" -ForegroundColor Green
+                    # Subir .env.production (normalizar CRLF → LF para compatibilidad bash)
+                    $tmpEnv = New-UnixTempFile -Content (Get-Content $envProdPath -Raw) -Prefix "env_"
+                    try {
+                        $scpEnvArgs = @('-i', $privateKeyPath, '-P', $sshPort, $tmpEnv, "$($user)@$($ip):$remoteEnvFile")
+                        & scp @scpEnvArgs 2>&1 | Out-Null
+                        if ($LASTEXITCODE -ne 0) { throw "Error al subir .env.production (scp exit: $LASTEXITCODE)" }
+                        Write-Host "    .env.production subido" -ForegroundColor Green
+                    } finally {
+                        Remove-Item -LiteralPath $tmpEnv -ErrorAction SilentlyContinue
+                    }
 
                     # ─── 8. Instalar release ─────────────────
                     Write-Host "  Instalando release $release..." -ForegroundColor Cyan

@@ -285,9 +285,48 @@ Assert-True ($manageSh -match 'systemctl') "Manage-NodeProcess.sh soporta system
 Assert-True ($manageSh -match 'pm2') "Manage-NodeProcess.sh soporta pm2"
 
 # ════════════════════════════════════════════════════════════════════
-# TEST GROUP 10: -Init en proyecto real (dispersion_bcp_server)
+# TEST GROUP 10: New-UnixTempFile normaliza CRLF → LF en .env
 # ════════════════════════════════════════════════════════════════════
-Write-TestHeader "10. -Init en proyecto real (dispersion_bcp_server)"
+Write-TestHeader "10. New-UnixTempFile normaliza CRLF → LF en .env"
+
+# Cargar helpers directamente para acceder a New-UnixTempFile
+. "$ModuleRoot\src\Private\PublishHelpers.ps1"
+
+# Crear contenido con CRLF explícito (simula .env.production creado en Windows)
+$crlfContent = "PORT=8080`r`nNODE_ENV=production`r`nDB_HOST=localhost`r`n"
+$tmpFile = New-UnixTempFile -Content $crlfContent -Prefix "env_test_"
+
+try {
+    Assert-True (Test-Path $tmpFile) "Archivo temporal fue creado"
+
+    # Leer bytes raw para verificar line endings
+    $bytes = [System.IO.File]::ReadAllBytes($tmpFile)
+    $text = [System.IO.File]::ReadAllText($tmpFile)
+
+    # Verificar que NO contiene CR (\r = 0x0D)
+    $hasCR = $bytes -contains 0x0D
+    Assert-True (-not $hasCR) "Archivo temporal no contiene \r (CRLF eliminado)"
+
+    # Verificar que SÍ contiene LF (\n = 0x0A)
+    $hasLF = $bytes -contains 0x0A
+    Assert-True $hasLF "Archivo temporal contiene \n (LF presente)"
+
+    # Verificar que el contenido es correcto (valores preservados)
+    Assert-True ($text -match 'PORT=8080') "Contenido preserva PORT=8080"
+    Assert-True ($text -match 'NODE_ENV=production') "Contenido preserva NODE_ENV=production"
+    Assert-True ($text -match 'DB_HOST=localhost') "Contenido preserva DB_HOST=localhost"
+
+    # Verificar que no tiene BOM (UTF-8 sin BOM: primeros bytes no son EF BB BF)
+    $hasBOM = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+    Assert-True (-not $hasBOM) "Archivo temporal es UTF-8 sin BOM"
+} finally {
+    Remove-Item -LiteralPath $tmpFile -ErrorAction SilentlyContinue
+}
+
+# ════════════════════════════════════════════════════════════════════
+# TEST GROUP 11: -Init en proyecto real (dispersion_bcp_server)
+# ════════════════════════════════════════════════════════════════════
+Write-TestHeader "11. -Init en proyecto real (dispersion_bcp_server)"
 
 $realProject = "D:\source\cacsi-dev\bcp\dispersion_bcp_server"
 $realDeploy = Join-Path $realProject "deploy.yaml"
@@ -326,13 +365,13 @@ try {
 }
 
 # ════════════════════════════════════════════════════════════════════
-# TEST GROUP 11: Deploy e2e (requiere servidor real)
+# TEST GROUP 12: Deploy e2e (requiere servidor real)
 # ════════════════════════════════════════════════════════════════════
 if ($SkipDeploy) {
-    Write-TestHeader "11. Deploy e2e (SKIPPED — usar sin -SkipDeploy)"
+    Write-TestHeader "12. Deploy e2e (SKIPPED — usar sin -SkipDeploy)"
     $skipped++
 } else {
-    Write-TestHeader "11. Deploy e2e a app-server con pm2"
+    Write-TestHeader "12. Deploy e2e a app-server con pm2"
     Write-Host "    (Este test requiere servidor 'app-server' en ~/.ssh/config)" -ForegroundColor DarkGray
     
     # Preparar proyecto con deploy.yaml real
