@@ -395,8 +395,9 @@ NODE_ENV=production
                     Write-Host ""
 
                 } finally {
-                    # Limpiar tarball local
+                    # Limpiar archivos temporales locales
                     Remove-Item -LiteralPath $localTarball -ErrorAction SilentlyContinue
+                    if ($tmpEnvPath) { Remove-Item -LiteralPath $tmpEnvPath -ErrorAction SilentlyContinue }
                 }
             }
         }
