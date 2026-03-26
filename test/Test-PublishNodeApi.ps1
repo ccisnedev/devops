@@ -373,6 +373,52 @@ NODE_ENV=production
     }
 }
 
+# ════════════════════════════════════════════════════════════════════
+# TEST GROUP 12: New-UnixTempFile normaliza CRLF en contenido .env
+# ────────────────────────────────────────────────────────────────────
+# Propósito: Verificar que New-UnixTempFile normaliza CRLF → LF en
+#            contenido tipo .env (variables de entorno para producción).
+# Precondición: PublishHelpers.ps1 cargado (New-UnixTempFile disponible).
+# Resultado esperado: archivo temporal sin \r, contenido preservado.
+# ════════════════════════════════════════════════════════════════════
+Write-TestHeader "12. New-UnixTempFile normaliza CRLF en contenido .env"
+
+# Cargar helper directamente (función privada, no exportada por el módulo)
+. "$ModuleRoot\src\Private\PublishHelpers.ps1"
+
+# 12a. Contenido .env con CRLF → archivo resultante solo tiene LF
+$envCRLF = "PORT=8080`r`nNODE_ENV=production`r`nDB_HOST=localhost`r`n"
+$tmpEnvPath = New-UnixTempFile -Content $envCRLF -Prefix "test_env_"
+
+try {
+    Assert-True (Test-Path $tmpEnvPath) "12a: Archivo temporal fue creado"
+
+    $rawBytes = [System.IO.File]::ReadAllBytes($tmpEnvPath)
+    $hasCR = $rawBytes -contains 0x0D
+    Assert-True (-not $hasCR) "12a: Archivo no contiene bytes CR (0x0D)"
+
+    # 12b. Variables y valores se preservan intactos tras normalización
+    $normalizedContent = [System.IO.File]::ReadAllText($tmpEnvPath)
+    Assert-True ($normalizedContent -match 'PORT=8080') "12b: PORT=8080 preservado"
+    Assert-True ($normalizedContent -match 'NODE_ENV=production') "12b: NODE_ENV=production preservado"
+    Assert-True ($normalizedContent -match 'DB_HOST=localhost') "12b: DB_HOST=localhost preservado"
+
+    # 12c. Comentarios y líneas vacías se preservan
+    $envWithComments = "# Variables de producción`r`n`r`nKEY=value`r`n# Fin`r`n"
+    $tmpEnvPath2 = New-UnixTempFile -Content $envWithComments -Prefix "test_env_comments_"
+    $normalized2 = [System.IO.File]::ReadAllText($tmpEnvPath2)
+    $rawBytes2 = [System.IO.File]::ReadAllBytes($tmpEnvPath2)
+    $hasCR2 = $rawBytes2 -contains 0x0D
+
+    Assert-True (-not $hasCR2) "12c: Archivo con comentarios no contiene CR"
+    Assert-True ($normalized2 -match '# Variables de producción') "12c: Comentario preservado"
+    Assert-True ($normalized2 -match 'KEY=value') "12c: Variable preservada tras línea vacía"
+
+    Remove-Item -LiteralPath $tmpEnvPath2 -ErrorAction SilentlyContinue
+} finally {
+    Remove-Item -LiteralPath $tmpEnvPath -ErrorAction SilentlyContinue
+}
+
 # ─── Resumen ────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "╔══════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
