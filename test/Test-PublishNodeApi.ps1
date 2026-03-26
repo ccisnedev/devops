@@ -362,6 +362,9 @@ Assert-True ($publishSource -match 'New-UnixTempFile.*-Content.*\$envProdPath|Ne
 #      Búsqueda: la línea de scpEnvArgs debe contener $tmpEnvPath (temporal), no $envProdPath
 Assert-True ($publishSource -match 'scpEnvArgs.*\$tmpEnvPath') "12b: SCP usa \$tmpEnvPath (temporal) en vez de \$envProdPath"
 
+# 12c. El bloque finally limpia $tmpEnvPath (archivo temporal del .env)
+Assert-True ($publishSource -match 'finally[\s\S]*Remove-Item.*\$tmpEnvPath') "12c: finally limpia \$tmpEnvPath"
+
 # ─── Resumen ────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "╔══════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
