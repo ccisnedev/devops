@@ -149,8 +149,8 @@ function Publish-FlutterWeb {
                 if (-not $server) {
                     throw "No se encontró 'server:' en deploy.yaml."
                 }
-                if ($server -eq 'app-server') {
-                    throw "deploy.yaml contiene el valor de ejemplo 'app-server'. Cambie 'server' por el alias SSH real de su servidor."
+                if ($server -eq 'your-ssh-alias') {
+                    throw "deploy.yaml contiene el valor de ejemplo 'your-ssh-alias'. Cambie 'server' por el alias SSH real de su servidor."
                 }
                 if (-not $port) {
                     throw "No se encontró 'port:' en deploy.yaml."

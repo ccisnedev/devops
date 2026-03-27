@@ -4,7 +4,7 @@
 # NO incluya secretos en este archivo — este archivo SÍ se versiona.
 
 # ─── Servidor ─────────────────────────────────────────
-server: app-server            # alias en ~/.ssh/config
+server: your-ssh-alias        # alias en ~/.ssh/config
 
 # ─── Nginx ────────────────────────────────────────────
 port: 4000                    # puerto donde nginx escuchará para esta app
