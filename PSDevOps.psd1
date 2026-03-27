@@ -14,10 +14,9 @@
     FunctionsToExport = @(
         # Funciones principales
         'Invoke-FlutterBuild'
-        , 'New-Issue'
         , 'Invoke-SqlPackage'
         , 'Publish-NodeApi'
-
+        
         # cmdlets legados (a eliminar en futuras versiones)
         , 'Connect-Server'
         , 'Publish-FlutterWeb'
@@ -27,6 +26,7 @@
         , 'Merge-DevToMain'
         , 'Export-FileTree'
         , 'Copy-FromServer'
+        , 'New-Issue'
     )
     CmdletsToExport = @()                          # En este caso no hay cmdlets, pero si existieran se listarían aquí
     AliasesToExport = @('server')                  # Aliases que exporta el módulo (si los hay)
