@@ -310,11 +310,13 @@ NODE_ENV=production
                     if ($LASTEXITCODE -ne 0) { throw "Error al subir tarball (scp exit: $LASTEXITCODE)" }
                     Write-Host "    Tarball subido" -ForegroundColor Green
 
-                    # Subir .env.production
-                    $scpEnvArgs = @('-i', $privateKeyPath, '-P', $sshPort, $envProdPath, "$($user)@$($ip):$remoteEnvFile")
+                    # Subir .env.production (normalizado a LF para compatibilidad con bash en Linux)
+                    $envContent = Get-Content $envProdPath -Raw
+                    $tmpEnvPath = New-UnixTempFile -Content $envContent -Prefix "psdevops_env_"
+                    $scpEnvArgs = @('-i', $privateKeyPath, '-P', $sshPort, $tmpEnvPath, "$($user)@$($ip):$remoteEnvFile")
                     & scp @scpEnvArgs 2>&1 | Out-Null
                     if ($LASTEXITCODE -ne 0) { throw "Error al subir .env.production (scp exit: $LASTEXITCODE)" }
-                    Write-Host "    .env.production subido" -ForegroundColor Green
+                    Write-Host "    .env.production subido (LF)" -ForegroundColor Green
 
                     # ─── 8. Instalar release ─────────────────
                     Write-Host "  Instalando release $release..." -ForegroundColor Cyan
@@ -393,8 +395,9 @@ NODE_ENV=production
                     Write-Host ""
 
                 } finally {
-                    # Limpiar tarball local
+                    # Limpiar archivos temporales locales
                     Remove-Item -LiteralPath $localTarball -ErrorAction SilentlyContinue
+                    if ($tmpEnvPath) { Remove-Item -LiteralPath $tmpEnvPath -ErrorAction SilentlyContinue }
                 }
             }
         }
