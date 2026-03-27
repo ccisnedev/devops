@@ -56,7 +56,11 @@ function Publish-NodeApi {
 
         [Parameter(Mandatory, ParameterSetName = 'Publish',
             HelpMessage = "Ejecuta el despliegue completo al servidor remoto")]
-        [switch]$Publish
+        [switch]$Publish,
+
+        [Parameter(Mandatory, ParameterSetName = 'DeployReport',
+            HelpMessage = "Muestra las acciones que realizará -Publish sin ejecutarlas")]
+        [switch]$DeployReport
     )
 
     begin {
@@ -399,6 +403,170 @@ NODE_ENV=production
                     Remove-Item -LiteralPath $localTarball -ErrorAction SilentlyContinue
                     if ($tmpEnvPath) { Remove-Item -LiteralPath $tmpEnvPath -ErrorAction SilentlyContinue }
                 }
+            }
+
+            # ═══════════════════════════════════════════════════
+            # DEPLOY REPORT — Reporte pre-deploy (dry-run)
+            # ═══════════════════════════════════════════════════
+            'DeployReport' {
+                $cwd = (Get-Location).Path
+
+                # ─── 0. Validaciones ─────────────────────────
+                $packageJsonPath = Join-Path $cwd "package.json"
+                $deployYamlPath = Join-Path $cwd "deploy.yaml"
+                $envProdPath = Join-Path $cwd ".env.production"
+
+                if (-not (Test-Path $packageJsonPath)) {
+                    throw "No se encontró package.json en $cwd."
+                }
+                if (-not (Test-Path $deployYamlPath)) {
+                    throw "No se encontró deploy.yaml. Ejecute 'Publish-NodeApi -Init' primero."
+                }
+                if (-not (Test-Path $envProdPath)) {
+                    throw "No se encontró .env.production. Ejecute 'Publish-NodeApi -Init' primero."
+                }
+
+                # ─── 1. Cargar helpers ───────────────────────
+                . "$PSScriptRoot/../Private/PublishHelpers.ps1"
+                . "$PSScriptRoot/../Private/Read-SSHConfig.ps1"
+
+                # ─── 2. Leer configuración ───────────────────
+                $packageJson = Get-Content $packageJsonPath -Raw | ConvertFrom-Json
+                $appName = $packageJson.name
+                $appVersion = $packageJson.version
+                $release = "v$appVersion"
+
+                $deployConfig = Get-Content $deployYamlPath -Raw | ConvertFrom-Yaml
+                $server = $deployConfig.server
+                $processManager = if ($deployConfig.runtime -and $deployConfig.runtime.processManager) {
+                    $deployConfig.runtime.processManager
+                } else { 'systemd' }
+
+                $envConfig = Read-DotEnv -Path $envProdPath -DefaultPort 8080
+                $port = $envConfig.Port
+
+                # ─── 3. Validaciones de config ───────────────
+                if (-not $server) {
+                    throw "No se encontró 'server:' en deploy.yaml."
+                }
+                if ($server -eq 'your-ssh-alias') {
+                    throw "deploy.yaml contiene el valor de ejemplo 'your-ssh-alias'. Cambie 'server' por el alias SSH real de su servidor."
+                }
+
+                # ─── 4. SSH Config ───────────────────────────
+                $sshConfig = Read-SSHConfig -HostAlias $server
+                $user = $sshConfig.User
+                $ip = $sshConfig.HostName
+                $sshPort = $sshConfig.Port
+                $privateKeyPath = $sshConfig.IdentityFile
+
+                $remoteRoot = "/opt/app"
+
+                Write-Host "  Modo: SOLO REPORTE (no se realizarán cambios)" -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "  ─── Configuración local ───" -ForegroundColor Cyan
+                Write-Host "  Proyecto:   $appName" -ForegroundColor White
+                Write-Host "  Versión:    $release" -ForegroundColor White
+                Write-Host "  Servidor:   $server ($ip)" -ForegroundColor White
+                Write-Host "  Proceso:    $processManager" -ForegroundColor White
+                Write-Host "  Puerto:     $port" -ForegroundColor White
+                Write-Host ""
+
+                # ─── 5. Consultar estado del servidor ────────
+                Write-Host "  ─── Estado del servidor ───" -ForegroundColor Cyan
+
+                $reportScript = @"
+#!/bin/bash
+# Versión actual (symlink current)
+if [ -L "$remoteRoot/$appName/current" ]; then
+    CURRENT=`$(readlink "$remoteRoot/$appName/current" | xargs basename)
+    echo "CURRENT:`$CURRENT"
+else
+    echo "CURRENT:none"
+fi
+
+# Release destino ya existe?
+if [ -d "$remoteRoot/$appName/releases/$release" ]; then
+    echo "RELEASE:exists"
+else
+    echo "RELEASE:new"
+fi
+
+# Estado del servicio
+if [ "$processManager" = "systemd" ]; then
+    if systemctl is-active --quiet $appName 2>/dev/null; then
+        echo "SERVICE:running"
+    elif systemctl is-enabled --quiet $appName 2>/dev/null; then
+        echo "SERVICE:stopped"
+    else
+        echo "SERVICE:not-configured"
+    fi
+else
+    if pm2 describe $appName >/dev/null 2>&1; then
+        STATUS=`$(pm2 describe $appName 2>/dev/null | grep status | head -1 | awk '{print `$4}')
+        echo "SERVICE:`$STATUS"
+    else
+        echo "SERVICE:not-configured"
+    fi
+fi
+"@
+
+                $tmpLocal = New-UnixTempFile -Content $reportScript -Prefix "psdevops_report_nodeapi_"
+                try {
+                    $remoteName = [IO.Path]::GetFileName($tmpLocal)
+                    $remotePath = "/tmp/$remoteName"
+
+                    & scp -i $privateKeyPath -P $sshPort $tmpLocal "$($user)@$($ip):$remotePath" 2>&1 | Out-Null
+                    if ($LASTEXITCODE -ne 0) { throw "Error al conectar con el servidor (scp exit: $LASTEXITCODE)" }
+
+                    $remoteCmd = "bash $remotePath ; rc=`$?; rm -f $remotePath; exit `$rc"
+                    $output = & ssh -i $privateKeyPath -p $sshPort "$($user)@$($ip)" $remoteCmd 2>&1
+                } finally {
+                    Remove-Item -LiteralPath $tmpLocal -ErrorAction SilentlyContinue
+                }
+
+                # Parsear salida
+                $currentVersion = 'desconocido'
+                $releaseStatus = 'desconocido'
+                $serviceStatus = 'desconocido'
+
+                foreach ($line in $output) {
+                    if ($line -match '^CURRENT:(.+)$') { $currentVersion = $Matches[1] }
+                    if ($line -match '^RELEASE:(.+)$') { $releaseStatus = $Matches[1] }
+                    if ($line -match '^SERVICE:(.+)$') { $serviceStatus = $Matches[1] }
+                }
+
+                if ($currentVersion -eq 'none') {
+                    Write-Host "  Current:    (primer deploy)" -ForegroundColor Yellow
+                } else {
+                    Write-Host "  Current:    $currentVersion" -ForegroundColor White
+                }
+
+                if ($releaseStatus -eq 'exists') {
+                    Write-Host "  Release:    $release ya existe (se sobreescribirá)" -ForegroundColor Yellow
+                } else {
+                    Write-Host "  Release:    $release (nueva)" -ForegroundColor Green
+                }
+
+                if ($serviceStatus -eq 'running') {
+                    Write-Host "  Servicio:   $processManager activo (se reiniciará)" -ForegroundColor White
+                } elseif ($serviceStatus -eq 'not-configured') {
+                    Write-Host "  Servicio:   se creará ($processManager)" -ForegroundColor Green
+                } else {
+                    Write-Host "  Servicio:   $serviceStatus" -ForegroundColor Yellow
+                }
+
+                # ─── 6. Acciones que realizará -Publish ──────
+                Write-Host ""
+                Write-Host "  ─── Acciones que realizará -Publish ───" -ForegroundColor Cyan
+                Write-Host "  1. Compilar TypeScript (npm ci + tsc)" -ForegroundColor White
+                Write-Host "  2. Empaquetar artefactos en tar.gz" -ForegroundColor White
+                Write-Host "  3. Subir tar.gz + .env.production a ${ip}:/tmp/" -ForegroundColor White
+                Write-Host "  4. Instalar en ${remoteRoot}/${appName}/releases/${release}/" -ForegroundColor White
+                Write-Host "  5. Actualizar symlink current → $release" -ForegroundColor White
+                Write-Host "  6. Configurar/reiniciar servicio ($processManager)" -ForegroundColor White
+                Write-Host "  7. Healthcheck en puerto $port" -ForegroundColor White
+                Write-Host ""
             }
         }
     }
