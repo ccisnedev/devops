@@ -21,7 +21,7 @@ Se debe ejecutar desde la raíz del proyecto donde existen:
 Genera los archivos de configuración (deploy.yaml y .env.production) en el directorio actual.
 Requiere que existan package.json y tsconfig.json.
 
-.PARAMETER Deploy
+.PARAMETER Publish
 Ejecuta el despliegue completo al servidor remoto.
 Lee deploy.yaml para el servidor destino y la configuración de runtime.
 Siempre sube .env.production como .env dentro del release.
@@ -32,7 +32,7 @@ Publish-NodeApi -Init
 Genera deploy.yaml y .env.production en el directorio actual del proyecto TypeScript.
 
 .EXAMPLE
-Publish-NodeApi -Deploy
+Publish-NodeApi -Publish
 
 Empaqueta, sube y despliega la API al servidor configurado en deploy.yaml.
 
@@ -48,15 +48,15 @@ Requiere:
 #>
 function Publish-NodeApi {
 
-    [CmdletBinding(DefaultParameterSetName = 'Deploy')]
+    [CmdletBinding(DefaultParameterSetName = 'Publish')]
     param(
         [Parameter(Mandatory, ParameterSetName = 'Init',
             HelpMessage = "Genera archivos de configuración (deploy.yaml y .env.production)")]
         [switch]$Init,
 
-        [Parameter(Mandatory, ParameterSetName = 'Deploy',
+        [Parameter(Mandatory, ParameterSetName = 'Publish',
             HelpMessage = "Ejecuta el despliegue completo al servidor remoto")]
-        [switch]$Deploy
+        [switch]$Publish
     )
 
     begin {
@@ -149,14 +149,14 @@ NODE_ENV=production
                 Write-Host "  Configuración creada. Próximos pasos:" -ForegroundColor Green
                 Write-Host "    1. Edite deploy.yaml → cambie 'server' por su alias SSH" -ForegroundColor DarkGray
                 Write-Host "    2. Edite .env.production → configure variables de entorno" -ForegroundColor DarkGray
-                Write-Host "    3. Ejecute: Publish-NodeApi -Deploy" -ForegroundColor DarkGray
+                Write-Host "    3. Ejecute: Publish-NodeApi -Publish" -ForegroundColor DarkGray
                 Write-Host ""
             }
 
             # ═══════════════════════════════════════════════════
-            # DEPLOY — Despliegue completo
+            # PUBLISH — Despliegue completo
             # ═══════════════════════════════════════════════════
-            'Deploy' {
+            'Publish' {
                 $cwd = (Get-Location).Path
 
                 # ─── 0. Validaciones ─────────────────────────

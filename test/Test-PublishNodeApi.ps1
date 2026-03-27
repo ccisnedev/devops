@@ -84,13 +84,13 @@ Write-TestHeader "1. Metadata del cmdlet"
 $params = (Get-Command Publish-NodeApi).Parameters
 
 Assert-True ($params.ContainsKey('Init')) "Parámetro -Init existe"
-Assert-True ($params.ContainsKey('Deploy')) "Parámetro -Deploy existe"
+Assert-True ($params.ContainsKey('Publish')) "Parámetro -Publish existe"
 
 # Verificar ParameterSets
 $paramSets = (Get-Command Publish-NodeApi).ParameterSets
 $setNames = $paramSets | ForEach-Object { $_.Name }
 Assert-True ($setNames -contains 'Init') "ParameterSet 'Init' existe"
-Assert-True ($setNames -contains 'Deploy') "ParameterSet 'Deploy' existe"
+Assert-True ($setNames -contains 'Publish') "ParameterSet 'Publish' existe"
 
 # ════════════════════════════════════════════════════════════════════
 # TEST GROUP 2: -Init en proyecto TypeScript válido
@@ -204,9 +204,9 @@ try {
 }
 
 # ════════════════════════════════════════════════════════════════════
-# TEST GROUP 6: -Deploy falla sin deploy.yaml
+# TEST GROUP 6: -Publish falla sin deploy.yaml
 # ════════════════════════════════════════════════════════════════════
-Write-TestHeader "6. -Deploy falla sin deploy.yaml"
+Write-TestHeader "6. -Publish falla sin deploy.yaml"
 
 $testNoDeploy = Join-Path $env:TEMP "psdevops_test_nodeploy_$([guid]::NewGuid().ToString().Substring(0,8))"
 New-Item -ItemType Directory -Path $testNoDeploy -Force | Out-Null
@@ -214,16 +214,16 @@ Set-Content -Path (Join-Path $testNoDeploy "package.json") -Value '{"name":"x","
 
 try {
     Push-Location $testNoDeploy
-    Assert-Throws { Publish-NodeApi -Deploy } "-Deploy lanza error sin deploy.yaml"
+    Assert-Throws { Publish-NodeApi -Publish } "-Publish lanza error sin deploy.yaml"
 } finally {
     Pop-Location
     Remove-Item -Path $testNoDeploy -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 # ════════════════════════════════════════════════════════════════════
-# TEST GROUP 7: -Deploy falla sin .env.production
+# TEST GROUP 7: -Publish falla sin .env.production
 # ════════════════════════════════════════════════════════════════════
-Write-TestHeader "7. -Deploy falla sin .env.production"
+Write-TestHeader "7. -Publish falla sin .env.production"
 
 $testNoEnv = Join-Path $env:TEMP "psdevops_test_noenv_$([guid]::NewGuid().ToString().Substring(0,8))"
 New-Item -ItemType Directory -Path $testNoEnv -Force | Out-Null
@@ -233,16 +233,16 @@ Set-Content -Path (Join-Path $testNoEnv "deploy.yaml") -Value "server: web-serve
 
 try {
     Push-Location $testNoEnv
-    Assert-Throws { Publish-NodeApi -Deploy } "-Deploy lanza error sin .env.production"
+    Assert-Throws { Publish-NodeApi -Publish } "-Publish lanza error sin .env.production"
 } finally {
     Pop-Location
     Remove-Item -Path $testNoEnv -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 # ════════════════════════════════════════════════════════════════════
-# TEST GROUP 8: -Deploy valida server no sea valor de ejemplo
+# TEST GROUP 8: -Publish valida server no sea valor de ejemplo
 # ════════════════════════════════════════════════════════════════════
-Write-TestHeader "8. -Deploy valida que server no sea el valor de ejemplo"
+Write-TestHeader "8. -Publish valida que server no sea el valor de ejemplo"
 
 $testExample = Join-Path $env:TEMP "psdevops_test_example_$([guid]::NewGuid().ToString().Substring(0,8))"
 New-Item -ItemType Directory -Path $testExample -Force | Out-Null
@@ -253,7 +253,7 @@ Set-Content -Path (Join-Path $testExample ".env.production") -Value "PORT=8080`n
 
 try {
     Push-Location $testExample
-    Assert-Throws { Publish-NodeApi -Deploy } "-Deploy lanza error con server de ejemplo 'your-ssh-alias'"
+    Assert-Throws { Publish-NodeApi -Publish } "-Publish lanza error con server de ejemplo 'your-ssh-alias'"
 } finally {
     Pop-Location
     Remove-Item -Path $testExample -Recurse -Force -ErrorAction SilentlyContinue
