@@ -10,14 +10,14 @@ Reutiliza la función `Connect-Server` para conectar al servidor remoto sin cont
 El nombre del servidor al que se desea desplegar la carpeta web. Este parámetro es obligatorio.
 
 .EXAMPLE
-Deploy-FlutterWeb -server "demo-web"
+Publish-FlutterWebLegacy -server "demo-web"
 Copia la carpeta web generada al servidor "demo-web".
 
 .NOTES
 Versión: 1.0.2
 Autor: @ccisnedev
 #>
-function Publish-FlutterWeb {
+function Publish-FlutterWebLegacy {
     param(
         [Parameter(Mandatory=$true)]
         [string]$server
