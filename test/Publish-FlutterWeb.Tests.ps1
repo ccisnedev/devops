@@ -62,3 +62,75 @@ Describe 'Step 1: Legacy renombrado y exports' {
         }
     }
 }
+
+# ═══════════════════════════════════════════════════════════════
+# STEP 2: Template deploy.yaml para Publish-FlutterWeb
+# ═══════════════════════════════════════════════════════════════
+Describe 'Step 2: Template deploy.yaml' {
+
+    BeforeAll {
+        $templateDir = Join-Path $PSScriptRoot '..\src\Resources\Publish-FlutterWeb\templates'
+        $templatePath = Join-Path $templateDir 'deploy.yaml'
+    }
+
+    Context 'Estructura de archivos' {
+
+        # El directorio de templates debe existir siguiendo la convención de Publish-NodeApi.
+        It 'existe el directorio src/Resources/Publish-FlutterWeb/templates/' {
+            $templateDir | Should -Exist
+        }
+
+        # El template deploy.yaml debe existir dentro del directorio de templates.
+        It 'existe el archivo deploy.yaml en el directorio de templates' {
+            $templatePath | Should -Exist
+        }
+    }
+
+    Context 'Contenido del template' {
+
+        BeforeAll {
+            $content = if (Test-Path $templatePath) {
+                Get-Content $templatePath -Raw | ConvertFrom-Yaml
+            } else {
+                @{}
+            }
+            $rawContent = if (Test-Path $templatePath) {
+                Get-Content $templatePath -Raw
+            } else {
+                ''
+            }
+        }
+
+        # El template debe tener la clave 'server' con un valor placeholder.
+        # Es la única forma de saber a qué servidor desplegar (alias en ~/.ssh/config).
+        It 'contiene la clave server con un valor placeholder' {
+            $content.server | Should -Not -BeNullOrEmpty
+        }
+
+        # El template debe tener la clave 'port' con un valor numérico.
+        # Es el puerto donde nginx escuchará para esta app.
+        It 'contiene la clave port con un valor numérico' {
+            $content.port | Should -BeOfType [int]
+        }
+
+        # No debe incluir name ni version — se leen de pubspec.yaml (source of truth).
+        # Esto evita duplicación y desincronización.
+        It 'no contiene la clave name (se lee de pubspec.yaml)' {
+            $content.Keys | Should -Not -Contain 'name'
+        }
+
+        It 'no contiene la clave version (se lee de pubspec.yaml)' {
+            $content.Keys | Should -Not -Contain 'version'
+        }
+
+        # El template debe indicar que fue generado por Publish-FlutterWeb -Init.
+        It 'incluye comentario indicando el generador (Publish-FlutterWeb -Init)' {
+            $rawContent | Should -Match 'Publish-FlutterWeb'
+        }
+
+        # El template debe advertir que name/version se leen de pubspec.yaml.
+        It 'incluye comentario indicando que name/version vienen de pubspec.yaml' {
+            $rawContent | Should -Match 'pubspec\.yaml'
+        }
+    }
+}
