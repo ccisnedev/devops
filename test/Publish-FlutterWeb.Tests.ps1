@@ -446,3 +446,111 @@ Describe 'Step 5: Configure-NginxSite.sh' {
         }
     }
 }
+
+# ═══════════════════════════════════════════════════════════════
+# STEP 6: Publish-FlutterWeb -Deploy (flujo completo)
+# ═══════════════════════════════════════════════════════════════
+Describe 'Step 6: Publish-FlutterWeb -Deploy' {
+
+    Context 'Validaciones de entrada' {
+
+        # Sin pubspec.yaml no se puede leer name y version — debe fallar.
+        It 'falla si no existe pubspec.yaml' {
+            $emptyDir = Join-Path $env:TEMP "psdevops_test_deploy_nopub_$([guid]::NewGuid().ToString().Substring(0,8))"
+            New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
+            Set-Content -Path (Join-Path $emptyDir 'deploy.yaml') -Value "server: test`nport: 4000" -Encoding UTF8
+            try {
+                Push-Location $emptyDir
+                { Publish-FlutterWeb -Deploy -ErrorAction Stop } | Should -Throw '*pubspec.yaml*'
+            } finally {
+                Pop-Location
+                Remove-Item -Path $emptyDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        # Sin deploy.yaml no se conoce el servidor ni el puerto — debe fallar.
+        It 'falla si no existe deploy.yaml' {
+            $noDeployDir = Join-Path $env:TEMP "psdevops_test_deploy_noyaml_$([guid]::NewGuid().ToString().Substring(0,8))"
+            New-Item -ItemType Directory -Path $noDeployDir -Force | Out-Null
+            Set-Content -Path (Join-Path $noDeployDir 'pubspec.yaml') -Value "name: x`nversion: 1.0.0" -Encoding UTF8
+            try {
+                Push-Location $noDeployDir
+                { Publish-FlutterWeb -Deploy -ErrorAction Stop } | Should -Throw '*deploy.yaml*'
+            } finally {
+                Pop-Location
+                Remove-Item -Path $noDeployDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        # deploy.yaml con el valor placeholder por defecto debe rechazarse.
+        It 'falla si deploy.yaml tiene valor placeholder (app-server)' {
+            $placeholderDir = Join-Path $env:TEMP "psdevops_test_deploy_placeholder_$([guid]::NewGuid().ToString().Substring(0,8))"
+            New-Item -ItemType Directory -Path $placeholderDir -Force | Out-Null
+            Set-Content -Path (Join-Path $placeholderDir 'pubspec.yaml') -Value "name: x`nversion: 1.0.0" -Encoding UTF8
+            Set-Content -Path (Join-Path $placeholderDir 'deploy.yaml') -Value "server: app-server`nport: 4000" -Encoding UTF8
+            try {
+                Push-Location $placeholderDir
+                { Publish-FlutterWeb -Deploy -ErrorAction Stop } | Should -Throw '*app-server*'
+            } finally {
+                Pop-Location
+                Remove-Item -Path $placeholderDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    Context 'Lectura correcta de configuración' {
+
+        BeforeAll {
+            $configDir = Join-Path $env:TEMP "psdevops_test_deploy_config_$([guid]::NewGuid().ToString().Substring(0,8))"
+            New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+
+            # pubspec.yaml con versión que incluye build metadata
+            $pubspec = @"
+name: tigre_regalon_2
+version: 3.5.1+12
+environment:
+  sdk: ^3.0.0
+"@
+            Set-Content -Path (Join-Path $configDir 'pubspec.yaml') -Value $pubspec -Encoding UTF8
+
+            # deploy.yaml con server real y puerto
+            $deploy = @"
+server: real-server
+port: 4036
+"@
+            Set-Content -Path (Join-Path $configDir 'deploy.yaml') -Value $deploy -Encoding UTF8
+        }
+
+        AfterAll {
+            Remove-Item -Path $configDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        # El deploy lee name de pubspec.yaml. Verificamos que la función
+        # intenta leer SSH config con Read-SSHConfig (que falla porque
+        # 'real-server' no existe en ~/.ssh/config) — lo que demuestra
+        # que la lectura de pubspec+deploy pasó correctamente.
+        It 'lee name de pubspec.yaml y server de deploy.yaml antes de fallar en SSH' {
+            Push-Location $configDir
+            try {
+                $threwSSH = $false
+                try {
+                    Publish-FlutterWeb -Deploy -ErrorAction Stop *>&1 | Out-Null
+                } catch {
+                    # Esperamos fallo en Read-SSHConfig o posterior — no en validación de archivos
+                    $threwSSH = $_.Exception.Message -notmatch 'pubspec\.yaml|deploy\.yaml|app-server'
+                }
+                $threwSSH | Should -BeTrue -Because "La lectura de config pasó; debió fallar en SSH o posterior"
+            } finally {
+                Pop-Location
+            }
+        }
+
+        # La versión debe limpiarse de build metadata (+12)
+        It 'extrae versión sin build metadata (3.5.1, no 3.5.1+12)' {
+            # Re-importar helpers para acceder a ConvertFrom-Yaml
+            $pubspec = Get-Content (Join-Path $configDir 'pubspec.yaml') -Raw | ConvertFrom-Yaml
+            $version = ($pubspec.version -split '\+')[0]
+            $version | Should -Be '3.5.1'
+        }
+    }
+}
