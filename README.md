@@ -1,7 +1,7 @@
 # PSDevOps 🚀
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue.svg)](https://github.com/PowerShell/PowerShell)
-[![Version](https://img.shields.io/badge/version-1.1.0-green.svg)](./PSDevOps.psd1)
+[![Version](https://img.shields.io/badge/version-2.0.0-green.svg)](./PSDevOps.psd1)
 
 Módulo de PowerShell con arquitectura modular para automatizar operaciones DevOps: desarrollo, testing, CI/CD y despliegue.
 
@@ -34,11 +34,11 @@ PSDevOps/
 
 | Cmdlet | Descripción | Documentación |
 |--------|-------------|---------------|
-| `New-Issue` | Crear issues en GitHub desde markdown | [Docs](src/Resources/New-Issue/README.md) |
 | `Invoke-FlutterBuild` | Build de aplicaciones Flutter | `Get-Help Invoke-FlutterBuild` |
-| `Publish-FlutterWeb` | Deploy de Flutter Web | `Get-Help Publish-FlutterWeb` |
-| `Publish-ShelfApi` | Deploy de APIs Dart Shelf | `Get-Help Publish-ShelfApi` |
-| `Publish-Web` | Deploy de apps web estáticas | `Get-Help Publish-Web` |
+| `Invoke-SqlPackage` | Gestión declarativa de BD SQL Server | `Get-Help Invoke-SqlPackage` |
+| `Publish-FlutterWeb` | Compilar y desplegar Flutter Web (`-Init`, `-Publish`, `-DeployReport`) | `Get-Help Publish-FlutterWeb` |
+| `Publish-NodeApi` | Desplegar API Node.js/TypeScript (`-Init`, `-Publish`, `-DeployReport`) | `Get-Help Publish-NodeApi` |
+| `New-Issue` | Crear issues en GitHub desde markdown | [Docs](src/Resources/New-Issue/README.md) |
 | `Connect-Server` | Conexión SSH a servidores | `Get-Help Connect-Server` |
 | `Copy-FromServer` | Copiar archivos remotos | `Get-Help Copy-FromServer` |
 | `Get-SQLiteDB` | Operaciones SQLite | `Get-Help Get-SQLiteDB` |
