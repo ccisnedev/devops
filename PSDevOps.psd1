@@ -22,7 +22,6 @@
         , 'Connect-Server'
         , 'Publish-FlutterWebLegacy'
         , 'Publish-ShelfApi'
-        , 'Publish-Web'
         , 'Get-SQLiteDB'
         , 'Merge-DevToMain'
         , 'Export-FileTree'
