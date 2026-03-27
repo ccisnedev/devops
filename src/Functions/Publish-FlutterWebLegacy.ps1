@@ -17,7 +17,7 @@ Copia la carpeta web generada al servidor "isabel".
 Versión: 1.0.2
 Autor: @ccisnedev
 #>
-function Publish-FlutterWeb {
+function Publish-FlutterWebLegacy {
     param(
         [Parameter(Mandatory=$true)]
         [string]$server
