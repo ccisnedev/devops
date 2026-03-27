@@ -606,3 +606,99 @@ Describe 'Step 7: Eliminar Publish-Web' {
         }
     }
 }
+
+# ═══════════════════════════════════════════════════════════════
+# STEP 9: Publish-FlutterWeb -DeployReport (reporte pre-deploy)
+# ═══════════════════════════════════════════════════════════════
+Describe 'Step 9: Publish-FlutterWeb -DeployReport' {
+
+    Context 'ParameterSet existe' {
+
+        # -DeployReport debe ser un ParameterSet válido junto a Init y Publish.
+        It 'tiene ParameterSet DeployReport' {
+            $cmd = Get-Command Publish-FlutterWeb
+            $sets = $cmd.ParameterSets | Select-Object -ExpandProperty Name
+            $sets | Should -Contain 'DeployReport'
+        }
+
+        # El default sigue siendo Publish (no cambia).
+        It 'DefaultParameterSetName sigue siendo Publish' {
+            $cmd = Get-Command Publish-FlutterWeb
+            $cmd.DefaultParameterSet | Should -Be 'Publish'
+        }
+    }
+
+    Context 'Validaciones de entrada (mismas que -Publish)' {
+
+        # Sin pubspec.yaml debe fallar igual que -Publish.
+        It 'falla si no existe pubspec.yaml' {
+            $emptyDir = Join-Path $env:TEMP "psdevops_test_dr_nopub_$([guid]::NewGuid().ToString().Substring(0,8))"
+            New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
+            Set-Content -Path (Join-Path $emptyDir 'deploy.yaml') -Value "server: test`nport: 4000" -Encoding UTF8
+            try {
+                Push-Location $emptyDir
+                { Publish-FlutterWeb -DeployReport -ErrorAction Stop } | Should -Throw '*pubspec.yaml*'
+            } finally {
+                Pop-Location
+                Remove-Item -Path $emptyDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        # Sin deploy.yaml debe fallar.
+        It 'falla si no existe deploy.yaml' {
+            $noDeployDir = Join-Path $env:TEMP "psdevops_test_dr_noyaml_$([guid]::NewGuid().ToString().Substring(0,8))"
+            New-Item -ItemType Directory -Path $noDeployDir -Force | Out-Null
+            Set-Content -Path (Join-Path $noDeployDir 'pubspec.yaml') -Value "name: x`nversion: 1.0.0" -Encoding UTF8
+            try {
+                Push-Location $noDeployDir
+                { Publish-FlutterWeb -DeployReport -ErrorAction Stop } | Should -Throw '*deploy.yaml*'
+            } finally {
+                Pop-Location
+                Remove-Item -Path $noDeployDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        # Placeholder server debe rechazarse.
+        It 'falla si deploy.yaml tiene valor placeholder' {
+            $placeholderDir = Join-Path $env:TEMP "psdevops_test_dr_ph_$([guid]::NewGuid().ToString().Substring(0,8))"
+            New-Item -ItemType Directory -Path $placeholderDir -Force | Out-Null
+            Set-Content -Path (Join-Path $placeholderDir 'pubspec.yaml') -Value "name: x`nversion: 1.0.0" -Encoding UTF8
+            Set-Content -Path (Join-Path $placeholderDir 'deploy.yaml') -Value "server: your-ssh-alias`nport: 4000" -Encoding UTF8
+            try {
+                Push-Location $placeholderDir
+                { Publish-FlutterWeb -DeployReport -ErrorAction Stop } | Should -Throw '*your-ssh-alias*'
+            } finally {
+                Pop-Location
+                Remove-Item -Path $placeholderDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    Context 'Contenido del reporte (requiere servidor real)' {
+
+        # Este test verifica que -DeployReport NO compila ni despliega,
+        # solamente consulta el servidor y muestra información.
+        # Usa el alias 'real-server' que no existe en SSH config,
+        # así falla en Read-SSHConfig — demostrando que NO intenta compilar antes.
+        It 'no invoca Invoke-FlutterBuild (falla en SSH antes de compilar)' {
+            $reportDir = Join-Path $env:TEMP "psdevops_test_dr_nobuild_$([guid]::NewGuid().ToString().Substring(0,8))"
+            New-Item -ItemType Directory -Path $reportDir -Force | Out-Null
+            Set-Content -Path (Join-Path $reportDir 'pubspec.yaml') -Value "name: testapp`nversion: 2.0.0" -Encoding UTF8
+            Set-Content -Path (Join-Path $reportDir 'deploy.yaml') -Value "server: real-server`nport: 4050" -Encoding UTF8
+            try {
+                Push-Location $reportDir
+                $threwSSH = $false
+                try {
+                    Publish-FlutterWeb -DeployReport -ErrorAction Stop *>&1 | Out-Null
+                } catch {
+                    # Debe fallar en SSH, NO en "flutter build" o similar
+                    $threwSSH = $_.Exception.Message -notmatch 'pubspec\.yaml|deploy\.yaml|your-ssh-alias|flutter|build'
+                }
+                $threwSSH | Should -BeTrue -Because "Debe fallar en SSH, no en compilación"
+            } finally {
+                Pop-Location
+                Remove-Item -Path $reportDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
