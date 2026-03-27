@@ -246,3 +246,101 @@ environment:
         }
     }
 }
+
+# ═══════════════════════════════════════════════════════════════
+# STEP 4: Script bash Install-FlutterWeb.sh
+# ═══════════════════════════════════════════════════════════════
+Describe 'Step 4: Install-FlutterWeb.sh' {
+
+    BeforeAll {
+        $scriptPath = Join-Path $PSScriptRoot '..\src\Private\scripts\Install-FlutterWeb.sh'
+    }
+
+    Context 'Archivo existe y estructura básica' {
+
+        # El script debe existir en la ruta convencional de scripts bash.
+        It 'existe en src/Private/scripts/' {
+            $scriptPath | Should -Exist
+        }
+
+        # Debe iniciar con shebang bash y set -e para fallo inmediato.
+        It 'tiene shebang bash y set -e' {
+            $content = Get-Content $scriptPath -Raw
+            $content | Should -Match '^#!/bin/bash'
+            $content | Should -Match 'set -e'
+        }
+    }
+
+    Context 'Placeholders para Get-BashScript' {
+
+        BeforeAll {
+            $content = if (Test-Path $scriptPath) { Get-Content $scriptPath -Raw } else { '' }
+        }
+
+        # __NAME__ se reemplaza con el nombre del proyecto (de pubspec.yaml).
+        It 'contiene placeholder __NAME__' {
+            $content | Should -Match '__NAME__'
+        }
+
+        # __VERSION__ se reemplaza con la versión (de pubspec.yaml, sin build metadata).
+        It 'contiene placeholder __VERSION__' {
+            $content | Should -Match '__VERSION__'
+        }
+
+        # __WEB_ROOT__ se reemplaza con la raíz web (ej: /var/www).
+        It 'contiene placeholder __WEB_ROOT__' {
+            $content | Should -Match '__WEB_ROOT__'
+        }
+    }
+
+    Context 'Lógica de releases y symlink' {
+
+        BeforeAll {
+            $content = if (Test-Path $scriptPath) { Get-Content $scriptPath -Raw } else { '' }
+        }
+
+        # Debe crear el directorio de releases versionado.
+        It 'crea directorio de release versionado' {
+            $content | Should -Match 'releases/v'
+        }
+
+        # Debe crear/actualizar el symlink current de forma atómica (ln -sfn).
+        It 'actualiza symlink current con ln -sfn' {
+            $content | Should -Match 'ln -sfn'
+        }
+
+        # Los archivos web deben pertenecer a www-data (usuario nginx).
+        It 'ajusta permisos a www-data' {
+            $content | Should -Match 'www-data'
+        }
+
+        # Debe verificar que index.html existe tras la extracción.
+        It 'verifica que index.html existe en el release' {
+            $content | Should -Match 'index\.html'
+        }
+    }
+
+    Context 'Get-BashScript puede procesar el script' {
+
+        BeforeAll {
+            # Get-BashScript es función privada — cargarla directamente
+            . "$PSScriptRoot\..\src\Private\PublishHelpers.ps1"
+        }
+
+        # Get-BashScript debe poder leer el archivo y reemplazar todos los placeholders
+        # sin errores. Esto valida que el script es compatible con el helper.
+        It 'Get-BashScript reemplaza todos los placeholders correctamente' {
+            $result = Get-BashScript -ScriptName 'Install-FlutterWeb.sh' -Placeholders @{
+                '__NAME__'     = 'test_app'
+                '__VERSION__'  = '1.0.0'
+                '__WEB_ROOT__' = '/var/www'
+            }
+            $result | Should -Not -BeNullOrEmpty
+            $result | Should -Not -Match '__NAME__'
+            $result | Should -Not -Match '__VERSION__'
+            $result | Should -Not -Match '__WEB_ROOT__'
+            $result | Should -Match 'test_app'
+            $result | Should -Match '/var/www'
+        }
+    }
+}
