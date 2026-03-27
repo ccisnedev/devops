@@ -4,7 +4,7 @@
 # NO incluya secretos en este archivo — este archivo SÍ se versiona.
 
 # ─── Servidor ─────────────────────────────────────────
-server: api-server            # alias en ~/.ssh/config
+server: your-ssh-alias        # alias en ~/.ssh/config
 
 # ─── Runtime ──────────────────────────────────────────
 runtime:
