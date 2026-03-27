@@ -16,6 +16,7 @@
         'Invoke-FlutterBuild'
         , 'Invoke-SqlPackage'
         , 'Publish-NodeApi'
+        , 'Publish-FlutterWeb'
         
         # cmdlets legados (a eliminar en futuras versiones)
         , 'Connect-Server'

@@ -39,10 +39,12 @@ Describe 'Step 1: Legacy renombrado y exports' {
     Context 'Archivo legacy antiguo eliminado' {
 
         # El renombrado debe ser un rename, no una copia.
-        # Si ambos coexisten, PSDevOps.psm1 cargaría dos funciones con firmas distintas.
-        It 'Publish-FlutterWeb.ps1 ya no existe en src/Functions/' {
-            $oldFile = Join-Path $PSScriptRoot '..\src\Functions\Publish-FlutterWeb.ps1'
-            $oldFile | Should -Not -Exist
+        # Ahora Publish-FlutterWeb.ps1 existe como la función nueva (Step 3),
+        # pero su contenido debe ser distinto al legacy (debe tener ParameterSets).
+        It 'Publish-FlutterWeb.ps1 contiene la función nueva, no la legacy' {
+            $newFile = Join-Path $PSScriptRoot '..\src\Functions\Publish-FlutterWeb.ps1'
+            $content = Get-Content $newFile -Raw
+            $content | Should -Match 'ParameterSetName'
         }
     }
 
@@ -54,11 +56,10 @@ Describe 'Step 1: Legacy renombrado y exports' {
             $manifest.ExportedFunctions.Keys | Should -Contain 'Publish-FlutterWebLegacy'
         }
 
-        # En Step 1 la nueva función aún no existe.
-        # Este test se invalidará en Step 3 cuando se cree Publish-FlutterWeb.
-        It 'Publish-FlutterWeb (nueva) aún no existe' {
-            $cmd = Get-Command Publish-FlutterWeb -ErrorAction SilentlyContinue
-            $cmd | Should -BeNullOrEmpty
+        # A partir de Step 3, Publish-FlutterWeb existe como función nueva.
+        It 'exporta Publish-FlutterWeb (función nueva)' {
+            $manifest = Test-ModuleManifest "$PSScriptRoot\..\PSDevOps.psd1"
+            $manifest.ExportedFunctions.Keys | Should -Contain 'Publish-FlutterWeb'
         }
     }
 }
@@ -131,6 +132,117 @@ Describe 'Step 2: Template deploy.yaml' {
         # El template debe advertir que name/version se leen de pubspec.yaml.
         It 'incluye comentario indicando que name/version vienen de pubspec.yaml' {
             $rawContent | Should -Match 'pubspec\.yaml'
+        }
+    }
+}
+
+# ═══════════════════════════════════════════════════════════════
+# STEP 3: Publish-FlutterWeb -Init
+# ═══════════════════════════════════════════════════════════════
+Describe 'Step 3: Publish-FlutterWeb -Init' {
+
+    BeforeAll {
+        # Directorio temporal que simula un proyecto Flutter
+        $testDir = Join-Path $env:TEMP "psdevops_test_flutter_$([guid]::NewGuid().ToString().Substring(0,8))"
+        New-Item -ItemType Directory -Path $testDir -Force | Out-Null
+
+        # pubspec.yaml mínimo de un proyecto Flutter
+        $pubspec = @"
+name: test_app
+description: A test Flutter app
+version: 2.1.0+5
+
+environment:
+  sdk: ^3.0.0
+"@
+        Set-Content -Path (Join-Path $testDir 'pubspec.yaml') -Value $pubspec -Encoding UTF8
+    }
+
+    AfterAll {
+        Remove-Item -Path $testDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    Context 'Función disponible y metadata' {
+
+        # Publish-FlutterWeb debe existir como función exportada con los ParameterSets correctos.
+        It 'está disponible como función exportada' {
+            $cmd = Get-Command Publish-FlutterWeb -ErrorAction SilentlyContinue
+            $cmd | Should -Not -BeNullOrEmpty
+            $cmd.CommandType | Should -Be 'Function'
+        }
+
+        # Debe tener ParameterSets Init y Deploy, igual que Publish-NodeApi.
+        It 'tiene ParameterSets Init y Deploy' {
+            $cmd = Get-Command Publish-FlutterWeb
+            $sets = $cmd.ParameterSets | Select-Object -ExpandProperty Name
+            $sets | Should -Contain 'Init'
+            $sets | Should -Contain 'Deploy'
+        }
+    }
+
+    Context 'Ejecución exitosa en proyecto Flutter' {
+
+        BeforeAll {
+            Push-Location $testDir
+            try {
+                # Ejecutar -Init y capturar resultado sin errores
+                $script:initError = $null
+                Publish-FlutterWeb -Init -ErrorAction Stop 2>$null
+            } catch {
+                $script:initError = $_
+            }
+        }
+
+        AfterAll {
+            Pop-Location
+        }
+
+        # -Init no debe lanzar excepción cuando pubspec.yaml existe y deploy.yaml no existe.
+        It 'no lanza excepción cuando pubspec.yaml existe' {
+            $script:initError | Should -BeNullOrEmpty
+        }
+
+        # Debe crear deploy.yaml en el directorio actual del proyecto.
+        It 'crea deploy.yaml en el directorio del proyecto' {
+            Join-Path $testDir 'deploy.yaml' | Should -Exist
+        }
+
+        # El deploy.yaml creado debe tener las claves server y port (copiado del template).
+        It 'deploy.yaml generado contiene server y port' {
+            $content = Get-Content (Join-Path $testDir 'deploy.yaml') -Raw | ConvertFrom-Yaml
+            $content.server | Should -Not -BeNullOrEmpty
+            $content.port | Should -BeOfType [int]
+        }
+    }
+
+    Context 'Validaciones de error' {
+
+        # Sin pubspec.yaml no es un proyecto Flutter — debe fallar con error claro.
+        It 'falla si no existe pubspec.yaml' {
+            $emptyDir = Join-Path $env:TEMP "psdevops_test_empty_$([guid]::NewGuid().ToString().Substring(0,8))"
+            New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
+            try {
+                Push-Location $emptyDir
+                { Publish-FlutterWeb -Init -ErrorAction Stop } | Should -Throw '*pubspec.yaml*'
+            } finally {
+                Pop-Location
+                Remove-Item -Path $emptyDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        # Si deploy.yaml ya existe, -Init no debe sobreescribirlo — protege config existente.
+        It 'falla si deploy.yaml ya existe' {
+            $dupDir = Join-Path $env:TEMP "psdevops_test_dup_$([guid]::NewGuid().ToString().Substring(0,8))"
+            New-Item -ItemType Directory -Path $dupDir -Force | Out-Null
+            Set-Content -Path (Join-Path $dupDir 'pubspec.yaml') -Value "name: dup_app`nversion: 1.0.0" -Encoding UTF8
+            Set-Content -Path (Join-Path $dupDir 'deploy.yaml') -Value "server: x" -Encoding UTF8
+            try {
+                Push-Location $dupDir
+                { Publish-FlutterWeb -Init -ErrorAction Stop } | Should -Throw '*deploy.yaml*'
+            } finally {
+                Pop-Location
+                Remove-Item -Path $dupDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 }
