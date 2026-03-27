@@ -215,8 +215,8 @@ NODE_ENV=production
                 if (-not $server) {
                     throw "No se encontró 'server:' en deploy.yaml."
                 }
-                if ($server -eq 'api-server') {
-                    throw "deploy.yaml contiene el valor de ejemplo 'api-server'. Cambie 'server' por el alias SSH real de su servidor."
+                if ($server -eq 'your-ssh-alias') {
+                    throw "deploy.yaml contiene el valor de ejemplo 'your-ssh-alias'. Cambie 'server' por el alias SSH real de su servidor."
                 }
                 if ($processManager -notin @('systemd', 'pm2')) {
                     throw "Process manager '$processManager' no soportado. Use 'systemd' o 'pm2'."

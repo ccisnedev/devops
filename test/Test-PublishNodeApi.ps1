@@ -248,12 +248,12 @@ $testExample = Join-Path $env:TEMP "psdevops_test_example_$([guid]::NewGuid().To
 New-Item -ItemType Directory -Path $testExample -Force | Out-Null
 Set-Content -Path (Join-Path $testExample "package.json") -Value '{"name":"x","version":"1.0.0"}' -Encoding UTF8
 Set-Content -Path (Join-Path $testExample "tsconfig.json") -Value '{}' -Encoding UTF8
-Set-Content -Path (Join-Path $testExample "deploy.yaml") -Value "server: api-server" -Encoding UTF8
+Set-Content -Path (Join-Path $testExample "deploy.yaml") -Value "server: your-ssh-alias" -Encoding UTF8
 Set-Content -Path (Join-Path $testExample ".env.production") -Value "PORT=8080`nNODE_ENV=production" -Encoding UTF8
 
 try {
     Push-Location $testExample
-    Assert-Throws { Publish-NodeApi -Deploy } "-Deploy lanza error con server de ejemplo 'api-server'"
+    Assert-Throws { Publish-NodeApi -Deploy } "-Deploy lanza error con server de ejemplo 'your-ssh-alias'"
 } finally {
     Pop-Location
     Remove-Item -Path $testExample -Recurse -Force -ErrorAction SilentlyContinue
