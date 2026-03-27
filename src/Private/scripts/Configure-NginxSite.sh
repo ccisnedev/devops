@@ -23,7 +23,14 @@ if [ -f "$SITES_AVAILABLE" ]; then
     exit 0
 fi
 
-# ─── 2. Crear configuración ─────────────────────────────
+# ─── 2. Verificar que el puerto esté libre ──────────────
+if ss -tlnH sport = :$PORT | grep -q .; then
+    echo "ERROR: El puerto $PORT ya está en uso:" >&2
+    ss -tlnp sport = :$PORT >&2
+    exit 1
+fi
+
+# ─── 3. Crear configuración ─────────────────────────────
 echo "Creando configuración nginx: $SITES_AVAILABLE"
 
 sudo tee "$SITES_AVAILABLE" > /dev/null <<EOF

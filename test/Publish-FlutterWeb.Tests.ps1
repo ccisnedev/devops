@@ -425,6 +425,13 @@ Describe 'Step 5: Configure-NginxSite.sh' {
         It 'recarga nginx con systemctl reload' {
             $content | Should -Match 'systemctl reload nginx'
         }
+
+        # Antes de crear la config, debe verificar que el puerto no esté en uso
+        # por otro proceso. Si está ocupado, el reload de nginx fallaría con
+        # "address already in use". Mejor detectarlo con un mensaje claro.
+        It 'verifica que el puerto esté libre antes de crear config (ss)' {
+            $content | Should -Match 'ss.*sport.*__PORT__\b|ss.*sport.*\$PORT\b|ss.*sport.*\$\{?PORT\}?'
+        }
     }
 
     Context 'Get-BashScript puede procesar el script' {
