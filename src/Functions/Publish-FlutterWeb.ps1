@@ -175,11 +175,14 @@ function Publish-FlutterWeb {
                 $remoteZipPath = "/tmp/$zipFileName"
 
                 # ─── 5. Build Flutter Web ────────────────────
+                $webBuildFolder = "release/app_${appName}_v${appVersion}_web"
+                if (Test-Path $webBuildFolder) {
+                    Write-Host "  Limpiando build anterior: $webBuildFolder" -ForegroundColor Yellow
+                    Remove-Item -Recurse -Force $webBuildFolder
+                }
+
                 Write-Host "  Compilando Flutter Web..." -ForegroundColor Cyan
                 Invoke-FlutterBuild -Web
-
-                # Localizar el build generado
-                $webBuildFolder = "release/app_${appName}_v${appVersion}_web"
                 $webBuildPath = Join-Path $cwd $webBuildFolder
 
                 if (-not (Test-Path (Join-Path $webBuildPath "index.html"))) {
