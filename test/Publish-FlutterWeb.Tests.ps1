@@ -344,3 +344,105 @@ Describe 'Step 4: Install-FlutterWeb.sh' {
         }
     }
 }
+
+# ═══════════════════════════════════════════════════════════════
+# STEP 5: Script bash Configure-NginxSite.sh
+# ═══════════════════════════════════════════════════════════════
+Describe 'Step 5: Configure-NginxSite.sh' {
+
+    BeforeAll {
+        $scriptPath = Join-Path $PSScriptRoot '..\src\Private\scripts\Configure-NginxSite.sh'
+    }
+
+    Context 'Archivo existe y estructura básica' {
+
+        It 'existe en src/Private/scripts/' {
+            $scriptPath | Should -Exist
+        }
+
+        It 'tiene shebang bash y set -e' {
+            $content = Get-Content $scriptPath -Raw
+            $content | Should -Match '^#!/bin/bash'
+            $content | Should -Match 'set -e'
+        }
+    }
+
+    Context 'Placeholders para Get-BashScript' {
+
+        BeforeAll {
+            $content = if (Test-Path $scriptPath) { Get-Content $scriptPath -Raw } else { '' }
+        }
+
+        # __NAME__ determina el nombre del archivo en sites-available y el root.
+        It 'contiene placeholder __NAME__' {
+            $content | Should -Match '__NAME__'
+        }
+
+        # __PORT__ es el puerto donde nginx escuchará para esta app.
+        It 'contiene placeholder __PORT__' {
+            $content | Should -Match '__PORT__'
+        }
+    }
+
+    Context 'Lógica de nginx' {
+
+        BeforeAll {
+            $content = if (Test-Path $scriptPath) { Get-Content $scriptPath -Raw } else { '' }
+        }
+
+        # Debe verificar si ya existe config en sites-available antes de crear.
+        It 'verifica si config ya existe en sites-available' {
+            $content | Should -Match 'sites-available'
+        }
+
+        # La config nginx debe usar listen <port> (no el default 80).
+        It 'genera config con listen en el puerto especificado' {
+            $content | Should -Match 'listen'
+        }
+
+        # El root debe apuntar al symlink current, no directamente a releases.
+        It 'apunta root a /current (symlink)' {
+            $content | Should -Match 'current'
+        }
+
+        # Debe usar try_files con fallback a index.html (SPA Flutter).
+        It 'usa try_files con fallback a index.html' {
+            $content | Should -Match 'try_files'
+            $content | Should -Match 'index\.html'
+        }
+
+        # Debe crear symlink en sites-enabled.
+        It 'crea symlink en sites-enabled' {
+            $content | Should -Match 'sites-enabled'
+        }
+
+        # Debe validar con nginx -t antes de recargar.
+        It 'valida config con nginx -t' {
+            $content | Should -Match 'nginx -t'
+        }
+
+        # Debe recargar nginx solo si la validación pasa.
+        It 'recarga nginx con systemctl reload' {
+            $content | Should -Match 'systemctl reload nginx'
+        }
+    }
+
+    Context 'Get-BashScript puede procesar el script' {
+
+        BeforeAll {
+            . "$PSScriptRoot\..\src\Private\PublishHelpers.ps1"
+        }
+
+        It 'reemplaza todos los placeholders correctamente' {
+            $result = Get-BashScript -ScriptName 'Configure-NginxSite.sh' -Placeholders @{
+                '__NAME__' = 'test_app'
+                '__PORT__' = '4036'
+            }
+            $result | Should -Not -BeNullOrEmpty
+            $result | Should -Not -Match '__NAME__'
+            $result | Should -Not -Match '__PORT__'
+            $result | Should -Match 'test_app'
+            $result | Should -Match '4036'
+        }
+    }
+}
