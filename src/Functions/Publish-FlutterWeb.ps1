@@ -18,7 +18,7 @@ Se debe ejecutar desde la raíz del proyecto Flutter donde existen:
 Genera el archivo deploy.yaml en el directorio actual.
 Requiere que exista pubspec.yaml.
 
-.PARAMETER Deploy
+.PARAMETER Publish
 Ejecuta el despliegue completo al servidor remoto.
 Lee deploy.yaml para el servidor destino y el puerto nginx.
 
@@ -28,7 +28,7 @@ Publish-FlutterWeb -Init
 Genera deploy.yaml en el directorio actual del proyecto Flutter.
 
 .EXAMPLE
-Publish-FlutterWeb -Deploy
+Publish-FlutterWeb -Publish
 
 Compila, empaqueta, sube y despliega la app Flutter Web al servidor configurado en deploy.yaml.
 
@@ -43,15 +43,15 @@ Requiere:
 #>
 function Publish-FlutterWeb {
 
-    [CmdletBinding(DefaultParameterSetName = 'Deploy')]
+    [CmdletBinding(DefaultParameterSetName = 'Publish')]
     param(
         [Parameter(Mandatory, ParameterSetName = 'Init',
             HelpMessage = "Genera archivo de configuración (deploy.yaml)")]
         [switch]$Init,
 
-        [Parameter(Mandatory, ParameterSetName = 'Deploy',
+        [Parameter(Mandatory, ParameterSetName = 'Publish',
             HelpMessage = "Ejecuta el despliegue completo al servidor remoto")]
-        [switch]$Deploy
+        [switch]$Publish
     )
 
     begin {
@@ -108,14 +108,14 @@ function Publish-FlutterWeb {
                 Write-Host "  Configuración creada. Próximos pasos:" -ForegroundColor Green
                 Write-Host "    1. Edite deploy.yaml → cambie 'server' por su alias SSH" -ForegroundColor DarkGray
                 Write-Host "    2. Edite deploy.yaml → cambie 'port' por el puerto nginx deseado" -ForegroundColor DarkGray
-                Write-Host "    3. Ejecute: Publish-FlutterWeb -Deploy" -ForegroundColor DarkGray
+                Write-Host "    3. Ejecute: Publish-FlutterWeb -Publish" -ForegroundColor DarkGray
                 Write-Host ""
             }
 
             # ═══════════════════════════════════════════════════
-            # DEPLOY — Despliegue completo
+            # PUBLISH — Despliegue completo
             # ═══════════════════════════════════════════════════
-            'Deploy' {
+            'Publish' {
                 $cwd = (Get-Location).Path
 
                 # ─── 0. Validaciones ─────────────────────────

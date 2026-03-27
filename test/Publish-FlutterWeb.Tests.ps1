@@ -171,12 +171,12 @@ environment:
             $cmd.CommandType | Should -Be 'Function'
         }
 
-        # Debe tener ParameterSets Init y Deploy, igual que Publish-NodeApi.
-        It 'tiene ParameterSets Init y Deploy' {
+        # Debe tener ParameterSets Init y Publish, igual que Publish-NodeApi.
+        It 'tiene ParameterSets Init y Publish' {
             $cmd = Get-Command Publish-FlutterWeb
             $sets = $cmd.ParameterSets | Select-Object -ExpandProperty Name
             $sets | Should -Contain 'Init'
-            $sets | Should -Contain 'Deploy'
+            $sets | Should -Contain 'Publish'
         }
     }
 
@@ -455,9 +455,9 @@ Describe 'Step 5: Configure-NginxSite.sh' {
 }
 
 # ═══════════════════════════════════════════════════════════════
-# STEP 6: Publish-FlutterWeb -Deploy (flujo completo)
+# STEP 6: Publish-FlutterWeb -Publish (flujo completo)
 # ═══════════════════════════════════════════════════════════════
-Describe 'Step 6: Publish-FlutterWeb -Deploy' {
+Describe 'Step 6: Publish-FlutterWeb -Publish' {
 
     Context 'Validaciones de entrada' {
 
@@ -468,7 +468,7 @@ Describe 'Step 6: Publish-FlutterWeb -Deploy' {
             Set-Content -Path (Join-Path $emptyDir 'deploy.yaml') -Value "server: test`nport: 4000" -Encoding UTF8
             try {
                 Push-Location $emptyDir
-                { Publish-FlutterWeb -Deploy -ErrorAction Stop } | Should -Throw '*pubspec.yaml*'
+                { Publish-FlutterWeb -Publish -ErrorAction Stop } | Should -Throw '*pubspec.yaml*'
             } finally {
                 Pop-Location
                 Remove-Item -Path $emptyDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -482,7 +482,7 @@ Describe 'Step 6: Publish-FlutterWeb -Deploy' {
             Set-Content -Path (Join-Path $noDeployDir 'pubspec.yaml') -Value "name: x`nversion: 1.0.0" -Encoding UTF8
             try {
                 Push-Location $noDeployDir
-                { Publish-FlutterWeb -Deploy -ErrorAction Stop } | Should -Throw '*deploy.yaml*'
+                { Publish-FlutterWeb -Publish -ErrorAction Stop } | Should -Throw '*deploy.yaml*'
             } finally {
                 Pop-Location
                 Remove-Item -Path $noDeployDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -497,7 +497,7 @@ Describe 'Step 6: Publish-FlutterWeb -Deploy' {
             Set-Content -Path (Join-Path $placeholderDir 'deploy.yaml') -Value "server: your-ssh-alias`nport: 4000" -Encoding UTF8
             try {
                 Push-Location $placeholderDir
-                { Publish-FlutterWeb -Deploy -ErrorAction Stop } | Should -Throw '*your-ssh-alias*'
+                { Publish-FlutterWeb -Publish -ErrorAction Stop } | Should -Throw '*your-ssh-alias*'
             } finally {
                 Pop-Location
                 Remove-Item -Path $placeholderDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -541,7 +541,7 @@ port: 4036
             try {
                 $threwSSH = $false
                 try {
-                    Publish-FlutterWeb -Deploy -ErrorAction Stop *>&1 | Out-Null
+                    Publish-FlutterWeb -Publish -ErrorAction Stop *>&1 | Out-Null
                 } catch {
                     # Esperamos fallo en Read-SSHConfig o posterior — no en validación de archivos
                     $threwSSH = $_.Exception.Message -notmatch 'pubspec\.yaml|deploy\.yaml|app-server'
@@ -570,7 +570,7 @@ Describe 'Step 7: Eliminar Publish-Web' {
     Context 'Archivo fuente eliminado' {
 
         # Publish-Web.ps1 modificaba /etc/nginx/sites-available/default (mala práctica).
-        # Fue reemplazado por Publish-FlutterWeb -Deploy con config nginx por puerto.
+        # Fue reemplazado por Publish-FlutterWeb -Publish con config nginx por puerto.
         It 'Publish-Web.ps1 ya no existe en src/Functions/' {
             $webFile = Join-Path $PSScriptRoot '..\src\Functions\Publish-Web.ps1'
             $webFile | Should -Not -Exist
