@@ -26,10 +26,19 @@ Ejecuta el despliegue completo al servidor remoto.
 Lee deploy.yaml para el servidor destino y la configuración de runtime.
 Siempre sube .env.production como .env dentro del release.
 
+.PARAMETER DeployReport
+Muestra las acciones que realizará -Publish sin ejecutarlas.
+Consulta el servidor para mostrar: versión actual, si la release existe, estado del servicio.
+
 .EXAMPLE
 Publish-NodeApi -Init
 
 Genera deploy.yaml y .env.production en el directorio actual del proyecto TypeScript.
+
+.EXAMPLE
+Publish-NodeApi -DeployReport
+
+Muestra un reporte de lo que hará -Publish sin realizar cambios.
 
 .EXAMPLE
 Publish-NodeApi -Publish
@@ -37,7 +46,7 @@ Publish-NodeApi -Publish
 Empaqueta, sube y despliega la API al servidor configurado en deploy.yaml.
 
 .NOTES
-Versión: 1.0.0
+Versión: 2.0.0
 Autor: @ccisnedev
 Requiere:
   - Configuración del host en ~/.ssh/config (Host, HostName, User, Port, IdentityFile)
