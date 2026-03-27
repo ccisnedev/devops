@@ -19,7 +19,7 @@
         
         # cmdlets legados (a eliminar en futuras versiones)
         , 'Connect-Server'
-        , 'Publish-FlutterWeb'
+        , 'Publish-FlutterWebLegacy'
         , 'Publish-ShelfApi'
         , 'Publish-Web'
         , 'Get-SQLiteDB'
