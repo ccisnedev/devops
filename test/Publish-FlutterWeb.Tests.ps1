@@ -487,10 +487,10 @@ Describe 'Step 6: Publish-FlutterWeb -Deploy' {
             $placeholderDir = Join-Path $env:TEMP "psdevops_test_deploy_placeholder_$([guid]::NewGuid().ToString().Substring(0,8))"
             New-Item -ItemType Directory -Path $placeholderDir -Force | Out-Null
             Set-Content -Path (Join-Path $placeholderDir 'pubspec.yaml') -Value "name: x`nversion: 1.0.0" -Encoding UTF8
-            Set-Content -Path (Join-Path $placeholderDir 'deploy.yaml') -Value "server: app-server`nport: 4000" -Encoding UTF8
+            Set-Content -Path (Join-Path $placeholderDir 'deploy.yaml') -Value "server: your-ssh-alias`nport: 4000" -Encoding UTF8
             try {
                 Push-Location $placeholderDir
-                { Publish-FlutterWeb -Deploy -ErrorAction Stop } | Should -Throw '*app-server*'
+                { Publish-FlutterWeb -Deploy -ErrorAction Stop } | Should -Throw '*your-ssh-alias*'
             } finally {
                 Pop-Location
                 Remove-Item -Path $placeholderDir -Recurse -Force -ErrorAction SilentlyContinue
