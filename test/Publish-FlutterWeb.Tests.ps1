@@ -554,3 +554,48 @@ port: 4036
         }
     }
 }
+
+# ═══════════════════════════════════════════════════════════════
+# STEP 7: Eliminar Publish-Web y limpiar exports
+# ═══════════════════════════════════════════════════════════════
+Describe 'Step 7: Eliminar Publish-Web' {
+
+    Context 'Archivo fuente eliminado' {
+
+        # Publish-Web.ps1 modificaba /etc/nginx/sites-available/default (mala práctica).
+        # Fue reemplazado por Publish-FlutterWeb -Deploy con config nginx por puerto.
+        It 'Publish-Web.ps1 ya no existe en src/Functions/' {
+            $webFile = Join-Path $PSScriptRoot '..\src\Functions\Publish-Web.ps1'
+            $webFile | Should -Not -Exist
+        }
+    }
+
+    Context 'Exports del manifest PSDevOps.psd1' {
+
+        # El manifest no debe exportar Publish-Web — fue eliminado.
+        It 'no exporta Publish-Web' {
+            $manifest = Test-ModuleManifest "$PSScriptRoot\..\PSDevOps.psd1"
+            $manifest.ExportedFunctions.Keys | Should -Not -Contain 'Publish-Web'
+        }
+
+        # Publish-FlutterWeb y Publish-FlutterWebLegacy deben seguir presentes.
+        It 'sigue exportando Publish-FlutterWeb' {
+            $manifest = Test-ModuleManifest "$PSScriptRoot\..\PSDevOps.psd1"
+            $manifest.ExportedFunctions.Keys | Should -Contain 'Publish-FlutterWeb'
+        }
+
+        It 'sigue exportando Publish-FlutterWebLegacy' {
+            $manifest = Test-ModuleManifest "$PSScriptRoot\..\PSDevOps.psd1"
+            $manifest.ExportedFunctions.Keys | Should -Contain 'Publish-FlutterWebLegacy'
+        }
+    }
+
+    Context 'Función no disponible en runtime' {
+
+        # Después de re-importar el módulo, Publish-Web no debe existir como función.
+        It 'Publish-Web no está disponible como función' {
+            $cmd = Get-Command Publish-Web -ErrorAction SilentlyContinue
+            $cmd | Should -BeNullOrEmpty
+        }
+    }
+}
