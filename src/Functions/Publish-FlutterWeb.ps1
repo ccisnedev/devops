@@ -51,7 +51,11 @@ function Publish-FlutterWeb {
 
         [Parameter(Mandatory, ParameterSetName = 'Publish',
             HelpMessage = "Ejecuta el despliegue completo al servidor remoto")]
-        [switch]$Publish
+        [switch]$Publish,
+
+        [Parameter(Mandatory, ParameterSetName = 'DeployReport',
+            HelpMessage = "Muestra las acciones que realizará -Publish sin ejecutarlas")]
+        [switch]$DeployReport
     )
 
     begin {
@@ -282,6 +286,161 @@ fi
                     # Limpiar archivos temporales locales
                     Remove-Item -LiteralPath $localZipPath -ErrorAction SilentlyContinue
                 }
+            }
+
+            # ═══════════════════════════════════════════════════
+            # DEPLOY REPORT — Reporte pre-deploy (dry-run)
+            # ═══════════════════════════════════════════════════
+            'DeployReport' {
+                $cwd = (Get-Location).Path
+
+                # ─── 0. Validaciones ─────────────────────────
+                $pubspecPath = Join-Path $cwd "pubspec.yaml"
+                $deployYamlPath = Join-Path $cwd "deploy.yaml"
+
+                if (-not (Test-Path $pubspecPath)) {
+                    throw "No se encontró pubspec.yaml en $cwd. Ejecute este cmdlet dentro de un proyecto Flutter."
+                }
+                if (-not (Test-Path $deployYamlPath)) {
+                    throw "No se encontró deploy.yaml. Ejecute 'Publish-FlutterWeb -Init' primero."
+                }
+
+                # ─── 1. Cargar helpers ───────────────────────
+                . "$PSScriptRoot/../Private/PublishHelpers.ps1"
+                . "$PSScriptRoot/../Private/Read-SSHConfig.ps1"
+
+                # ─── 2. Leer configuración ───────────────────
+                $pubspec = Get-Content $pubspecPath -Raw | ConvertFrom-Yaml
+                $appName = $pubspec.name
+                $appVersion = ($pubspec.version -split '\+')[0]
+                $release = "v$appVersion"
+
+                $deployConfig = Get-Content $deployYamlPath -Raw | ConvertFrom-Yaml
+                $server = $deployConfig.server
+                $port = $deployConfig.port
+
+                # ─── 3. Validaciones de config ───────────────
+                if (-not $server) {
+                    throw "No se encontró 'server:' en deploy.yaml."
+                }
+                if ($server -eq 'your-ssh-alias') {
+                    throw "deploy.yaml contiene el valor de ejemplo 'your-ssh-alias'. Cambie 'server' por el alias SSH real de su servidor."
+                }
+                if (-not $port) {
+                    throw "No se encontró 'port:' en deploy.yaml."
+                }
+
+                # ─── 4. SSH Config ───────────────────────────
+                $sshConfig = Read-SSHConfig -HostAlias $server
+                $user = $sshConfig.User
+                $ip = $sshConfig.HostName
+                $sshPort = $sshConfig.Port
+                $privateKeyPath = $sshConfig.IdentityFile
+
+                $remoteWebRoot = "/var/www"
+
+                Write-Host "  Modo: SOLO REPORTE (no se realizarán cambios)" -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "  ─── Configuración local ───" -ForegroundColor Cyan
+                Write-Host "  Proyecto:   $appName" -ForegroundColor White
+                Write-Host "  Versión:    $release" -ForegroundColor White
+                Write-Host "  Servidor:   $server ($ip)" -ForegroundColor White
+                Write-Host "  Puerto:     $port" -ForegroundColor White
+                Write-Host ""
+
+                # ─── 5. Consultar estado del servidor ────────
+                Write-Host "  ─── Estado del servidor ───" -ForegroundColor Cyan
+
+                $reportScript = @"
+#!/bin/bash
+# Versión actual (symlink current)
+if [ -L "$remoteWebRoot/$appName/current" ]; then
+    CURRENT=`$(readlink "$remoteWebRoot/$appName/current" | xargs basename)
+    echo "CURRENT:`$CURRENT"
+else
+    echo "CURRENT:none"
+fi
+
+# Release destino ya existe?
+if [ -d "$remoteWebRoot/$appName/releases/$release" ]; then
+    echo "RELEASE:exists"
+else
+    echo "RELEASE:new"
+fi
+
+# Nginx config
+if [ -f "/etc/nginx/sites-available/$appName" ]; then
+    echo "NGINX:exists"
+else
+    # Verificar puerto libre
+    if ss -tlnH sport = :$port | grep -q .; then
+        echo "NGINX:port-in-use"
+    else
+        echo "NGINX:will-create"
+    fi
+fi
+"@
+
+                # Ejecutar script remoto y capturar salida (sin Invoke-RemoteScript,
+                # necesitamos parsear stdout)
+                $tmpLocal = New-UnixTempFile -Content $reportScript -Prefix "psdevops_report_flutterweb_"
+                try {
+                    $remoteName = [IO.Path]::GetFileName($tmpLocal)
+                    $remotePath = "/tmp/$remoteName"
+
+                    & scp -i $privateKeyPath -P $sshPort $tmpLocal "$($user)@$($ip):$remotePath" 2>&1 | Out-Null
+                    if ($LASTEXITCODE -ne 0) { throw "Error al conectar con el servidor (scp exit: $LASTEXITCODE)" }
+
+                    $remoteCmd = "bash $remotePath ; rc=`$?; rm -f $remotePath; exit `$rc"
+                    $output = & ssh -i $privateKeyPath -p $sshPort "$($user)@$($ip)" $remoteCmd 2>&1
+                } finally {
+                    Remove-Item -LiteralPath $tmpLocal -ErrorAction SilentlyContinue
+                }
+
+                # Parsear salida
+                $currentVersion = 'desconocido'
+                $releaseStatus = 'desconocido'
+                $nginxStatus = 'desconocido'
+
+                foreach ($line in $output) {
+                    if ($line -match '^CURRENT:(.+)$') { $currentVersion = $Matches[1] }
+                    if ($line -match '^RELEASE:(.+)$') { $releaseStatus = $Matches[1] }
+                    if ($line -match '^NGINX:(.+)$') { $nginxStatus = $Matches[1] }
+                }
+
+                # Mostrar estado
+                if ($currentVersion -eq 'none') {
+                    Write-Host "  Current:    (primer deploy)" -ForegroundColor Yellow
+                } else {
+                    Write-Host "  Current:    $currentVersion" -ForegroundColor White
+                }
+
+                if ($releaseStatus -eq 'exists') {
+                    Write-Host "  Release:    $release ya existe (se sobreescribirá)" -ForegroundColor Yellow
+                } else {
+                    Write-Host "  Release:    $release (nueva)" -ForegroundColor Green
+                }
+
+                if ($nginxStatus -eq 'exists') {
+                    Write-Host "  Nginx:      config existe (no se modifica)" -ForegroundColor White
+                } elseif ($nginxStatus -eq 'port-in-use') {
+                    Write-Host "  Nginx:      PUERTO $port EN USO — el deploy fallará" -ForegroundColor Red
+                } else {
+                    Write-Host "  Nginx:      se creará config en puerto $port" -ForegroundColor Green
+                }
+
+                # ─── 6. Acciones que realizará -Publish ──────
+                Write-Host ""
+                Write-Host "  ─── Acciones que realizará -Publish ───" -ForegroundColor Cyan
+                Write-Host "  1. Compilar Flutter Web (Invoke-FlutterBuild -Web)" -ForegroundColor White
+                Write-Host "  2. Comprimir artefactos en zip" -ForegroundColor White
+                Write-Host "  3. Subir zip a ${ip}:/tmp/" -ForegroundColor White
+                Write-Host "  4. Instalar en ${remoteWebRoot}/${appName}/releases/${release}/" -ForegroundColor White
+                Write-Host "  5. Actualizar symlink current → $release" -ForegroundColor White
+                if ($nginxStatus -ne 'exists') {
+                    Write-Host "  6. Crear configuración nginx en puerto $port" -ForegroundColor White
+                }
+                Write-Host ""
             }
         }
     }
