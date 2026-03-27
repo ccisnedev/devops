@@ -22,10 +22,19 @@ Requiere que exista pubspec.yaml.
 Ejecuta el despliegue completo al servidor remoto.
 Lee deploy.yaml para el servidor destino y el puerto nginx.
 
+.PARAMETER DeployReport
+Muestra las acciones que realizará -Publish sin ejecutarlas.
+Consulta el servidor para mostrar: versión actual, si la release existe, estado de nginx.
+
 .EXAMPLE
 Publish-FlutterWeb -Init
 
 Genera deploy.yaml en el directorio actual del proyecto Flutter.
+
+.EXAMPLE
+Publish-FlutterWeb -DeployReport
+
+Muestra un reporte de lo que hará -Publish sin realizar cambios.
 
 .EXAMPLE
 Publish-FlutterWeb -Publish
@@ -33,7 +42,7 @@ Publish-FlutterWeb -Publish
 Compila, empaqueta, sube y despliega la app Flutter Web al servidor configurado en deploy.yaml.
 
 .NOTES
-Versión: 1.0.0
+Versión: 2.0.0
 Autor: @ccisnedev
 Requiere:
   - Flutter SDK instalado y en PATH

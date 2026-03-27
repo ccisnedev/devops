@@ -1,6 +1,6 @@
 @{
     # Módulo general
-    ModuleVersion = '1.2.1'                       # Versión del módulo
+    ModuleVersion = '2.0.0'                       # Versión del módulo
     GUID = '25f10f0c-b26c-4238-9782-7c8a68c15681'  # Identificador único del módulo
     Author = '@ccisnedev'                           # Autor del módulo
     CompanyName = 'ccisne.dev'                    # Nombre de la compañía (opcional)
