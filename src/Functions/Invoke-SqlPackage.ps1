@@ -169,7 +169,13 @@ function Invoke-SqlPackage {
                     $dacpacPath = Find-DacpacPath
                     if (-not (Test-Path $dacpacPath)) { throw "No se encontró $dacpacPath" }
 
-                    $reportPath = ".\deploy_report_$(Get-Date -Format 'yyyyMMdd_HHmmss').xml"
+                    # Crear directorio de salida si está configurado y no existe
+                    $outputDir = "."
+                    if ($config.deployReport -and $config.deployReport.outputDir) {
+                        $outputDir = $config.deployReport.outputDir
+                    }
+                    if (-not (Test-Path $outputDir)) { New-Item -Path $outputDir -ItemType Directory -Force | Out-Null }
+                    $reportPath = Join-Path $outputDir "deploy_report_$(Get-Date -Format 'yyyyMMdd_HHmmss').xml"
                     $reportArgs = Build-SqlPackageArgs -Action 'DeployReport' -Config $config -EnvVars $envVars -DacpacPath $dacpacPath -OutputPath $reportPath
 
                     & sqlpackage @reportArgs 2>&1 | Tee-Object -Variable reportOutput
@@ -247,6 +253,7 @@ function Invoke-SqlPackage {
                     if ($config.deployReport -and $config.deployReport.outputDir) {
                         $outputDir = $config.deployReport.outputDir
                     }
+                    if (-not (Test-Path $outputDir)) { New-Item -Path $outputDir -ItemType Directory -Force | Out-Null }
                     $reportPath = Join-Path $outputDir "deploy_report_$(Get-Date -Format 'yyyyMMdd_HHmmss').xml"
 
                     Write-Host "  Generando reporte de cambios..." -ForegroundColor Cyan
@@ -300,6 +307,7 @@ function Invoke-SqlPackage {
                     if ($config.script -and $config.script.outputDir) {
                         $outputDir = $config.script.outputDir
                     }
+                    if (-not (Test-Path $outputDir)) { New-Item -Path $outputDir -ItemType Directory -Force | Out-Null }
                     $scriptPath = Join-Path $outputDir "deploy_script_$(Get-Date -Format 'yyyyMMdd_HHmmss').sql"
 
                     Write-Host "  Generando script SQL..." -ForegroundColor Cyan
