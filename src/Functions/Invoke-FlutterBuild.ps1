@@ -119,25 +119,27 @@ function Invoke-FlutterBuild {
         Move-Item -Path "./build/windows" -Destination "./release/app_${name}_v${version}_windows"
     }
 
-    # Inicializar el objeto Shell.Application
-    $openWindows = New-Object -ComObject Shell.Application
-    
-    # Abrir la carpeta "release" o ponerla en primer plano
-    $folderPath = (Get-Item ".\release").FullName
-    $normalizedFolderPath = "file:///$($folderPath.Replace('\', '/'))"
-    
-    # Para asegurar que quede en primer plado, se debe cerrar la ventana si ya está abierta
-    foreach ($window in $openWindows.Windows()) {
-        # Normalizar la URL de la ventana para comparación
-        $normalizedWindowURL = $window.LocationURL -replace '%20', ' '
-        if ($normalizedWindowURL -eq $normalizedFolderPath) {
-            $window.Quit() # Cerrar la ventana si ya está abierta
-            break
+    # Abrir carpeta release en Windows (solo si hay GUI disponible)
+    if ($IsWindows -or $env:OS -eq 'Windows_NT') {
+        try {
+            $openWindows = New-Object -ComObject Shell.Application
+            
+            $folderPath = (Get-Item ".\release").FullName
+            $normalizedFolderPath = "file:///$($folderPath.Replace('\', '/'))"
+            
+            foreach ($window in $openWindows.Windows()) {
+                $normalizedWindowURL = $window.LocationURL -replace '%20', ' '
+                if ($normalizedWindowURL -eq $normalizedFolderPath) {
+                    $window.Quit()
+                    break
+                }
+            }
+            
+            $window = $openWindows.ShellExecute("explorer.exe", $folderPath, "", "open", 1)
+        } catch {
+            # Silenciar si no hay GUI (ej: CI/CD)
         }
     }
-    
-    # Abrir ventana ./release
-    $window = $openWindows.ShellExecute("explorer.exe", $folderPath, "", "open", 1)
 
     Write-Host "=======================================" -ForegroundColor Yellow
 }
