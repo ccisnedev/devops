@@ -11,6 +11,7 @@ El alias del host a buscar en el archivo SSH config
 
 .PARAMETER ConfigPath
 Ruta al archivo SSH config. Por defecto usa ~/.ssh/config
+Soporta Windows ($env:USERPROFILE) y Linux ($env:HOME).
 
 .EXAMPLE
 $config = Read-SSHConfig -HostAlias "demo-web"
@@ -26,7 +27,7 @@ function Read-SSHConfig {
         [string]$HostAlias,
         
         [Parameter(Mandatory=$false)]
-        [string]$ConfigPath = (Join-Path $env:USERPROFILE ".ssh\config")
+        [string]$ConfigPath = (Join-Path ($env:USERPROFILE ?? $env:HOME) ".ssh/config")
     )
     
     if (!(Test-Path $ConfigPath)) {
