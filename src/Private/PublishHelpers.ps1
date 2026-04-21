@@ -218,7 +218,7 @@ function New-UnixTempFile {
     $unixContent = $Content -replace "`r`n", "`n" -replace "`r", "`n"
     
     # Crear archivo temporal
-    $tmpPath = [IO.Path]::Combine($env:TEMP, "${Prefix}{0}.sh" -f ([guid]::NewGuid().ToString()))
+    $tmpPath = [IO.Path]::Combine([IO.Path]::GetTempPath(), "${Prefix}{0}.sh" -f ([guid]::NewGuid().ToString()))
     
     # Escribir como UTF-8 sin BOM
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
