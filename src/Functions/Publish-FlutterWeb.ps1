@@ -205,7 +205,7 @@ function Publish-FlutterWeb {
 
                 # ─── 6. Comprimir artefactos ─────────────────
                 Write-Host "  Comprimiendo artefactos..." -ForegroundColor Cyan
-                $localZipPath = Join-Path $env:TEMP $zipFileName
+                $localZipPath = Join-Path ([System.IO.Path]::GetTempPath()) $zipFileName
 
                 if (Test-Path $localZipPath) {
                     Remove-Item $localZipPath -Force
