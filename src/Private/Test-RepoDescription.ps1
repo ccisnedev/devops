@@ -30,7 +30,7 @@ function Test-RepoDescription {
             return $false
         }
 
-        $regex = '^type:(flutter-web|node-api|sqlserver-db|tooling|documentation|archived|unknown)\|stack:(dart|javascript|typescript|sql|csharp|generic)\|deploy:(v\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?|none)\|model:(legacy|monorepo)(?:\|ci:(github-actions|manual|none))?(?:\|criticality:(critical|high|medium|low))?$'
+        $regex = '^type:(flutter-web|flutter-apk|node-api|sqlserver-db|macss|tooling|documentation|archived|unknown)\|stack:(dart|javascript|typescript|sql|csharp|generic)\|deploy:(v\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?|none)\|model:(legacy|monorepo)(?:\|ci:(github-actions|manual|none))?(?:\|criticality:(critical|high|medium|low))?$'
 
         return [bool]($Description -match $regex)
     }
