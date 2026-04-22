@@ -30,9 +30,17 @@ Describe "Test-RepoDescription" {
         }
 
         It "accepts all type values" {
-            @('flutter-web', 'node-api', 'sqlserver-db', 'tooling', 'documentation', 'archived', 'unknown') | ForEach-Object {
+            @('flutter-web', 'flutter-apk', 'node-api', 'sqlserver-db', 'macss', 'tooling', 'documentation', 'archived', 'unknown') | ForEach-Object {
                 Test-RepoDescription "type:$_|stack:generic|deploy:none|model:legacy" | Should -BeTrue -Because "type:$_ should be valid"
             }
+        }
+
+        It "accepts macss monorepo" {
+            Test-RepoDescription "type:macss|stack:dart|deploy:v1.0.0|model:monorepo|ci:github-actions|criticality:high" | Should -BeTrue
+        }
+
+        It "accepts flutter-apk" {
+            Test-RepoDescription "type:flutter-apk|stack:dart|deploy:none|model:legacy" | Should -BeTrue
         }
 
         It "accepts all stack values" {
