@@ -15,8 +15,15 @@
         # Funciones principales
         'Invoke-FlutterBuild'
         , 'Invoke-SqlPackage'
+        , 'Invoke-PgSchema'
         , 'Publish-NodeApi'
         , 'Publish-FlutterWeb'
+
+        # Gobernanza
+        , 'Get-RepoInfo'
+        , 'Test-RepoHealth'
+        , 'New-DeployWorkflow'
+        , 'Install-PSDevOpsSkill'
         
         # cmdlets legados (a eliminar en futuras versiones)
         , 'Connect-Server'
