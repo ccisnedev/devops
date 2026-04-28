@@ -15,6 +15,7 @@
         # Funciones principales
         'Invoke-FlutterBuild'
         , 'Invoke-SqlPackage'
+        , 'Invoke-PgSchema'
         , 'Publish-NodeApi'
         , 'Publish-FlutterWeb'
 
