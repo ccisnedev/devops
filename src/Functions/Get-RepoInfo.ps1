@@ -37,6 +37,9 @@ function Get-RepoInfo {
         [Parameter(ParameterSetName = 'List')]
         [hashtable]$Filter,
 
+        [Parameter(ParameterSetName = 'List')]
+        [int]$First = 0,
+
         [string]$Org = 'cacsi-dev',
 
         [switch]$Json
@@ -50,6 +53,10 @@ function Get-RepoInfo {
         }
         # gh --paginate can return one name per line
         $repoNames = @($repoNames) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
+        if ($First -gt 0) {
+            $repoNames = $repoNames | Select-Object -First $First
+        }
 
         $results = foreach ($repoName in $repoNames) {
             Get-SingleRepoInfo -RepoName $repoName -Org $Org
