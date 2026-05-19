@@ -69,6 +69,7 @@ function Publish-FlutterWeb {
 
     begin {
         $ErrorActionPreference = 'Stop'
+        Ensure-YamlModule
     }
 
     process {

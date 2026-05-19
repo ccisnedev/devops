@@ -22,6 +22,18 @@ function Read-PgSchemaConfig {
         [string]$Path = ".\pgschema.yaml"
     )
 
+    if (Get-Command -Name Ensure-YamlModule -ErrorAction SilentlyContinue) {
+        Ensure-YamlModule
+    }
+    elseif (-not (Get-Command -Name ConvertFrom-Yaml -ErrorAction SilentlyContinue)) {
+        try {
+            Import-Module powershell-yaml -ErrorAction Stop | Out-Null
+        }
+        catch {
+            throw "No se encontró el módulo 'powershell-yaml'. Instale con: Install-Module powershell-yaml -Scope CurrentUser -Force"
+        }
+    }
+
     if (-not (Test-Path $Path)) {
         throw "No se encontró '$Path'. Ejecute 'Invoke-PgSchema -Init' para generarlo."
     }

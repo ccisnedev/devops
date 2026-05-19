@@ -171,6 +171,7 @@ NODE_ENV=production
             # ═══════════════════════════════════════════════════
             'Publish' {
                 $cwd = (Get-Location).Path
+                Ensure-YamlModule
 
                 # ─── 0. Validaciones ─────────────────────────
                 $deployYamlPath = Join-Path $cwd "deploy.yaml"
@@ -419,6 +420,7 @@ NODE_ENV=production
             # ═══════════════════════════════════════════════════
             'DeployReport' {
                 $cwd = (Get-Location).Path
+                Ensure-YamlModule
 
                 # ─── 0. Validaciones ─────────────────────────
                 $packageJsonPath = Join-Path $cwd "package.json"
