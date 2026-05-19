@@ -44,7 +44,7 @@
     RootModule = 'PSDevOps.psm1'              # Archivo principal del módulo
 
     # Dependencias y Compatibilidad
-    RequiredModules = @('powershell-yaml')          # powershell-yaml: parseo YAML anidado (ref: issue #1)
+    RequiredModules = @()                          # Carga YAML bajo demanda para no bloquear Import-Module en instalaciones limpias
     RequiredAssemblies = @()                       # Lista de ensamblados .NET requeridos (rara vez se usa en módulos simples)
 
     # Información adicional
