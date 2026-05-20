@@ -1,14 +1,21 @@
-# PSDevOps 🚀
+# macss-devops 🚀
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue.svg)](https://github.com/PowerShell/PowerShell)
-[![Version](https://img.shields.io/badge/version-2.0.0-green.svg)](./PSDevOps.psd1)
+[![Version](https://img.shields.io/badge/version-3.0.0-green.svg)](./code/powershell/macss-devops.psd1)
 
-Módulo de PowerShell con arquitectura modular para automatizar operaciones DevOps: desarrollo, testing, CI/CD y despliegue.
+Módulo de PowerShell publicado como macss-devops para automatizar operaciones DevOps: desarrollo, testing, CI/CD y despliegue.
 
 ## 📦 Instalación
 
 ```powershell
-Import-Module PSDevOps
+Install-Module macss-devops -Repository PSGallery -Scope CurrentUser
+Import-Module macss-devops
+```
+
+Desarrollo local desde este repo:
+
+```powershell
+Import-Module .\code\powershell\macss-devops.psd1 -Force
 ```
 
 ## 🏗️ Arquitectura Modular
@@ -17,15 +24,18 @@ Este módulo sigue una **estructura modular por función**, donde cada cmdlet ti
 
 ```
 PSDevOps/
-├── src/
-│   ├── Functions/           # Cmdlets públicos (exportados)
-│   ├── Private/             # Funciones auxiliares (no exportadas)
-│   └── Resources/           # Recursos específicos por función
-│       └── [Función]/
-│           ├── README.md    # Documentación del cmdlet
-│           ├── templates/   # Plantillas
-│           └── examples/    # Ejemplos funcionales
-└── test/                    # Tests
+├── code/
+│   └── powershell/
+│       ├── Functions/       # Cmdlets públicos (exportados)
+│       ├── Private/         # Funciones auxiliares (no exportadas)
+│       ├── Resources/       # Recursos específicos por función
+│       │   └── [Función]/
+│       │       ├── README.md
+│       │       ├── templates/
+│       │       └── examples/
+│       ├── macss-devops.psd1
+│       ├── macss-devops.psm1
+│       └── test/            # Tests Pester
 ```
 
 📖 **[Guía completa de estructura modular](ESTRUCTURA-MODULAR.md)**
@@ -38,16 +48,14 @@ PSDevOps/
 | `Invoke-SqlPackage` | Gestión declarativa de BD SQL Server | `Get-Help Invoke-SqlPackage` |
 | `Publish-FlutterWeb` | Compilar y desplegar Flutter Web (`-Init`, `-Publish`, `-DeployReport`) | `Get-Help Publish-FlutterWeb` |
 | `Publish-NodeApi` | Desplegar API Node.js/TypeScript (`-Init`, `-Publish`, `-DeployReport`) | `Get-Help Publish-NodeApi` |
-| `New-Issue` | Crear issues en GitHub desde markdown | [Docs](src/Resources/New-Issue/README.md) |
-| `Connect-Server` | Conexión SSH a servidores | `Get-Help Connect-Server` |
-| `Copy-FromServer` | Copiar archivos remotos | `Get-Help Copy-FromServer` |
+| `New-Issue` | Crear issues en GitHub desde markdown | [Docs](code/powershell/Resources/New-Issue/README.md) |
 | `Get-SQLiteDB` | Operaciones SQLite | `Get-Help Get-SQLiteDB` |
 | `Merge-DevToMain` | Merge automatizado dev→main | `Get-Help Merge-DevToMain` |
 | `Export-FileTree` | Exportar árbol de directorios | `Get-Help Export-FileTree` |
 
 ```powershell
 # Listar todos los cmdlets
-Get-Command -Module PSDevOps
+Get-Command -Module macss-devops
 
 # Ver ayuda detallada
 Get-Help [Cmdlet] -Detailed
@@ -57,7 +65,7 @@ Get-Help [Cmdlet] -Detailed
 
 ### 1. Crear el cmdlet
 ```powershell
-# src/Functions/New-MiFuncion.ps1
+# code/powershell/Functions/New-MiFuncion.ps1
 function New-MiFuncion {
     [CmdletBinding()]
     param(...)
@@ -69,12 +77,12 @@ function New-MiFuncion {
 
 ### 2. Crear estructura de recursos
 ```bash
-mkdir src/Resources/New-MiFuncion/{templates,examples}
+mkdir code/powershell/Resources/New-MiFuncion/{templates,examples}
 ```
 
 ### 3. Agregar documentación y recursos
 ```
-src/Resources/New-MiFuncion/
+code/powershell/Resources/New-MiFuncion/
 ├── README.md              # Documentación completa
 ├── templates/             # Plantillas reutilizables
 │   └── template.md
@@ -84,7 +92,7 @@ src/Resources/New-MiFuncion/
 
 ### 4. Actualizar manifiesto
 ```powershell
-# PSDevOps.psd1
+# code/powershell/macss-devops.psd1
 FunctionsToExport = @(
     'New-Issue'
     , 'New-MiFuncion'  # ← Agregar aquí
@@ -93,9 +101,9 @@ FunctionsToExport = @(
 
 ### 5. Crear test
 ```powershell
-# test/Test-MiFuncion.ps1
+# code/powershell/test/Test-MiFuncion.ps1
 $moduleRoot = Split-Path -Parent $PSScriptRoot
-$examplePath = Join-Path $moduleRoot "src\Resources\New-MiFuncion\examples\example.md"
+$examplePath = Join-Path $moduleRoot "Resources\New-MiFuncion\examples\example.md"
 
 New-MiFuncion -Path $examplePath -WhatIf
 ```
@@ -110,10 +118,10 @@ New-MiFuncion -Path $examplePath -WhatIf
 ## 📝 Convenciones
 
 - **Nomenclatura:** Usar [verbos aprobados](valid-verb.md) en formato `Verb-Noun`
-- **Funciones públicas:** `src/Functions/` (un archivo por cmdlet)
-- **Funciones privadas:** `src/Private/` (helpers compartidos)
-- **Recursos:** `src/Resources/[Función]/` (templates, ejemplos, docs)
-- **Tests:** `test/Test-[Función].ps1`
+- **Funciones públicas:** `code/powershell/Functions/` (un archivo por cmdlet)
+- **Funciones privadas:** `code/powershell/Private/` (helpers compartidos)
+- **Recursos:** `code/powershell/Resources/[Función]/` (templates, ejemplos, docs)
+- **Tests:** `code/powershell/test/*.Tests.ps1`
 
 ## 👤 Autor
 
