@@ -1,0 +1,127 @@
+name: Publish macss-devops
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - code/powershell/**
+  workflow_dispatch:
+
+jobs:
+  validate-and-publish:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require version bump for code/powershell changes
+        if: github.event_name == 'push'
+        run: |
+          $before = '${{ github.event.before }}'
+          $emptyTree = '0000000000000000000000000000000000000000'
+          $manifestPath = Join-Path $PWD 'code/powershell/macss-devops.psd1'
+          $currentManifest = Import-PowerShellDataFile $manifestPath
+          $currentVersion = [version]$currentManifest.ModuleVersion
+
+          if ($before -eq $emptyTree) {
+              Write-Host 'No previous commit available. Skipping version bump validation.'
+              exit 0
+          }
+
+          $previousManifestRaw = git show "${before}:code/powershell/macss-devops.psd1" 2>$null
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($previousManifestRaw)) {
+              Write-Host 'Previous manifest not found. Skipping version bump validation.'
+              exit 0
+          }
+
+          $previousManifestPath = Join-Path $env:RUNNER_TEMP 'previous-macss-devops.psd1'
+          Set-Content -Path $previousManifestPath -Value $previousManifestRaw -Encoding UTF8
+          $previousManifest = Import-PowerShellDataFile $previousManifestPath
+          $previousVersion = [version]$previousManifest.ModuleVersion
+
+          if ($currentVersion -le $previousVersion) {
+              throw "code/powershell changed but ModuleVersion was not bumped. Previous: $previousVersion Current: $currentVersion"
+          }
+
+          Write-Host "Version bump validated. Previous: $previousVersion Current: $currentVersion"
+
+      - name: Install test dependencies
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module Pester -Scope CurrentUser -Force -SkipPublisherCheck -AllowClobber
+          Install-Module powershell-yaml -Scope CurrentUser -Force -AllowClobber
+
+      - name: Validate manifest and import
+        run: |
+          $manifestPath = Join-Path $PWD 'code/powershell/macss-devops.psd1'
+          Test-ModuleManifest $manifestPath | Out-Null
+          Import-Module $manifestPath -Force
+          $module = Get-Module 'macss-devops'
+          if (-not $module) {
+              throw 'Module macss-devops did not import correctly.'
+          }
+
+      - name: Run Pester
+        run: |
+          Invoke-Pester ./code/powershell/test -CI
+
+      - name: Compare with PSGallery
+        id: version_check
+        run: |
+          $manifestPath = Join-Path $PWD 'code/powershell/macss-devops.psd1'
+          $manifest = Import-PowerShellDataFile $manifestPath
+          $localVersion = [version]$manifest.ModuleVersion
+          $remote = Find-Module -Name 'macss-devops' -Repository PSGallery -ErrorAction SilentlyContinue
+
+          $shouldPublish = $false
+          if ($null -eq $remote) {
+              $remoteVersion = 'not-published'
+              $shouldPublish = $true
+          }
+          else {
+              $remoteVersion = $remote.Version.ToString()
+              if ($localVersion -gt $remote.Version) {
+                  $shouldPublish = $true
+              }
+          }
+
+          "local_version=$($localVersion.ToString())" >> $env:GITHUB_OUTPUT
+          "remote_version=$remoteVersion" >> $env:GITHUB_OUTPUT
+          "should_publish=$($shouldPublish.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+          if (-not $shouldPublish) {
+              Write-Host "Skipping publish because local version $localVersion is not newer than PSGallery version $remoteVersion."
+          }
+
+      - name: Build publish staging directory
+        if: steps.version_check.outputs.should_publish == 'true'
+        run: |
+          $stageRoot = Join-Path $env:RUNNER_TEMP 'macss-devops'
+          if (Test-Path $stageRoot) {
+              Remove-Item $stageRoot -Recurse -Force
+          }
+
+          New-Item -Path $stageRoot -ItemType Directory | Out-Null
+          Copy-Item (Join-Path $PWD 'code/powershell/*') -Destination $stageRoot -Recurse -Force
+          Remove-Item (Join-Path $stageRoot 'test') -Recurse -Force -ErrorAction SilentlyContinue
+          Copy-Item (Join-Path $PWD 'code/skills/SKILL.md') -Destination (Join-Path $stageRoot 'SKILL.md') -Force
+
+          Test-ModuleManifest (Join-Path $stageRoot 'macss-devops.psd1') | Out-Null
+
+      - name: Publish to PSGallery
+        if: steps.version_check.outputs.should_publish == 'true'
+        env:
+          PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
+        run: |
+          if (-not $env:PSGALLERY_API_KEY) {
+              throw 'PSGALLERY_API_KEY secret is not configured.'
+          }
+
+          $stageRoot = Join-Path $env:RUNNER_TEMP 'macss-devops'
+          Publish-Module -Path $stageRoot -Repository PSGallery -NuGetApiKey $env:PSGALLERY_API_KEY
