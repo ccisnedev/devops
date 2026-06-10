@@ -224,7 +224,7 @@ jobs:
             $outFile = Join-Path $TestDrive 'nodeploy/deploy.yml'
             New-Item (Split-Path $outFile) -ItemType Directory -Force | Out-Null
             { New-DeployWorkflow -Name 'nodeploy_repo' -OutputPath $outFile -TemplatePath (Join-Path $TestDrive 'templates/workflows') } |
-                Should -Throw "*deploy.yaml*"
+                Should -Throw "*publish.yaml*"
         }
     }
 

@@ -1,7 +1,12 @@
 function Get-RepoDeployStatus {
     <#
     .SYNOPSIS
-    Comprueba el estado de deploy de un repo: deploy.yaml + workflow.
+    Comprueba el estado de deploy de un repo: publish.yaml + workflow.
+
+    .DESCRIPTION
+    Busca publish.yaml en el repo remoto; acepta el nombre anterior deploy.yaml
+    (deprecado) como fallback. DeployYAMLExists refleja la existencia de
+    cualquiera de los dos.
 
     .PARAMETER RepoName
     Nombre del repositorio.
@@ -28,10 +33,16 @@ function Get-RepoDeployStatus {
     $templateHash     = $null
     $workflowContent  = $null
 
-    # Check deploy.yaml
-    $null = & gh api "repos/$Org/$RepoName/contents/deploy.yaml" --jq '.sha' 2>&1
+    # Check publish.yaml (con fallback al nombre anterior deploy.yaml)
+    $null = & gh api "repos/$Org/$RepoName/contents/publish.yaml" --jq '.sha' 2>&1
     if ($LASTEXITCODE -eq 0) {
         $deployYAMLExists = $true
+    }
+    else {
+        $null = & gh api "repos/$Org/$RepoName/contents/deploy.yaml" --jq '.sha' 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $deployYAMLExists = $true
+        }
     }
 
     # Check workflows
