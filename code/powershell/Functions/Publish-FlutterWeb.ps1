@@ -5,22 +5,22 @@ Compila y despliega una aplicación Flutter Web a un servidor Linux remoto vía 
 .DESCRIPTION
 El cmdlet `Publish-FlutterWeb` gestiona el ciclo completo de despliegue de apps Flutter Web:
 - Lee `name` y `version` de `pubspec.yaml` (single source of truth).
-- Lee la configuración de despliegue de `deploy.yaml` (server, port).
+- Lee la configuración de despliegue de `publish.yaml` (server, port).
 - Compila con `Invoke-FlutterBuild -Web` y empaqueta los artefactos.
 - Sube al servidor con releases versionados en /var/www/<name>/releases/ y symlink `current`.
 - Configura nginx con un site dedicado en sites-available/ si no existe.
 
 Se debe ejecutar desde la raíz del proyecto Flutter donde existen:
   - pubspec.yaml  (name, version)
-  - deploy.yaml   (servidor, puerto — generar con -Init)
+  - publish.yaml  (servidor, puerto — generar con -Init)
 
 .PARAMETER Init
-Genera el archivo deploy.yaml en el directorio actual.
+Genera el archivo publish.yaml en el directorio actual.
 Requiere que exista pubspec.yaml.
 
 .PARAMETER Publish
 Ejecuta el despliegue completo al servidor remoto.
-Lee deploy.yaml para el servidor destino y el puerto nginx.
+Lee publish.yaml para el servidor destino y el puerto nginx.
 
 .PARAMETER DeployReport
 Muestra las acciones que realizará -Publish sin ejecutarlas.
@@ -29,7 +29,7 @@ Consulta el servidor para mostrar: versión actual, si la release existe, estado
 .EXAMPLE
 Publish-FlutterWeb -Init
 
-Genera deploy.yaml en el directorio actual del proyecto Flutter.
+Genera publish.yaml en el directorio actual del proyecto Flutter.
 
 .EXAMPLE
 Publish-FlutterWeb -DeployReport
@@ -39,7 +39,7 @@ Muestra un reporte de lo que hará -Publish sin realizar cambios.
 .EXAMPLE
 Publish-FlutterWeb -Publish
 
-Compila, empaqueta, sube y despliega la app Flutter Web al servidor configurado en deploy.yaml.
+Compila, empaqueta, sube y despliega la app Flutter Web al servidor configurado en publish.yaml. Acepta el nombre anterior deploy.yaml con aviso de deprecación.
 
 .NOTES
 Versión: 2.0.0
@@ -48,14 +48,14 @@ Requiere:
   - Flutter SDK instalado y en PATH
   - Configuración del host en ~/.ssh/config (Host, HostName, User, Port, IdentityFile)
   - nginx en el servidor remoto con sites-available/ y sites-enabled/
-  - Módulo powershell-yaml para parseo de deploy.yaml
+  - Módulo powershell-yaml para parseo de publish.yaml
 #>
 function Publish-FlutterWeb {
 
     [CmdletBinding(DefaultParameterSetName = 'Publish')]
     param(
         [Parameter(Mandatory, ParameterSetName = 'Init',
-            HelpMessage = "Genera archivo de configuración (deploy.yaml)")]
+            HelpMessage = "Genera archivo de configuración (publish.yaml)")]
         [switch]$Init,
 
         [Parameter(Mandatory, ParameterSetName = 'Publish',
@@ -83,7 +83,7 @@ function Publish-FlutterWeb {
         switch ($PSCmdlet.ParameterSetName) {
 
             # ═══════════════════════════════════════════════════
-            # INIT — Generar deploy.yaml
+            # INIT — Generar publish.yaml
             # ═══════════════════════════════════════════════════
             'Init' {
                 $cwd = (Get-Location).Path
@@ -94,10 +94,13 @@ function Publish-FlutterWeb {
                     throw "No se encontró pubspec.yaml en $cwd. Ejecute este cmdlet dentro de un proyecto Flutter."
                 }
 
-                # Validar que deploy.yaml no exista
-                $deployYamlPath = Join-Path $cwd "deploy.yaml"
-                if (Test-Path $deployYamlPath) {
-                    throw "Ya existe deploy.yaml en $cwd. Elimínelo primero si desea regenerar la configuración."
+                # Validar que publish.yaml no exista (ni el legacy deploy.yaml)
+                $publishYamlPath = Join-Path $cwd "publish.yaml"
+                if (Test-Path $publishYamlPath) {
+                    throw "Ya existe publish.yaml en $cwd. Elimínelo primero si desea regenerar la configuración."
+                }
+                if (Test-Path (Join-Path $cwd "deploy.yaml")) {
+                    throw "Existe deploy.yaml (nombre anterior) en $cwd. Renómbrelo a publish.yaml o elimínelo antes de regenerar."
                 }
 
                 # Leer pubspec.yaml para mostrar información
@@ -109,19 +112,19 @@ function Publish-FlutterWeb {
                 Write-Host "  Versión:   $appVersion" -ForegroundColor Cyan
                 Write-Host ""
 
-                # Copiar template deploy.yaml
-                $templatePath = Join-Path $PSScriptRoot "..\Resources\Publish-FlutterWeb\templates\deploy.yaml"
+                # Copiar template publish.yaml
+                $templatePath = Join-Path $PSScriptRoot "..\Resources\Publish-FlutterWeb\templates\publish.yaml"
                 if (-not (Test-Path $templatePath)) {
                     throw "Template no encontrado: $templatePath"
                 }
-                Copy-Item -Path $templatePath -Destination $deployYamlPath
-                Write-Host "  Creado: deploy.yaml" -ForegroundColor Green
+                Copy-Item -Path $templatePath -Destination $publishYamlPath
+                Write-Host "  Creado: publish.yaml" -ForegroundColor Green
 
                 # Instrucciones
                 Write-Host ""
                 Write-Host "  Configuración creada. Próximos pasos:" -ForegroundColor Green
-                Write-Host "    1. Edite deploy.yaml → cambie 'server' por su alias SSH" -ForegroundColor DarkGray
-                Write-Host "    2. Edite deploy.yaml → cambie 'port' por el puerto nginx deseado" -ForegroundColor DarkGray
+                Write-Host "    1. Edite publish.yaml → cambie 'server' por su alias SSH" -ForegroundColor DarkGray
+                Write-Host "    2. Edite publish.yaml → cambie 'port' por el puerto nginx deseado" -ForegroundColor DarkGray
                 Write-Host "    3. Ejecute: Publish-FlutterWeb -Publish" -ForegroundColor DarkGray
                 Write-Host ""
             }
@@ -132,20 +135,24 @@ function Publish-FlutterWeb {
             'Publish' {
                 $cwd = (Get-Location).Path
 
+                # ─── 1. Cargar helpers ───────────────────────
+                . "$PSScriptRoot/../Private/PublishHelpers.ps1"
+                . "$PSScriptRoot/../Private/Read-SSHConfig.ps1"
+
                 # ─── 0. Validaciones ─────────────────────────
                 $pubspecPath = Join-Path $cwd "pubspec.yaml"
-                $deployYamlPath = Join-Path $cwd "deploy.yaml"
+                $configResolution = Resolve-PublishConfigPath -ProjectRoot $cwd
+                $publishYamlPath = $configResolution.Path
 
                 if (-not (Test-Path $pubspecPath)) {
                     throw "No se encontró pubspec.yaml en $cwd. Ejecute este cmdlet dentro de un proyecto Flutter."
                 }
-                if (-not (Test-Path $deployYamlPath)) {
-                    throw "No se encontró deploy.yaml. Ejecute 'Publish-FlutterWeb -Init' primero."
+                if (-not $publishYamlPath) {
+                    throw "No se encontró publish.yaml. Ejecute 'Publish-FlutterWeb -Init' primero."
                 }
-
-                # ─── 1. Cargar helpers ───────────────────────
-                . "$PSScriptRoot/../Private/PublishHelpers.ps1"
-                . "$PSScriptRoot/../Private/Read-SSHConfig.ps1"
+                if ($configResolution.IsLegacy) {
+                    Write-Host "  Aviso: 'deploy.yaml' está deprecado; renómbrelo a 'publish.yaml'." -ForegroundColor Yellow
+                }
 
                 # ─── 2. Leer configuración ───────────────────
                 # pubspec.yaml (name, version)
@@ -154,20 +161,20 @@ function Publish-FlutterWeb {
                 $appVersion = ($pubspec.version -split '\+')[0]  # sin build metadata
                 $release = "v$appVersion"
 
-                # deploy.yaml (server, port)
-                $deployConfig = Get-Content $deployYamlPath -Raw | ConvertFrom-Yaml
+                # publish.yaml (server, port)
+                $deployConfig = Get-Content $publishYamlPath -Raw | ConvertFrom-Yaml
                 $server = $deployConfig.server
                 $port = $deployConfig.port
 
                 # ─── 3. Validaciones de config ───────────────
                 if (-not $server) {
-                    throw "No se encontró 'server:' en deploy.yaml."
+                    throw "No se encontró 'server:' en publish.yaml."
                 }
                 if ($server -eq 'your-ssh-alias') {
-                    throw "deploy.yaml contiene el valor de ejemplo 'your-ssh-alias'. Cambie 'server' por el alias SSH real de su servidor."
+                    throw "publish.yaml contiene el valor de ejemplo 'your-ssh-alias'. Cambie 'server' por el alias SSH real de su servidor."
                 }
                 if (-not $port) {
-                    throw "No se encontró 'port:' en deploy.yaml."
+                    throw "No se encontró 'port:' en publish.yaml."
                 }
 
                 Write-Host "  Proyecto:   $appName" -ForegroundColor Cyan
@@ -304,20 +311,24 @@ fi
             'DeployReport' {
                 $cwd = (Get-Location).Path
 
+                # ─── 1. Cargar helpers ───────────────────────
+                . "$PSScriptRoot/../Private/PublishHelpers.ps1"
+                . "$PSScriptRoot/../Private/Read-SSHConfig.ps1"
+
                 # ─── 0. Validaciones ─────────────────────────
                 $pubspecPath = Join-Path $cwd "pubspec.yaml"
-                $deployYamlPath = Join-Path $cwd "deploy.yaml"
+                $configResolution = Resolve-PublishConfigPath -ProjectRoot $cwd
+                $publishYamlPath = $configResolution.Path
 
                 if (-not (Test-Path $pubspecPath)) {
                     throw "No se encontró pubspec.yaml en $cwd. Ejecute este cmdlet dentro de un proyecto Flutter."
                 }
-                if (-not (Test-Path $deployYamlPath)) {
-                    throw "No se encontró deploy.yaml. Ejecute 'Publish-FlutterWeb -Init' primero."
+                if (-not $publishYamlPath) {
+                    throw "No se encontró publish.yaml. Ejecute 'Publish-FlutterWeb -Init' primero."
                 }
-
-                # ─── 1. Cargar helpers ───────────────────────
-                . "$PSScriptRoot/../Private/PublishHelpers.ps1"
-                . "$PSScriptRoot/../Private/Read-SSHConfig.ps1"
+                if ($configResolution.IsLegacy) {
+                    Write-Host "  Aviso: 'deploy.yaml' está deprecado; renómbrelo a 'publish.yaml'." -ForegroundColor Yellow
+                }
 
                 # ─── 2. Leer configuración ───────────────────
                 $pubspec = Get-Content $pubspecPath -Raw | ConvertFrom-Yaml
@@ -325,19 +336,19 @@ fi
                 $appVersion = ($pubspec.version -split '\+')[0]
                 $release = "v$appVersion"
 
-                $deployConfig = Get-Content $deployYamlPath -Raw | ConvertFrom-Yaml
+                $deployConfig = Get-Content $publishYamlPath -Raw | ConvertFrom-Yaml
                 $server = $deployConfig.server
                 $port = $deployConfig.port
 
                 # ─── 3. Validaciones de config ───────────────
                 if (-not $server) {
-                    throw "No se encontró 'server:' en deploy.yaml."
+                    throw "No se encontró 'server:' en publish.yaml."
                 }
                 if ($server -eq 'your-ssh-alias') {
-                    throw "deploy.yaml contiene el valor de ejemplo 'your-ssh-alias'. Cambie 'server' por el alias SSH real de su servidor."
+                    throw "publish.yaml contiene el valor de ejemplo 'your-ssh-alias'. Cambie 'server' por el alias SSH real de su servidor."
                 }
                 if (-not $port) {
-                    throw "No se encontró 'port:' en deploy.yaml."
+                    throw "No se encontró 'port:' en publish.yaml."
                 }
 
                 # ─── 4. SSH Config ───────────────────────────

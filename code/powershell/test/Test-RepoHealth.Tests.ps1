@@ -249,7 +249,7 @@ Describe "Test-RepoHealth" {
 
         It "deploy.yaml check is FAIL" {
             $result = Test-RepoHealth -Name 'partial_repo'
-            $check = $result.Checks | Where-Object { $_.Check -eq 'Deploy.yaml exists and is valid' }
+            $check = $result.Checks | Where-Object { $_.Check -eq 'Publish.yaml exists and is valid' }
             $check.Status | Should -Be 'FAIL'
         }
 
