@@ -65,13 +65,13 @@ Describe 'Step 1: Legacy renombrado y exports' {
 }
 
 # ═══════════════════════════════════════════════════════════════
-# STEP 2: Template deploy.yaml para Publish-FlutterWeb
+# STEP 2: Template publish.yaml para Publish-FlutterWeb
 # ═══════════════════════════════════════════════════════════════
-Describe 'Step 2: Template deploy.yaml' {
+Describe 'Step 2: Template publish.yaml' {
 
     BeforeAll {
         $templateDir = Join-Path $PSScriptRoot '..\Resources\Publish-FlutterWeb\templates'
-        $templatePath = Join-Path $templateDir 'deploy.yaml'
+        $templatePath = Join-Path $templateDir 'publish.yaml'
     }
 
     Context 'Estructura de archivos' {
@@ -81,8 +81,8 @@ Describe 'Step 2: Template deploy.yaml' {
             $templateDir | Should -Exist
         }
 
-        # El template deploy.yaml debe existir dentro del directorio de templates.
-        It 'existe el archivo deploy.yaml en el directorio de templates' {
+        # El template publish.yaml debe existir dentro del directorio de templates.
+        It 'existe el archivo publish.yaml en el directorio de templates' {
             $templatePath | Should -Exist
         }
     }
@@ -197,19 +197,19 @@ environment:
             Pop-Location
         }
 
-        # -Init no debe lanzar excepción cuando pubspec.yaml existe y deploy.yaml no existe.
+        # -Init no debe lanzar excepción cuando pubspec.yaml existe y publish.yaml no existe.
         It 'no lanza excepción cuando pubspec.yaml existe' {
             $script:initError | Should -BeNullOrEmpty
         }
 
-        # Debe crear deploy.yaml en el directorio actual del proyecto.
-        It 'crea deploy.yaml en el directorio del proyecto' {
-            Join-Path $testDir 'deploy.yaml' | Should -Exist
+        # Debe crear publish.yaml en el directorio actual del proyecto.
+        It 'crea publish.yaml en el directorio del proyecto' {
+            Join-Path $testDir 'publish.yaml' | Should -Exist
         }
 
-        # El deploy.yaml creado debe tener las claves server y port (copiado del template).
-        It 'deploy.yaml generado contiene server y port' {
-            $content = Get-Content (Join-Path $testDir 'deploy.yaml') -Raw | ConvertFrom-Yaml
+        # El publish.yaml creado debe tener las claves server y port (copiado del template).
+        It 'publish.yaml generado contiene server y port' {
+            $content = Get-Content (Join-Path $testDir 'publish.yaml') -Raw | ConvertFrom-Yaml
             $content.server | Should -Not -BeNullOrEmpty
             $content.port | Should -BeOfType [int]
         }
@@ -230,15 +230,15 @@ environment:
             }
         }
 
-        # Si deploy.yaml ya existe, -Init no debe sobreescribirlo — protege config existente.
-        It 'falla si deploy.yaml ya existe' {
+        # Si publish.yaml o el legacy deploy.yaml ya existen, -Init no debe sobreescribir — protege config existente.
+        It 'falla si deploy.yaml (legacy) ya existe' {
             $dupDir = Join-Path $env:TEMP "psdevops_test_dup_$([guid]::NewGuid().ToString().Substring(0,8))"
             New-Item -ItemType Directory -Path $dupDir -Force | Out-Null
             Set-Content -Path (Join-Path $dupDir 'pubspec.yaml') -Value "name: dup_app`nversion: 1.0.0" -Encoding UTF8
             Set-Content -Path (Join-Path $dupDir 'deploy.yaml') -Value "server: x" -Encoding UTF8
             try {
                 Push-Location $dupDir
-                { Publish-FlutterWeb -Init -ErrorAction Stop } | Should -Throw '*deploy.yaml*'
+                { Publish-FlutterWeb -Init -ErrorAction Stop } | Should -Throw '*publish.yaml*'
             } finally {
                 Pop-Location
                 Remove-Item -Path $dupDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -475,14 +475,14 @@ Describe 'Step 6: Publish-FlutterWeb -Publish' {
             }
         }
 
-        # Sin deploy.yaml no se conoce el servidor ni el puerto — debe fallar.
-        It 'falla si no existe deploy.yaml' {
+        # Sin publish.yaml no se conoce el servidor ni el puerto — debe fallar.
+        It 'falla si no existe publish.yaml' {
             $noDeployDir = Join-Path $env:TEMP "psdevops_test_deploy_noyaml_$([guid]::NewGuid().ToString().Substring(0,8))"
             New-Item -ItemType Directory -Path $noDeployDir -Force | Out-Null
             Set-Content -Path (Join-Path $noDeployDir 'pubspec.yaml') -Value "name: x`nversion: 1.0.0" -Encoding UTF8
             try {
                 Push-Location $noDeployDir
-                { Publish-FlutterWeb -Publish -ErrorAction Stop } | Should -Throw '*deploy.yaml*'
+                { Publish-FlutterWeb -Publish -ErrorAction Stop } | Should -Throw '*publish.yaml*'
             } finally {
                 Pop-Location
                 Remove-Item -Path $noDeployDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -645,13 +645,13 @@ Describe 'Step 9: Publish-FlutterWeb -DeployReport' {
         }
 
         # Sin deploy.yaml debe fallar.
-        It 'falla si no existe deploy.yaml' {
+        It 'falla si no existe publish.yaml' {
             $noDeployDir = Join-Path $env:TEMP "psdevops_test_dr_noyaml_$([guid]::NewGuid().ToString().Substring(0,8))"
             New-Item -ItemType Directory -Path $noDeployDir -Force | Out-Null
             Set-Content -Path (Join-Path $noDeployDir 'pubspec.yaml') -Value "name: x`nversion: 1.0.0" -Encoding UTF8
             try {
                 Push-Location $noDeployDir
-                { Publish-FlutterWeb -DeployReport -ErrorAction Stop } | Should -Throw '*deploy.yaml*'
+                { Publish-FlutterWeb -DeployReport -ErrorAction Stop } | Should -Throw '*publish.yaml*'
             } finally {
                 Pop-Location
                 Remove-Item -Path $noDeployDir -Recurse -Force -ErrorAction SilentlyContinue

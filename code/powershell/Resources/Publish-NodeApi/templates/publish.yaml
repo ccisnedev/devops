@@ -1,4 +1,4 @@
-# deploy.yaml — Configuración de despliegue para Node.js/TypeScript API
+# publish.yaml — Configuración de despliegue para Node.js/TypeScript API
 # Generado por: Publish-NodeApi -Init
 # name y version se leen siempre de package.json
 # NO incluya secretos en este archivo — este archivo SÍ se versiona.
@@ -10,6 +10,15 @@ server: your-ssh-alias        # alias en ~/.ssh/config
 runtime:
   processManager: systemd     # systemd | pm2
   nodeVersion: ">=18"
+
+# ─── API ──────────────────────────────────────────────
+# basePath del API: el healthcheck se hace en {basePath}/health.
+# Fuente preferida (automática): "modularApi": { "basePath": "/api/v1" } en package.json
+# (single source of truth: la app y el deploy leen el mismo valor).
+# Este campo es solo un OVERRIDE explícito para APIs que no sigan esa convención.
+# Vacío = /health en la raíz.
+api:
+  basePath: ""                # ej. /api/v1
 
 # ─── Health Check ─────────────────────────────────────
 health:
