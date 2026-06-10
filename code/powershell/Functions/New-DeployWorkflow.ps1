@@ -49,9 +49,9 @@ function New-DeployWorkflow {
         throw "Repository '$Name' has no valid metadata description. Run Get-RepoInfo to see suggested description."
     }
 
-    # 3. Validate deploy.yaml
+    # 3. Validate publish.yaml (acepta el legacy deploy.yaml)
     if (-not $repo.DeployYAMLExists) {
-        throw "Repository '$Name' is missing deploy.yaml. Create it before generating the workflow."
+        throw "Repository '$Name' is missing publish.yaml. Create it before generating the workflow."
     }
 
     # 4. Resolve type → template

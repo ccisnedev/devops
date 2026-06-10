@@ -1,4 +1,4 @@
-# deploy.yaml — Configuración de despliegue para Flutter Web
+# publish.yaml — Configuración de despliegue para Flutter Web
 # Generado por: Publish-FlutterWeb -Init
 # name y version se leen siempre de pubspec.yaml
 # NO incluya secretos en este archivo — este archivo SÍ se versiona.

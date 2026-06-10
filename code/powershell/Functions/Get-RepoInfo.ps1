@@ -6,7 +6,7 @@ function Get-RepoInfo {
     .DESCRIPTION
     Para repos CON metadata normalizada (type:X|stack:Y|...) parsea la descripción.
     Para repos SIN metadata, auto-detecta stack y sugiere descripción.
-    Comprueba deploy.yaml + workflow y determina DeployStatus (auto/partial/none).
+    Comprueba publish.yaml (o el legacy deploy.yaml) + workflow y determina DeployStatus (auto/partial/none).
 
     .PARAMETER Name
     Nombre de un repositorio individual.

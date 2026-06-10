@@ -5,7 +5,7 @@ Despliega una API Node.js/TypeScript a un servidor Linux remoto vía SSH.
 .DESCRIPTION
 El cmdlet `Publish-NodeApi` gestiona el ciclo completo de despliegue de APIs TypeScript:
 - Lee `name` y `version` de `package.json` (single source of truth).
-- Lee la configuración de despliegue de `deploy.yaml`.
+- Lee la configuración de despliegue de `publish.yaml`.
 - Ejecuta build local (npm ci + tsc) y empaqueta los artefactos compilados.
 - Sube dist/ + node_modules/ + package.json al servidor (no requiere internet en el servidor).
 - Usa releases versionados con symlink `current` para rollback fácil.
@@ -14,16 +14,16 @@ El cmdlet `Publish-NodeApi` gestiona el ciclo completo de despliegue de APIs Typ
 Se debe ejecutar desde la raíz del proyecto donde existen:
   - package.json   (name, version)
   - tsconfig.json  (proyecto TypeScript)
-  - deploy.yaml    (servidor, runtime, health — generar con -Init)
+  - publish.yaml   (servidor, runtime, health, api — generar con -Init)
   - .env.production (variables de entorno — se copia al servidor como .env)
 
 .PARAMETER Init
-Genera los archivos de configuración (deploy.yaml y .env.production) en el directorio actual.
+Genera los archivos de configuración (publish.yaml y .env.production) en el directorio actual.
 Requiere que existan package.json y tsconfig.json.
 
 .PARAMETER Publish
 Ejecuta el despliegue completo al servidor remoto.
-Lee deploy.yaml para el servidor destino y la configuración de runtime.
+Lee publish.yaml para el servidor destino y la configuración de runtime.
 Siempre sube .env.production como .env dentro del release.
 
 .PARAMETER DeployReport
@@ -33,7 +33,7 @@ Consulta el servidor para mostrar: versión actual, si la release existe, estado
 .EXAMPLE
 Publish-NodeApi -Init
 
-Genera deploy.yaml y .env.production en el directorio actual del proyecto TypeScript.
+Genera publish.yaml y .env.production en el directorio actual del proyecto TypeScript.
 
 .EXAMPLE
 Publish-NodeApi -DeployReport
@@ -43,7 +43,7 @@ Muestra un reporte de lo que hará -Publish sin realizar cambios.
 .EXAMPLE
 Publish-NodeApi -Publish
 
-Empaqueta, sube y despliega la API al servidor configurado en deploy.yaml.
+Empaqueta, sube y despliega la API al servidor configurado en publish.yaml. Acepta el nombre anterior deploy.yaml con aviso de deprecación.
 
 .NOTES
 Versión: 2.0.0
@@ -52,15 +52,15 @@ Requiere:
   - Configuración del host en ~/.ssh/config (Host, HostName, User, Port, IdentityFile)
   - Node.js y npm instalados localmente para el build
   - Node.js en el servidor remoto (solo runtime, no necesita internet)
-  - PM2 o systemd según la configuración de deploy.yaml
-  - Módulo powershell-yaml para parseo de deploy.yaml
+  - PM2 o systemd según la configuración de publish.yaml
+  - Módulo powershell-yaml para parseo de publish.yaml
 #>
 function Publish-NodeApi {
 
     [CmdletBinding(DefaultParameterSetName = 'Publish')]
     param(
         [Parameter(Mandatory, ParameterSetName = 'Init',
-            HelpMessage = "Genera archivos de configuración (deploy.yaml y .env.production)")]
+            HelpMessage = "Genera archivos de configuración (publish.yaml y .env.production)")]
         [switch]$Init,
 
         [Parameter(Mandatory, ParameterSetName = 'Publish',
@@ -87,7 +87,7 @@ function Publish-NodeApi {
         switch ($PSCmdlet.ParameterSetName) {
 
             # ═══════════════════════════════════════════════════
-            # INIT — Generar deploy.yaml y .env.production
+            # INIT — Generar publish.yaml y .env.production
             # ═══════════════════════════════════════════════════
             'Init' {
                 $cwd = (Get-Location).Path
@@ -104,10 +104,13 @@ function Publish-NodeApi {
                     throw "No se encontró tsconfig.json en $cwd. Este cmdlet solo soporta proyectos TypeScript."
                 }
 
-                # Validar que deploy.yaml no exista
-                $deployYamlPath = Join-Path $cwd "deploy.yaml"
-                if (Test-Path $deployYamlPath) {
-                    throw "Ya existe deploy.yaml en $cwd. Elimínelo primero si desea regenerar la configuración."
+                # Validar que publish.yaml no exista (ni el legacy deploy.yaml)
+                $publishYamlPath = Join-Path $cwd "publish.yaml"
+                if (Test-Path $publishYamlPath) {
+                    throw "Ya existe publish.yaml en $cwd. Elimínelo primero si desea regenerar la configuración."
+                }
+                if (Test-Path (Join-Path $cwd "deploy.yaml")) {
+                    throw "Existe deploy.yaml (nombre anterior) en $cwd. Renómbrelo a publish.yaml o elimínelo antes de regenerar."
                 }
 
                 # Leer package.json para mostrar información
@@ -119,13 +122,13 @@ function Publish-NodeApi {
                 Write-Host "  Versión:   $appVersion" -ForegroundColor Cyan
                 Write-Host ""
 
-                # Copiar template deploy.yaml
-                $templatePath = Join-Path $PSScriptRoot "..\Resources\Publish-NodeApi\templates\deploy.yaml"
+                # Copiar template publish.yaml
+                $templatePath = Join-Path $PSScriptRoot "..\Resources\Publish-NodeApi\templates\publish.yaml"
                 if (-not (Test-Path $templatePath)) {
                     throw "Template no encontrado: $templatePath"
                 }
-                Copy-Item -Path $templatePath -Destination $deployYamlPath
-                Write-Host "  Creado: deploy.yaml" -ForegroundColor Green
+                Copy-Item -Path $templatePath -Destination $publishYamlPath
+                Write-Host "  Creado: publish.yaml" -ForegroundColor Green
 
                 # Crear .env.production si no existe
                 $envProdPath = Join-Path $cwd ".env.production"
@@ -160,9 +163,10 @@ NODE_ENV=production
                 # Instrucciones
                 Write-Host ""
                 Write-Host "  Configuración creada. Próximos pasos:" -ForegroundColor Green
-                Write-Host "    1. Edite deploy.yaml → cambie 'server' por su alias SSH" -ForegroundColor DarkGray
+                Write-Host "    1. Edite publish.yaml → cambie 'server' por su alias SSH" -ForegroundColor DarkGray
                 Write-Host "    2. Edite .env.production → configure variables de entorno" -ForegroundColor DarkGray
-                Write-Host "    3. Ejecute: Publish-NodeApi -Publish" -ForegroundColor DarkGray
+                Write-Host "    3. (modular_api) Declare el basePath en package.json: `"modularApi`": { `"basePath`": `"/api/v1`" }" -ForegroundColor DarkGray
+                Write-Host "    4. Ejecute: Publish-NodeApi -Publish" -ForegroundColor DarkGray
                 Write-Host ""
             }
 
@@ -173,14 +177,22 @@ NODE_ENV=production
                 $cwd = (Get-Location).Path
                 Ensure-YamlModule
 
+                # ─── 1. Cargar helpers ───────────────────────
+                . "$PSScriptRoot/../Private/PublishHelpers.ps1"
+                . "$PSScriptRoot/../Private/Read-SSHConfig.ps1"
+
                 # ─── 0. Validaciones ─────────────────────────
-                $deployYamlPath = Join-Path $cwd "deploy.yaml"
+                $configResolution = Resolve-PublishConfigPath -ProjectRoot $cwd
+                $publishYamlPath = $configResolution.Path
                 $packageJsonPath = Join-Path $cwd "package.json"
                 $tsconfigPath = Join-Path $cwd "tsconfig.json"
                 $envProdPath = Join-Path $cwd ".env.production"
 
-                if (-not (Test-Path $deployYamlPath)) {
-                    throw "No se encontró deploy.yaml. Ejecute 'Publish-NodeApi -Init' primero."
+                if (-not $publishYamlPath) {
+                    throw "No se encontró publish.yaml. Ejecute 'Publish-NodeApi -Init' primero."
+                }
+                if ($configResolution.IsLegacy) {
+                    Write-Host "  Aviso: 'deploy.yaml' está deprecado; renómbrelo a 'publish.yaml'." -ForegroundColor Yellow
                 }
                 if (-not (Test-Path $packageJsonPath)) {
                     throw "No se encontró package.json en $cwd."
@@ -192,13 +204,9 @@ NODE_ENV=production
                     throw "No se encontró .env.production. Cree el archivo con las variables de entorno de producción."
                 }
 
-                # ─── 1. Cargar helpers ───────────────────────
-                . "$PSScriptRoot/../Private/PublishHelpers.ps1"
-                . "$PSScriptRoot/../Private/Read-SSHConfig.ps1"
-
                 # ─── 2. Leer configuración ───────────────────
-                # deploy.yaml (server, runtime, health)
-                $deployConfig = (Get-Content $deployYamlPath -Raw) | ConvertFrom-Yaml
+                # publish.yaml (server, runtime, health, api)
+                $deployConfig = (Get-Content $publishYamlPath -Raw) | ConvertFrom-Yaml
 
                 # package.json (name, version)
                 $pkg = Get-Content $packageJsonPath -Raw | ConvertFrom-Json
@@ -210,7 +218,7 @@ NODE_ENV=production
                 $envConfig = Read-DotEnv -Path $envProdPath -DefaultPort 8080
                 $port = $envConfig.Port
 
-                # Extraer config de deploy.yaml con defaults
+                # Extraer config de publish.yaml con defaults
                 $server = $deployConfig.server
                 $processManager = if ($deployConfig.runtime -and $deployConfig.runtime.processManager) { 
                     $deployConfig.runtime.processManager 
@@ -218,19 +226,21 @@ NODE_ENV=production
                 $nodeVersion = if ($deployConfig.runtime -and $deployConfig.runtime.nodeVersion) { 
                     $deployConfig.runtime.nodeVersion 
                 } else { '>=18' }
-                $healthRetries = if ($deployConfig.health -and $deployConfig.health.retries) { 
-                    $deployConfig.health.retries 
+                $healthRetries = if ($deployConfig.health -and $deployConfig.health.retries) {
+                    $deployConfig.health.retries
                 } else { 6 }
-                $healthInterval = if ($deployConfig.health -and $deployConfig.health.interval) { 
-                    $deployConfig.health.interval 
+                $healthInterval = if ($deployConfig.health -and $deployConfig.health.interval) {
+                    $deployConfig.health.interval
                 } else { 3 }
+                # basePath del API: package.json (modularApi.basePath) > publish.yaml (api.basePath) > raiz
+                $apiBasePath = Resolve-ApiBasePath -PackageJson $pkg -PublishConfig $deployConfig
 
                 # ─── 3. Validaciones de config ───────────────
                 if (-not $server) {
-                    throw "No se encontró 'server:' en deploy.yaml."
+                    throw "No se encontró 'server:' en publish.yaml."
                 }
                 if ($server -eq 'your-ssh-alias') {
-                    throw "deploy.yaml contiene el valor de ejemplo 'your-ssh-alias'. Cambie 'server' por el alias SSH real de su servidor."
+                    throw "publish.yaml contiene el valor de ejemplo 'your-ssh-alias'. Cambie 'server' por el alias SSH real de su servidor."
                 }
                 if ($processManager -notin @('systemd', 'pm2')) {
                     throw "Process manager '$processManager' no soportado. Use 'systemd' o 'pm2'."
@@ -241,6 +251,9 @@ NODE_ENV=production
                 Write-Host "  Servidor:   $server" -ForegroundColor Cyan
                 Write-Host "  Proceso:    $processManager" -ForegroundColor Cyan
                 Write-Host "  Puerto:     $port" -ForegroundColor Cyan
+                if ($apiBasePath) {
+                    Write-Host "  BasePath:   $apiBasePath" -ForegroundColor Cyan
+                }
                 Write-Host ""
 
                 # ─── 4. SSH Config ───────────────────────────
@@ -375,7 +388,7 @@ NODE_ENV=production
                     }
 
                     # ─── 10. Healthcheck ─────────────────────
-                    $healthUrl = "http://127.0.0.1:$port/health"
+                    $healthUrl = "http://127.0.0.1:$port$apiBasePath/health"
                     Write-Host "  Verificando: $healthUrl" -ForegroundColor Cyan
 
                     $healthScript = Get-BashScript -ScriptName "Healthcheck.sh" -Placeholders @{
@@ -422,24 +435,28 @@ NODE_ENV=production
                 $cwd = (Get-Location).Path
                 Ensure-YamlModule
 
+                # ─── 1. Cargar helpers ───────────────────────
+                . "$PSScriptRoot/../Private/PublishHelpers.ps1"
+                . "$PSScriptRoot/../Private/Read-SSHConfig.ps1"
+
                 # ─── 0. Validaciones ─────────────────────────
                 $packageJsonPath = Join-Path $cwd "package.json"
-                $deployYamlPath = Join-Path $cwd "deploy.yaml"
+                $configResolution = Resolve-PublishConfigPath -ProjectRoot $cwd
+                $publishYamlPath = $configResolution.Path
                 $envProdPath = Join-Path $cwd ".env.production"
 
                 if (-not (Test-Path $packageJsonPath)) {
                     throw "No se encontró package.json en $cwd."
                 }
-                if (-not (Test-Path $deployYamlPath)) {
-                    throw "No se encontró deploy.yaml. Ejecute 'Publish-NodeApi -Init' primero."
+                if (-not $publishYamlPath) {
+                    throw "No se encontró publish.yaml. Ejecute 'Publish-NodeApi -Init' primero."
+                }
+                if ($configResolution.IsLegacy) {
+                    Write-Host "  Aviso: 'deploy.yaml' está deprecado; renómbrelo a 'publish.yaml'." -ForegroundColor Yellow
                 }
                 if (-not (Test-Path $envProdPath)) {
                     throw "No se encontró .env.production. Ejecute 'Publish-NodeApi -Init' primero."
                 }
-
-                # ─── 1. Cargar helpers ───────────────────────
-                . "$PSScriptRoot/../Private/PublishHelpers.ps1"
-                . "$PSScriptRoot/../Private/Read-SSHConfig.ps1"
 
                 # ─── 2. Leer configuración ───────────────────
                 $packageJson = Get-Content $packageJsonPath -Raw | ConvertFrom-Json
@@ -447,7 +464,7 @@ NODE_ENV=production
                 $appVersion = $packageJson.version
                 $release = "v$appVersion"
 
-                $deployConfig = Get-Content $deployYamlPath -Raw | ConvertFrom-Yaml
+                $deployConfig = Get-Content $publishYamlPath -Raw | ConvertFrom-Yaml
                 $server = $deployConfig.server
                 $processManager = if ($deployConfig.runtime -and $deployConfig.runtime.processManager) {
                     $deployConfig.runtime.processManager
@@ -455,13 +472,14 @@ NODE_ENV=production
 
                 $envConfig = Read-DotEnv -Path $envProdPath -DefaultPort 8080
                 $port = $envConfig.Port
+                $apiBasePath = Resolve-ApiBasePath -PackageJson $packageJson -PublishConfig $deployConfig
 
                 # ─── 3. Validaciones de config ───────────────
                 if (-not $server) {
-                    throw "No se encontró 'server:' en deploy.yaml."
+                    throw "No se encontró 'server:' en publish.yaml."
                 }
                 if ($server -eq 'your-ssh-alias') {
-                    throw "deploy.yaml contiene el valor de ejemplo 'your-ssh-alias'. Cambie 'server' por el alias SSH real de su servidor."
+                    throw "publish.yaml contiene el valor de ejemplo 'your-ssh-alias'. Cambie 'server' por el alias SSH real de su servidor."
                 }
 
                 # ─── 4. SSH Config ───────────────────────────
@@ -481,6 +499,9 @@ NODE_ENV=production
                 Write-Host "  Servidor:   $server ($ip)" -ForegroundColor White
                 Write-Host "  Proceso:    $processManager" -ForegroundColor White
                 Write-Host "  Puerto:     $port" -ForegroundColor White
+                if ($apiBasePath) {
+                    Write-Host "  BasePath:   $apiBasePath (healthcheck: $apiBasePath/health)" -ForegroundColor White
+                }
                 Write-Host ""
 
                 # ─── 5. Consultar estado del servidor ────────
