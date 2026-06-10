@@ -38,6 +38,115 @@ function Get-YamlValue {
 
 <#
 .SYNOPSIS
+Normaliza el basePath de un API para construir URLs.
+
+.DESCRIPTION
+Garantiza slash inicial y elimina slashes finales. Una cadena vacia o "/"
+retorna vacio (la URL resultante queda en la raiz, retrocompatible con
+APIs que exponen /health sin basePath).
+
+.PARAMETER BasePath
+basePath declarado, p. ej. "api/v1" o "/api/v1/".
+
+.EXAMPLE
+Format-ApiBasePath -BasePath 'api/v1'   # => '/api/v1'
+Format-ApiBasePath -BasePath '/api/v1/' # => '/api/v1'
+Format-ApiBasePath -BasePath ''         # => ''
+#>
+function Format-ApiBasePath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$false)]
+        [AllowEmptyString()]
+        [string]$BasePath = ''
+    )
+
+    $value = $BasePath.Trim().TrimEnd('/')
+    if (-not $value) { return '' }
+    if (-not $value.StartsWith('/')) { $value = "/$value" }
+    return $value
+}
+
+<#
+.SYNOPSIS
+Resuelve el basePath efectivo del API segun la precedencia del ecosistema.
+
+.DESCRIPTION
+Precedencia (single source of truth primero):
+  1. package.json -> "modularApi": { "basePath": "..." }  (convencion modular_api)
+  2. publish.yaml -> api.basePath                          (override explicito)
+  3. "" (raiz)                                             (retrocompatible)
+El valor retornado ya viene normalizado por Format-ApiBasePath.
+
+.PARAMETER PackageJson
+Objeto de package.json ya parseado (ConvertFrom-Json).
+
+.PARAMETER PublishConfig
+Objeto de publish.yaml ya parseado (ConvertFrom-Yaml).
+
+.EXAMPLE
+$apiBasePath = Resolve-ApiBasePath -PackageJson $pkg -PublishConfig $deployConfig
+#>
+function Resolve-ApiBasePath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$false)]
+        $PackageJson,
+
+        [Parameter(Mandatory=$false)]
+        $PublishConfig
+    )
+
+    $raw = ''
+    if ($PackageJson -and $PackageJson.modularApi -and $PackageJson.modularApi.basePath) {
+        $raw = [string]$PackageJson.modularApi.basePath
+    }
+    elseif ($PublishConfig -and $PublishConfig.api -and $PublishConfig.api.basePath) {
+        $raw = [string]$PublishConfig.api.basePath
+    }
+
+    return Format-ApiBasePath -BasePath $raw
+}
+
+<#
+.SYNOPSIS
+Resuelve la ruta del archivo de configuracion de despliegue del proyecto.
+
+.DESCRIPTION
+Busca publish.yaml (nombre actual, coherente con el cmdlet Publish-NodeApi) y,
+si no existe, cae al nombre anterior deploy.yaml marcandolo como legacy para
+que el caller emita el aviso de deprecacion.
+
+.PARAMETER ProjectRoot
+Directorio raiz del proyecto.
+
+.EXAMPLE
+$cfg = Resolve-PublishConfigPath -ProjectRoot (Get-Location).Path
+if (-not $cfg.Path) { throw "..." }
+if ($cfg.IsLegacy) { Write-Host "deploy.yaml esta deprecado..." }
+#>
+function Resolve-PublishConfigPath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$ProjectRoot
+    )
+
+    $publishPath = Join-Path $ProjectRoot 'publish.yaml'
+    if (Test-Path $publishPath) {
+        return @{ Path = $publishPath; IsLegacy = $false }
+    }
+
+    $legacyPath = Join-Path $ProjectRoot 'deploy.yaml'
+    if (Test-Path $legacyPath) {
+        return @{ Path = $legacyPath; IsLegacy = $true }
+    }
+
+    return @{ Path = $null; IsLegacy = $false }
+}
+
+<#
+.SYNOPSIS
 Lee un archivo .env y extrae todas las variables de entorno.
 
 .DESCRIPTION

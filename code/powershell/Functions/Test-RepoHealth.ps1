@@ -61,13 +61,13 @@ function Test-RepoHealth {
         $actions.Add("Update description to metadata format: $suggestion")
     }
 
-    # Check 2: deploy.yaml exists
+    # Check 2: publish.yaml exists (acepta el legacy deploy.yaml)
     if ($info.DeployYAMLExists) {
-        $checks.Add([PSCustomObject]@{ Check = 'Deploy.yaml exists and is valid'; Status = 'PASS'; Suggestion = $null })
+        $checks.Add([PSCustomObject]@{ Check = 'Publish.yaml exists and is valid'; Status = 'PASS'; Suggestion = $null })
     }
     else {
-        $checks.Add([PSCustomObject]@{ Check = 'Deploy.yaml exists and is valid'; Status = 'FAIL'; Suggestion = 'Create deploy.yaml with server/port configuration.' })
-        $actions.Add("Create deploy.yaml for $Name")
+        $checks.Add([PSCustomObject]@{ Check = 'Publish.yaml exists and is valid'; Status = 'FAIL'; Suggestion = 'Create publish.yaml with server/port configuration.' })
+        $actions.Add("Create publish.yaml for $Name")
     }
 
     # Check 3: Workflow file exists
