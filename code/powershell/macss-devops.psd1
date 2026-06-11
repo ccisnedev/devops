@@ -1,6 +1,6 @@
 @{
     RootModule = 'macss-devops.psm1'
-    ModuleVersion = '3.0.0'
+    ModuleVersion = '3.1.0'
     GUID = 'fc00a549-8aa9-4b58-b4f8-6e1e5d39e22a'
     Author = 'ccisne.dev'
     CompanyName = 'ccisne.dev'
