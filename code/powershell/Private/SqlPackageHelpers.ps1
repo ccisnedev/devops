@@ -168,6 +168,19 @@ function Build-SqlPackageArgs {
         }
     }
 
+    # Variables SqlCmd /v: desde .env: cualquier variable con prefijo SQLVAR_ se pasa como
+    # /v:<nombre>=<valor> (p. ej. SQLVAR_FotosApiLoginPassword -> /v:FotosApiLoginPassword=...).
+    # Permite inyectar secretos (p. ej. contrasenas de logins en el modelo) en el deploy sin
+    # commitearlos en el repo.
+    if ($Action -in $propsActions) {
+        foreach ($key in $EnvVars.Keys) {
+            if ($key -like 'SQLVAR_*') {
+                $varName = $key.Substring(7)
+                $sqlArgs += "/v:$varName=$($EnvVars[$key])"
+            }
+        }
+    }
+
     return $sqlArgs
 }
 
