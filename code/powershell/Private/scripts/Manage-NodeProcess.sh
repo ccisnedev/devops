@@ -91,42 +91,66 @@ EOF
 elif [ "$PROCESS_MANAGER" = "pm2" ]; then
 
     if ! command -v pm2 >/dev/null 2>&1; then
-        echo "ERROR: PM2 no está instalado. Instalar con: npm install -g pm2" >&2
+        echo "ERROR: PM2 is not installed. Install with: npm install -g pm2" >&2
         exit 1
     fi
 
-    # Eliminar proceso anterior si existe
-    if pm2 describe "$NAME" >/dev/null 2>&1; then
-        echo "Eliminando proceso PM2 existente: $NAME"
-        pm2 delete "$NAME" || true
-    fi
-
-    echo "Iniciando con PM2: $NAME"
     cd "$WORKING_DIR"
 
-    # Cargar variables de entorno del .env e iniciar
-    if [ -f "$ENV_FILE" ]; then
-        # Exportar variables del .env y luego iniciar PM2
-        set -a
-        . "$ENV_FILE"
-        set +a
-    fi
+    ECOSYSTEM_FILE="$WORKING_DIR/ecosystem.config.js"
 
-    pm2 start "$ENTRY_PATH" \
-        --name "$NAME" \
-        --cwd "$WORKING_DIR" \
-        --update-env
+    if [ -f "$ECOSYSTEM_FILE" ]; then
+        # Config-as-code path: declarative process topology (one or more apps).
+        # Process names, cwd and env are owned by ecosystem.config.js, not by CLI flags.
+        echo "Using ecosystem.config.js (config-as-code): $ECOSYSTEM_FILE"
 
-    pm2 save
+        # startOrReload is idempotent: starts apps the first time, reloads them on later deploys.
+        pm2 startOrReload "$ECOSYSTEM_FILE" --update-env
 
-    # Verificar estado
-    sleep 2
-    if pm2 describe "$NAME" | grep -q "online"; then
-        echo "Proceso $NAME activo (PM2)"
+        # Persist the process list so 'pm2 startup' can resurrect it after a reboot.
+        pm2 save
+
+        # The ecosystem file owns the app names, so verify the whole list instead of $NAME.
+        # The authoritative liveness check is the healthcheck that runs after this script.
+        sleep 2
+        if pm2 jlist | grep -q '"status":"errored"'; then
+            echo "ERROR: at least one PM2 app is in 'errored' state" >&2
+            pm2 logs --nostream --lines 20
+            exit 1
+        fi
+        echo "PM2 apps started from ecosystem.config.js"
     else
-        echo "ERROR: Proceso $NAME no pudo iniciar" >&2
-        pm2 logs "$NAME" --nostream --lines 20
-        exit 1
+        # Direct path (backward compatible): a single process started imperatively.
+        # Remove a previous process with the same name to force a clean start.
+        if pm2 describe "$NAME" >/dev/null 2>&1; then
+            echo "Removing existing PM2 process: $NAME"
+            pm2 delete "$NAME" || true
+        fi
+
+        echo "Starting with PM2: $NAME"
+
+        # Load environment variables from the .env file before starting.
+        if [ -f "$ENV_FILE" ]; then
+            set -a
+            . "$ENV_FILE"
+            set +a
+        fi
+
+        pm2 start "$ENTRY_PATH" \
+            --name "$NAME" \
+            --cwd "$WORKING_DIR" \
+            --update-env
+
+        pm2 save
+
+        sleep 2
+        if pm2 describe "$NAME" | grep -q "online"; then
+            echo "Process $NAME online (PM2)"
+        else
+            echo "ERROR: Process $NAME failed to start" >&2
+            pm2 logs "$NAME" --nostream --lines 20
+            exit 1
+        fi
     fi
 
 else
