@@ -72,7 +72,7 @@ Write-Host "╚═════════════════════�
 # ─── Cargar módulo ──────────────────────────────────────────────────
 Write-TestHeader "Setup: Cargar módulo"
 Remove-Module 'macss-devops' -ErrorAction SilentlyContinue
-Import-Module "$ModuleRoot\..\macss-devops.psd1" -Force
+Import-Module "$ModuleRoot\macss-devops.psd1" -Force
 $cmd = Get-Command Publish-NodeApi -ErrorAction SilentlyContinue
 Assert-True ($null -ne $cmd) "Cmdlet Publish-NodeApi está disponible"
 
@@ -95,7 +95,7 @@ Assert-True ($setNames -contains 'Publish') "ParameterSet 'Publish' existe"
 # ════════════════════════════════════════════════════════════════════
 # TEST GROUP 2: -Init en proyecto TypeScript válido
 # ════════════════════════════════════════════════════════════════════
-Write-TestHeader "2. -Init genera deploy.yaml en proyecto TypeScript"
+Write-TestHeader "2. -Init genera publish.yaml en proyecto TypeScript"
 
 # Crear proyecto de prueba temporal
 $testProject = Join-Path $env:TEMP "psdevops_test_nodeapi_$([guid]::NewGuid().ToString().Substring(0,8))"
@@ -120,19 +120,19 @@ try {
     # Ejecutar -Init
     Publish-NodeApi -Init
 
-    # Verificar que deploy.yaml se creó
-    $deployYaml = Join-Path $testProject "deploy.yaml"
-    Assert-True (Test-Path $deployYaml) "deploy.yaml fue creado"
-    Assert-FileContains $deployYaml "server:" "deploy.yaml contiene 'server:'"
-    Assert-FileContains $deployYaml "processManager:" "deploy.yaml contiene 'processManager:'"
-    Assert-FileContains $deployYaml "systemd" "deploy.yaml tiene systemd como default"
-    Assert-FileContains $deployYaml "retries:" "deploy.yaml contiene health retries"
+    # Verify publish.yaml was created (renamed from deploy.yaml in 3.1.0)
+    $publishYaml = Join-Path $testProject "publish.yaml"
+    Assert-True (Test-Path $publishYaml) "publish.yaml was created"
+    Assert-FileContains $publishYaml "server:" "publish.yaml contains 'server:'"
+    Assert-FileContains $publishYaml "processManager:" "publish.yaml contains 'processManager:'"
+    Assert-FileContains $publishYaml "systemd" "publish.yaml has systemd as default"
+    Assert-FileContains $publishYaml "retries:" "publish.yaml contains health retries"
 
-    # Verificar que deploy.yaml NO contiene name ni version (se leen de package.json)
-    $deployContent = Get-Content $deployYaml -Raw
-    $yamlParsed = $deployContent | ConvertFrom-Yaml
-    Assert-True ($null -eq $yamlParsed.name) "deploy.yaml NO contiene campo 'name'"
-    Assert-True ($null -eq $yamlParsed.version) "deploy.yaml NO contiene campo 'version'"
+    # Verify publish.yaml does NOT contain name/version (read from package.json)
+    $publishContent = Get-Content $publishYaml -Raw
+    $yamlParsed = $publishContent | ConvertFrom-Yaml
+    Assert-True ($null -eq $yamlParsed.name) "publish.yaml does NOT contain 'name'"
+    Assert-True ($null -eq $yamlParsed.version) "publish.yaml does NOT contain 'version'"
 
     # Verificar que .env.production se creó
     $envProd = Join-Path $testProject ".env.production"
@@ -269,7 +269,7 @@ $templateDir = Join-Path $ModuleRoot "Resources\Publish-NodeApi\templates"
 
 Assert-True (Test-Path (Join-Path $scriptsDir "Install-NodeApi.sh")) "Install-NodeApi.sh existe"
 Assert-True (Test-Path (Join-Path $scriptsDir "Manage-NodeProcess.sh")) "Manage-NodeProcess.sh existe"
-Assert-True (Test-Path (Join-Path $templateDir "deploy.yaml")) "Template deploy.yaml existe"
+Assert-True (Test-Path (Join-Path $templateDir "publish.yaml")) "Template publish.yaml exists"
 
 # Verificar contenido de los scripts bash
 $installSh = Get-Content (Join-Path $scriptsDir "Install-NodeApi.sh") -Raw
@@ -283,6 +283,11 @@ $manageSh = Get-Content (Join-Path $scriptsDir "Manage-NodeProcess.sh") -Raw
 Assert-True ($manageSh -match '__PROCESS_MANAGER__') "Manage-NodeProcess.sh tiene placeholder __PROCESS_MANAGER__"
 Assert-True ($manageSh -match 'systemctl') "Manage-NodeProcess.sh soporta systemd"
 Assert-True ($manageSh -match 'pm2') "Manage-NodeProcess.sh soporta pm2"
+
+# pm2 ecosystem.config.js (config-as-code) support
+Assert-True ($manageSh -match 'ecosystem\.config\.js') "Manage-NodeProcess.sh detects ecosystem.config.js"
+Assert-True ($manageSh -match 'startOrReload') "Manage-NodeProcess.sh uses pm2 startOrReload for ecosystem mode"
+Assert-True ($manageSh -match 'pm2 start "\$ENTRY_PATH"') "Manage-NodeProcess.sh keeps the direct pm2 start fallback"
 
 # ════════════════════════════════════════════════════════════════════
 # TEST GROUP 10: Deploy e2e (requiere servidor real)
@@ -441,6 +446,15 @@ try {
     Pop-Location
     Remove-Item -Path $testDrNoBuild -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# ════════════════════════════════════════════════════════════════════
+# TEST GROUP 14: Publish-NodeApi packages ecosystem.config.js when present
+# ════════════════════════════════════════════════════════════════════
+Write-TestHeader "14. Publish-NodeApi packages ecosystem.config.js when present"
+
+$publishSrc = Get-Content "$ModuleRoot\Functions\Publish-NodeApi.ps1" -Raw
+Assert-True ($publishSrc -match 'ecosystem\.config\.js') "Source references ecosystem.config.js"
+Assert-True ($publishSrc -match '\$tarItems') "Source builds a dynamic tar item list (`$tarItems)"
 
 # ─── Resumen ────────────────────────────────────────────────────────
 Write-Host ""

@@ -315,9 +315,15 @@ NODE_ENV=production
 
                 $localTarball = Join-Path $env:TEMP $tarballName
 
-                # Empaquetar solo: dist/ + node_modules/ + package.json
-                # (los artefactos ya compilados, listos para ejecutar con node)
-                $tarCmd = "tar.exe -czf `"$localTarball`" -C `"$cwd`" dist node_modules package.json"
+                # Package the prebuilt artifacts ready to run with node:
+                # dist/ + node_modules/ + package.json. Include ecosystem.config.js
+                # when present so the pm2 path can deploy a declarative process topology.
+                $tarItems = @('dist', 'node_modules', 'package.json')
+                if (Test-Path (Join-Path $cwd 'ecosystem.config.js')) {
+                    $tarItems += 'ecosystem.config.js'
+                    Write-Host "  ecosystem.config.js detected (config-as-code)" -ForegroundColor Green
+                }
+                $tarCmd = "tar.exe -czf `"$localTarball`" -C `"$cwd`" $($tarItems -join ' ')"
                 $tarResult = Invoke-Expression $tarCmd 2>&1
 
                 if (-not (Test-Path $localTarball)) {
