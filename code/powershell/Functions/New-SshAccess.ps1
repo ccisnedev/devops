@@ -100,7 +100,7 @@ function New-SshAccess {
         '__PUBKEY__'      = $pub
         '__USE_SUDO__'    = ($(if ($useSudo) { '1' } else { '0' }))
     }
-    $rc = Invoke-RemoteBash -ScriptContent $installScript -User $bootstrap -HostName $HostName -Port $Port -Prefix 'macss_authkey_'
+    $rc = Invoke-RemoteBash -ScriptContent $installScript -User $bootstrap -HostName $HostName -Port $Port -Tty:$useSudo -Prefix 'macss_authkey_'
     if ($rc -ne 0) { throw "Public key install failed (exit $rc)." }
 
     # 3. Register the Host alias.
