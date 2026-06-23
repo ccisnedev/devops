@@ -1,4 +1,4 @@
-# Read-SSHConfig.Tests.ps1
+﻿# Read-SSHConfig.Tests.ps1
 # Tests para Read-SSHConfig — compatibilidad Windows/Linux
 
 BeforeAll {

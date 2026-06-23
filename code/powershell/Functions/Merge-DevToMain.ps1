@@ -1,4 +1,4 @@
-
+﻿
 <#
 .SYNOPSIS
 Automatiza el flujo de trabajo para fusionar la rama dev en main y subir los cambios a un repositorio remoto.

@@ -1,4 +1,4 @@
-# SshHelpers.ps1
+﻿# SshHelpers.ps1
 # Shared helpers for New-SshAccess / Remove-SshAccess.
 # Pure, testable logic (config blocks, key generation, permissions) plus a
 # thin remote-exec wrapper. No business logic lives in the cmdlets that is not here.

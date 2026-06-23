@@ -1,4 +1,4 @@
-Describe "Test-RepoHealth" {
+﻿Describe "Test-RepoHealth" {
     BeforeAll {
         . "$PSScriptRoot/../Functions/Test-RepoHealth.ps1"
         . "$PSScriptRoot/../Functions/Get-RepoInfo.ps1"

@@ -1,4 +1,4 @@
-Describe "Get-RepoInfo" {
+﻿Describe "Get-RepoInfo" {
     BeforeAll {
         . "$PSScriptRoot/../Functions/Get-RepoInfo.ps1"
         . "$PSScriptRoot/../Private/ConvertFrom-RepoDescription.ps1"

@@ -1,4 +1,4 @@
-BeforeAll {
+﻿BeforeAll {
     . "$PSScriptRoot\..\Functions\Install-PSDevOpsSkill.ps1"
 }
 
