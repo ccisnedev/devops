@@ -1,4 +1,4 @@
-Describe "Get-TemplateVersion" {
+﻿Describe "Get-TemplateVersion" {
     BeforeAll {
         . "$PSScriptRoot/../Private/Get-TemplateVersion.ps1"
     }

@@ -1,4 +1,4 @@
-# YamlHelpers.ps1
+﻿# YamlHelpers.ps1
 # Carga bajo demanda para powershell-yaml cuando una función realmente lo necesita.
 
 function Ensure-YamlModule {

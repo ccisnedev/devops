@@ -1,4 +1,4 @@
-# SqlPackageHelpers.ps1
+﻿# SqlPackageHelpers.ps1
 # Funciones helper para Invoke-SqlPackage
 
 <#

@@ -1,4 +1,4 @@
-function Get-TemplateHash {
+﻿function Get-TemplateHash {
     <#
     .SYNOPSIS
     Calcula el hash SHA1 de un template de workflow excluyendo las líneas de versión y hash.

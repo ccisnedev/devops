@@ -1,4 +1,4 @@
-# Test-SshAccess.ps1
+﻿# Test-SshAccess.ps1
 # Tests for New-SshAccess / Remove-SshAccess (unit + pure-logic; no network).
 # Run from the module: .\test\Test-SshAccess.ps1
 

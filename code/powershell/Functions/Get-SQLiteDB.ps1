@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 Copia la base de datos SQLite de una aplicación Android al directorio actual en la computadora.
 

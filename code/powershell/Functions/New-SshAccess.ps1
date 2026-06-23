@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 Provisions key-based SSH access to a host: generates (or reuses) a key pair, installs
 the public key on the server, registers a Host alias in ~/.ssh/config, and verifies it.
