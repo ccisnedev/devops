@@ -183,7 +183,9 @@ function Get-SshPublicKeyBlob {
 Runs a bash script on a remote host over SSH. If -IdentityFile is given it is used
 (-i); otherwise SSH falls back to its default auth (password/agent) - this is how
 the first-time bootstrap install works before any key is authorized.
-Returns the process exit code; remote stdout/stderr are written to the host.
+Output is written live to the host (the ssh call is not piped, so an interactive -tt
+sudo prompt renders in real time). The ssh exit code is left in $LASTEXITCODE; the
+caller must read it right after the call.
 #>
 function Invoke-RemoteBash {
     [CmdletBinding()]
@@ -207,7 +209,10 @@ function Invoke-RemoteBash {
 
     $remote = "/tmp/" + [IO.Path]::GetFileName($tmp)
     try {
-        & scp @common $tmp "$($User)@$($HostName):$remote"
+        Write-Host "  [scp] uploading script to $HostName ..." -ForegroundColor DarkGray
+        # scp is piped to Out-Host: its stdout is consumed (kept out of the return value)
+        # while the password prompt, written to the local tty, still shows.
+        & scp @common $tmp "$($User)@$($HostName):$remote" 2>&1 | Out-Host
         if ($LASTEXITCODE -ne 0) { throw "scp failed (exit $LASTEXITCODE)" }
 
         # ssh uses -p (lowercase) for port; rebuild without the scp-style -P.
@@ -215,8 +220,10 @@ function Invoke-RemoteBash {
         # (a service-account install/revoke runs via sudo over a non-interactive ssh).
         $ttyArgs = @(); if ($Tty) { $ttyArgs = @('-tt') }
         $sshCommon = @('-o', 'StrictHostKeyChecking=accept-new', '-p', "$Port") + $ttyArgs + $idArgs
+        Write-Host "  [ssh] running remote script (enter password / sudo if prompted) ..." -ForegroundColor DarkGray
+        # NOT piped on purpose: with -tt the forwarded sudo prompt must reach the console
+        # live. The caller reads $LASTEXITCODE (the ssh exit code) immediately after.
         & ssh @sshCommon "$($User)@$($HostName)" "bash $remote; rc=`$?; rm -f $remote; exit `$rc"
-        return $LASTEXITCODE
     }
     finally {
         Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue
