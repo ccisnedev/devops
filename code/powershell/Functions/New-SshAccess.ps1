@@ -94,13 +94,15 @@ function New-SshAccess {
     $bootstrap = if ($BootstrapUser) { $BootstrapUser } else { $User }
     $useSudo = ($Sudo -or ($bootstrap -ne $User))
     Write-Host "  Installing public key for '$User' via '$bootstrap' (sudo=$useSudo)..." -ForegroundColor DarkGray
+    if ($useSudo) { Write-Host "  You may be prompted for your password up to 3 times (scp, ssh, sudo)." -ForegroundColor Yellow }
 
     $installScript = Get-BashScript -ScriptName 'Install-AuthorizedKey.sh' -Placeholders @{
         '__TARGET_USER__' = $User
         '__PUBKEY__'      = $pub
         '__USE_SUDO__'    = ($(if ($useSudo) { '1' } else { '0' }))
     }
-    $rc = Invoke-RemoteBash -ScriptContent $installScript -User $bootstrap -HostName $HostName -Port $Port -Tty:$useSudo -Prefix 'macss_authkey_'
+    Invoke-RemoteBash -ScriptContent $installScript -User $bootstrap -HostName $HostName -Port $Port -Tty:$useSudo -Prefix 'macss_authkey_'
+    $rc = $LASTEXITCODE
     if ($rc -ne 0) { throw "Public key install failed (exit $rc)." }
 
     # 3. Register the Host alias.
@@ -110,7 +112,8 @@ function New-SshAccess {
 
     # 4. Verify key-based login works.
     Write-Host "  Verifying key-based login..." -ForegroundColor DarkGray
-    $vrc = Invoke-RemoteBash -ScriptContent 'exit 0' -User $User -HostName $HostName -Port $Port -IdentityFile $KeyPath -Prefix 'macss_verify_'
+    Invoke-RemoteBash -ScriptContent 'exit 0' -User $User -HostName $HostName -Port $Port -IdentityFile $KeyPath -Prefix 'macss_verify_'
+    $vrc = $LASTEXITCODE
     if ($vrc -ne 0) {
         Write-Host "  WARNING: verification failed (exit $vrc). Key installed but login not confirmed." -ForegroundColor Yellow
     } else {
