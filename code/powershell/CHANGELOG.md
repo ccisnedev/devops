@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.3.3] - 2026-06-23
+
+### Fixed
+- Windows PowerShell 5.1 compatibility (the manifest declares `PowerShellVersion = '5.1'`, but the module failed to parse there). Replaced the PS7-only null-coalescing operator (`??`) in `Read-SSHConfig` with a 5.1-compatible expression, and re-saved all `.ps1` files as UTF-8 **with BOM** so 5.1 reads non-ASCII characters (accents, em-dashes) correctly instead of producing string-terminator parse errors. Verified by importing the module under Windows PowerShell 5.1.
+
 ## [3.3.2] - 2026-06-23
 
 ### Fixed

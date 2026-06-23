@@ -1,4 +1,4 @@
-# Invoke-SqlPackage.Tests.ps1
+﻿# Invoke-SqlPackage.Tests.ps1
 # Tests Pester para el cmdlet Invoke-SqlPackage
 # Ejecutar: Invoke-Pester ./test/Invoke-SqlPackage.Tests.ps1
 

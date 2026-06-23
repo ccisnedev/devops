@@ -1,4 +1,4 @@
-Describe "Get-TemplateHash" {
+﻿Describe "Get-TemplateHash" {
     BeforeAll {
         . "$PSScriptRoot/../Private/Get-TemplateHash.ps1"
     }

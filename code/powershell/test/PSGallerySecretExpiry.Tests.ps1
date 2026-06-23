@@ -1,4 +1,4 @@
-BeforeAll {
+﻿BeforeAll {
     $metadataPath = Join-Path $PSScriptRoot 'PSGallerySecretMetadata.psd1'
     $metadata = Import-PowerShellDataFile $metadataPath
 
