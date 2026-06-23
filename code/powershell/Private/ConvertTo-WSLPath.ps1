@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 Convierte una ruta de Windows a una ruta compatible con WSL.
 

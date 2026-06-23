@@ -1,4 +1,4 @@
-function Invoke-PgSchema {
+﻿function Invoke-PgSchema {
     <#
     .SYNOPSIS
         Ejecuta acciones de pgschema para despliegue declarativo de esquemas PostgreSQL.

@@ -1,4 +1,4 @@
-function Get-TemplateVersion {
+﻿function Get-TemplateVersion {
     <#
     .SYNOPSIS
     Extrae la versión semver del encabezado de un template de workflow.

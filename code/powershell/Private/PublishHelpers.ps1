@@ -1,4 +1,4 @@
-# PublishHelpers.ps1
+﻿# PublishHelpers.ps1
 # Funciones helper compartidas para despliegues y publicación remota
 
 <#

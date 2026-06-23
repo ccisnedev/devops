@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 Lee y parsea el archivo SSH config estándar (~/.ssh/config)
 
@@ -27,7 +27,7 @@ function Read-SSHConfig {
         [string]$HostAlias,
         
         [Parameter(Mandatory=$false)]
-        [string]$ConfigPath = (Join-Path ($env:USERPROFILE ?? $env:HOME) ".ssh/config")
+        [string]$ConfigPath = (Join-Path $(if ($env:USERPROFILE) { $env:USERPROFILE } else { $env:HOME }) ".ssh/config")
     )
     
     if (!(Test-Path $ConfigPath)) {

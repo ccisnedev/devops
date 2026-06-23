@@ -1,4 +1,4 @@
-function Read-IssueFile {
+﻿function Read-IssueFile {
     <#
     .SYNOPSIS
         Lee y parsea un archivo de issue con formato frontmatter YAML.

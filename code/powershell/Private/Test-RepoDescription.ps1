@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 Valida que una descripción de metadata de repositorio cumple con el schema.
 
