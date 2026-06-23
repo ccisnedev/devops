@@ -226,6 +226,10 @@ NODE_ENV=production
                 $nodeVersion = if ($deployConfig.runtime -and $deployConfig.runtime.nodeVersion) { 
                     $deployConfig.runtime.nodeVersion 
                 } else { '>=18' }
+                # sudo is opt-in (default rootless): the deploy user owns REMOTE_ROOT/<name>.
+                $useSudo = if ($deployConfig.runtime -and ($null -ne $deployConfig.runtime.useSudo)) {
+                    [bool]$deployConfig.runtime.useSudo
+                } else { $false }
                 $healthRetries = if ($deployConfig.health -and $deployConfig.health.retries) {
                     $deployConfig.health.retries
                 } else { 6 }
@@ -360,6 +364,7 @@ NODE_ENV=production
                         '__REMOTE_ROOT__'   = $remoteRoot
                         '__NODE_VERSION__'  = $nodeVersion
                         '__USER__'          = $user
+                        '__USE_SUDO__'      = ($(if ($useSudo) { '1' } else { '0' }))
                     }
 
                     $exitCode = Invoke-RemoteScript -ScriptContent $installScript `
