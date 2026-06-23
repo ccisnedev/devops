@@ -58,3 +58,5 @@ Never revoke the key you are currently connecting with before the new one is ver
   never as a file committed to a repository.
 - On Windows the cmdlet restricts the private key ACL (OpenSSH refuses keys with loose
   permissions); on Linux it sets `chmod 600`.
+- The service-account bootstrap (`-Sudo`) may prompt for your password up to three times:
+  scp auth, ssh auth, and the remote sudo (the sudo prompt renders live).
