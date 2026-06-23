@@ -1,4 +1,4 @@
-# PgSchemaHelpers.ps1
+﻿# PgSchemaHelpers.ps1
 # Funciones helper para Invoke-PgSchema
 
 <#

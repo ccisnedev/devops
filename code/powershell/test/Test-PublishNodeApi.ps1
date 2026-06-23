@@ -1,4 +1,4 @@
-# Test-PublishNodeApi.ps1
+﻿# Test-PublishNodeApi.ps1
 # Test del cmdlet Publish-NodeApi usando TDD
 # Ejecutar desde la raíz del módulo: .\test\Test-PublishNodeApi.ps1
 

@@ -1,4 +1,4 @@
-function Invoke-SqlPackage {
+﻿function Invoke-SqlPackage {
     <#
     .SYNOPSIS
         Ejecuta acciones de SqlPackage para despliegue declarativo de bases de datos SQL Server.

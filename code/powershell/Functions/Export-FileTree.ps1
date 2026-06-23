@@ -1,4 +1,4 @@
-function Export-FileTree {
+﻿function Export-FileTree {
     param(
         [string]$OutputFile = "filetree.md",
         [string[]]$WhiteList = @("assets", "bin", "lib", "src","specs")

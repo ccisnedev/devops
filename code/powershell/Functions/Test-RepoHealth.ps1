@@ -1,4 +1,4 @@
-function Test-RepoHealth {
+﻿function Test-RepoHealth {
     <#
     .SYNOPSIS
     Ejecuta checks de salud sobre un repositorio y retorna un diagnóstico.

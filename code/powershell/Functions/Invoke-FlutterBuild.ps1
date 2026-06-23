@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 Compila la aplicación Flutter en diferentes modos.
 

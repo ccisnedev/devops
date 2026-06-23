@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 Convierte una descripción de metadata de repositorio en un PSObject estructurado.
 

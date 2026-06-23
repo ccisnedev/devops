@@ -1,4 +1,4 @@
-Describe "ConvertFrom-RepoDescription" {
+﻿Describe "ConvertFrom-RepoDescription" {
     BeforeAll {
         . "$PSScriptRoot/../Private/ConvertFrom-RepoDescription.ps1"
     }

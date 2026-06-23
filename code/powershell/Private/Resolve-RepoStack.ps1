@@ -1,4 +1,4 @@
-function Resolve-RepoStack {
+﻿function Resolve-RepoStack {
     <#
     .SYNOPSIS
     Auto-detecta el stack tecnológico de un repo a partir de su árbol de archivos.
