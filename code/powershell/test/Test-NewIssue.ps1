@@ -1,4 +1,4 @@
-# Test New-Issue cmdlet
+﻿# Test New-Issue cmdlet
 
 Write-Host "╔════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
 Write-Host "║         🧪 TEST DEL CMDLET NEW-ISSUE                      ║" -ForegroundColor Cyan

@@ -1,4 +1,4 @@
-function New-Issue {
+﻿function New-Issue {
     <#
     .SYNOPSIS
         Crea una nueva issue en GitHub desde un archivo markdown con formato frontmatter.

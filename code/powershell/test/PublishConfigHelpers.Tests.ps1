@@ -1,4 +1,4 @@
-# PublishConfigHelpers.Tests.ps1
+﻿# PublishConfigHelpers.Tests.ps1
 # Tests para los helpers de configuracion de publicacion:
 # Format-ApiBasePath, Resolve-ApiBasePath y Resolve-PublishConfigPath
 

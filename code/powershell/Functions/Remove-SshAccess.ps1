@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 Revokes an SSH key: removes its public key from a server's authorized_keys, and
 optionally removes the local private key and ~/.ssh/config alias.

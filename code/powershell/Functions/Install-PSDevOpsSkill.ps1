@@ -1,4 +1,4 @@
-function Install-PSDevOpsSkill {
+﻿function Install-PSDevOpsSkill {
     <#
     .SYNOPSIS
     Installs the bundled SKILL.md as a VS Code prompt file for AI assistant consumption.
