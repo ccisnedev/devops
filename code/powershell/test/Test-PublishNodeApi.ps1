@@ -278,6 +278,8 @@ Assert-True ($installSh -match '__VERSION__') "Install-NodeApi.sh tiene placehol
 Assert-True ($installSh -match 'NVM_DIR') "Install-NodeApi.sh carga nvm"
 Assert-True ($installSh -match 'dist/main\.js') "Install-NodeApi.sh verifica dist/main.js"
 Assert-True ($installSh -match 'ln -sfn') "Install-NodeApi.sh crea symlink"
+Assert-True ($installSh -match '__USE_SUDO__') "Install-NodeApi.sh has __USE_SUDO__ placeholder"
+Assert-True ($installSh -match 'if \[ "\$USE_SUDO" = "1" \]') "Install-NodeApi.sh makes sudo opt-in (conditional)"
 
 $manageSh = Get-Content (Join-Path $scriptsDir "Manage-NodeProcess.sh") -Raw
 Assert-True ($manageSh -match '__PROCESS_MANAGER__') "Manage-NodeProcess.sh tiene placeholder __PROCESS_MANAGER__"
@@ -455,6 +457,8 @@ Write-TestHeader "14. Publish-NodeApi packages ecosystem.config.js when present"
 $publishSrc = Get-Content "$ModuleRoot\Functions\Publish-NodeApi.ps1" -Raw
 Assert-True ($publishSrc -match 'ecosystem\.config\.js') "Source references ecosystem.config.js"
 Assert-True ($publishSrc -match '\$tarItems') "Source builds a dynamic tar item list (`$tarItems)"
+Assert-True ($publishSrc -match 'useSudo') "Source reads runtime.useSudo"
+Assert-True ($publishSrc -match '__USE_SUDO__') "Source passes __USE_SUDO__ to Install-NodeApi"
 
 # ─── Resumen ────────────────────────────────────────────────────────
 Write-Host ""

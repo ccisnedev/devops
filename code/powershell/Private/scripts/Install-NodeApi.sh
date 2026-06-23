@@ -10,6 +10,7 @@
 #   __REMOTE_ROOT__ : directorio base (ej: /opt/app)
 #   __NODE_VERSION__: versión mínima requerida (ej: >=18)
 #   __USER__        : usuario propietario de los archivos
+#   __USE_SUDO__    : "1" usa sudo para las operaciones de archivos; "0" (default) rootless
 
 set -e
 
@@ -22,6 +23,12 @@ VERSION="__VERSION__"
 REMOTE_ROOT="__REMOTE_ROOT__"
 NODE_VERSION_REQ="__NODE_VERSION__"
 OWNER="__USER__"
+USE_SUDO="__USE_SUDO__"
+
+# sudo is opt-in. Default (rootless): the deploy user owns REMOTE_ROOT/$NAME,
+# so no elevation is needed. Set useSudo:true in publish.yaml to deploy into a
+# directory the user does not own.
+if [ "$USE_SUDO" = "1" ]; then SUDO="sudo"; else SUDO=""; fi
 
 RELEASE_DIR="$REMOTE_ROOT/$NAME/releases/v$VERSION"
 TARBALL="/tmp/${NAME}-v${VERSION}.tar.gz"
@@ -45,7 +52,7 @@ echo "  Node.js v$(node -v | sed 's/^v//') OK"
 
 # ─── 2. Crear directorio del release ────────────────────
 echo "Creando release directory: $RELEASE_DIR"
-sudo mkdir -p "$RELEASE_DIR"
+$SUDO mkdir -p "$RELEASE_DIR"
 
 # ─── 3. Extraer tarball ─────────────────────────────────
 if [ ! -f "$TARBALL" ]; then
@@ -54,14 +61,14 @@ if [ ! -f "$TARBALL" ]; then
 fi
 
 echo "Extrayendo tarball (artefactos pre-compilados)..."
-sudo tar -xzf "$TARBALL" -C "$RELEASE_DIR"
-sudo rm -f "$TARBALL"
+$SUDO tar -xzf "$TARBALL" -C "$RELEASE_DIR"
+$SUDO rm -f "$TARBALL"
 
 # ─── 4. Copiar .env ─────────────────────────────────────
 if [ -f "$ENV_FILE" ]; then
     echo "Copiando .env al release..."
-    sudo cp "$ENV_FILE" "$RELEASE_DIR/.env"
-    sudo rm -f "$ENV_FILE"
+    $SUDO cp "$ENV_FILE" "$RELEASE_DIR/.env"
+    $SUDO rm -f "$ENV_FILE"
 else
     echo "WARNING: No se encontró $ENV_FILE" >&2
 fi
@@ -75,8 +82,10 @@ if [ ! -f "$RELEASE_DIR/dist/main.js" ]; then
 fi
 echo "  dist/main.js OK"
 
-# ─── 6. Ajustar permisos ────────────────────────────────
-sudo chown -R "$OWNER":"$OWNER" "$RELEASE_DIR"
+# ─── 6. Ajustar permisos (solo en modo sudo; en rootless el deploy user ya es dueño) ───
+if [ "$USE_SUDO" = "1" ]; then
+    sudo chown -R "$OWNER":"$OWNER" "$RELEASE_DIR"
+fi
 
 # ─── 7. Backup y actualizar symlink ─────────────────────
 CURRENT_LINK="$REMOTE_ROOT/$NAME/current"
@@ -86,7 +95,7 @@ if [ -L "$CURRENT_LINK" ]; then
     echo "Release anterior: $PREV"
 fi
 
-sudo ln -sfn "$RELEASE_DIR" "$CURRENT_LINK"
+$SUDO ln -sfn "$RELEASE_DIR" "$CURRENT_LINK"
 
 echo "Symlink 'current' -> releases/v$VERSION"
 echo "DEPLOYED:v$VERSION"
