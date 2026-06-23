@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.3.2] - 2026-06-23
+
+### Fixed
+- New-SshAccess / Remove-SshAccess: the remote exit code is now read from `$LASTEXITCODE` instead of capturing `Invoke-RemoteBash`'s pipeline output, which previously mixed remote stdout into the exit value and could turn a success into a spurious failure (or a garbled error message). Added milestone logging (`[scp]` / `[ssh]`) and a notice that the service-account bootstrap (`-Sudo`) may prompt for the password up to three times (scp, ssh, sudo); the remote `sudo` prompt now renders live. Validated end-to-end by dogfooding `svc-fotos` provisioning on a real VM.
+
 ## [3.3.1] - 2026-06-22
 
 ### Fixed
