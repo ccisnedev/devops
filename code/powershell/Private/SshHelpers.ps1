@@ -193,6 +193,7 @@ function Invoke-RemoteBash {
         [Parameter(Mandatory)][string]$HostName,
         [int]$Port = 22,
         [string]$IdentityFile,
+        [switch]$Tty,
         [string]$Prefix = 'macss_ssh_'
     )
     # Normalize to LF and write a UTF-8 (no BOM) temp script.
@@ -210,7 +211,10 @@ function Invoke-RemoteBash {
         if ($LASTEXITCODE -ne 0) { throw "scp failed (exit $LASTEXITCODE)" }
 
         # ssh uses -p (lowercase) for port; rebuild without the scp-style -P.
-        $sshCommon = @('-o', 'StrictHostKeyChecking=accept-new', '-p', "$Port") + $idArgs
+        # -tt forces a pseudo-tty so an in-script `sudo` can prompt for its password
+        # (a service-account install/revoke runs via sudo over a non-interactive ssh).
+        $ttyArgs = @(); if ($Tty) { $ttyArgs = @('-tt') }
+        $sshCommon = @('-o', 'StrictHostKeyChecking=accept-new', '-p', "$Port") + $ttyArgs + $idArgs
         & ssh @sshCommon "$($User)@$($HostName)" "bash $remote; rc=`$?; rm -f $remote; exit `$rc"
         return $LASTEXITCODE
     }

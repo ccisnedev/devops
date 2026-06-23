@@ -112,7 +112,7 @@ function Remove-SshAccess {
         '__USE_SUDO__'    = ($(if ($useSudo) { '1' } else { '0' }))
         '__FORCE__'       = ($(if ($Force) { '1' } else { '0' }))
     }
-    $rc = Invoke-RemoteBash -ScriptContent $script -User $bootstrap -HostName $HostName -Port $Port -Prefix 'macss_revoke_'
+    $rc = Invoke-RemoteBash -ScriptContent $script -User $bootstrap -HostName $HostName -Port $Port -Tty:$useSudo -Prefix 'macss_revoke_'
     if ($rc -ne 0) { throw "Key revocation failed (exit $rc). Nothing was left in a partial state (backup kept on server)." }
     Write-Host "  Revoked on $HostName (backup kept as authorized_keys.bak.*)" -ForegroundColor Green
 
