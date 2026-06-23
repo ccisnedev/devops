@@ -10,6 +10,7 @@ server: your-ssh-alias        # alias en ~/.ssh/config
 runtime:
   processManager: systemd     # systemd | pm2
   nodeVersion: ">=18"
+  useSudo: false              # true: instala archivos con sudo (deploy a un dir que no es tuyo); false (default): rootless
 
 # ─── API ──────────────────────────────────────────────
 # basePath del API: el healthcheck se hace en {basePath}/health.

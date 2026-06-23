@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [4.0.0] - 2026-06-23
+
+### Changed
+- **BREAKING (Publish-NodeApi):** file installation no longer uses `sudo` by default. The rootless model is now the default — the deploy user is expected to own `REMOTE_ROOT/<name>` (e.g. a service account such as `svc-fotos` owning `/opt/app/<name>`), so no elevation is needed. To deploy into a directory the user does not own, opt in explicitly with `runtime.useSudo: true` in `publish.yaml`. `Install-NodeApi.sh` skips the `chown` in rootless mode (files are already owned by the deploy user). **Migration:** deployments that relied on the previous implicit `sudo` must add `useSudo: true`.
+
 ## [3.3.3] - 2026-06-23
 
 ### Fixed
