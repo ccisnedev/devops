@@ -43,6 +43,8 @@ foreach ($p in 'Server','HostName','User','PublicKey','Fingerprint','BootstrapUs
 Write-TestHeader "2. SshHelpers: config entry / add / remove"
 . "$ModuleRoot\Private\SshHelpers.ps1"
 
+Assert-True ((Get-Command Invoke-RemoteBash).Parameters.ContainsKey('Tty')) "Invoke-RemoteBash supports -Tty (sudo over ssh needs a pseudo-tty)"
+
 $entry = New-SshConfigEntry -Alias 'h1' -HostName '10.0.0.1' -User 'svc' -Port 22 -IdentityFile '/k/h1'
 Assert-True ($entry -match '(?m)^Host h1$') "config entry has 'Host h1'"
 Assert-True ($entry -match 'IdentityFile /k/h1') "config entry has IdentityFile"

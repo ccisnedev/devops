@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.3.1] - 2026-06-22
+
+### Fixed
+- New-SshAccess / Remove-SshAccess: the service-account path (`-Sudo`) now allocates a pseudo-tty (`ssh -tt`) so the remote `sudo` can prompt for its password over an otherwise non-interactive SSH session. Without it the install/revoke failed with "sudo: no tty present". `Invoke-RemoteBash` gained a `-Tty` switch.
+
 ## [3.3.0] - 2026-06-22
 
 ### Added
