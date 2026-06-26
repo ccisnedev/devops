@@ -141,8 +141,15 @@ function New-SshKeyPair {
     $dir = Split-Path -Parent $Path
     if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
 
-    $kgArgs = @('-t', $Type, '-f', $Path, '-C', $Comment, '-N', $Passphrase, '-q')
-    & ssh-keygen @kgArgs
+    # Windows PowerShell 5.1 silently DROPS empty-string arguments to native commands, so an
+    # empty `-N ''` reaches ssh-keygen without a value and it PROMPTS for a passphrase. Route the
+    # empty-passphrase case through cmd.exe (Windows-only, where 5.1 runs) so `-N ""` survives.
+    # PowerShell 7 (Windows/Linux) passes empty args correctly and uses the normal call.
+    if (($PSVersionTable.PSVersion.Major -lt 6) -and [string]::IsNullOrEmpty($Passphrase)) {
+        & cmd.exe /c "ssh-keygen -t $Type -q -f `"$Path`" -C `"$Comment`" -N `"`""
+    } else {
+        & ssh-keygen -t $Type -f $Path -C $Comment -N $Passphrase -q
+    }
     if ($LASTEXITCODE -ne 0) { throw "ssh-keygen failed (exit $LASTEXITCODE)" }
 
     Protect-SshPrivateKey -Path $Path
