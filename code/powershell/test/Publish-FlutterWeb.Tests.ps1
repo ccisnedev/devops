@@ -171,12 +171,12 @@ environment:
             $cmd.CommandType | Should -Be 'Function'
         }
 
-        # Debe tener ParameterSets Init y Publish, igual que Publish-NodeApi.
-        It 'tiene ParameterSets Init y Publish' {
+        # Debe tener ParameterSets Init y Apply (ADR 0002), igual que Publish-NodeApi.
+        It 'tiene ParameterSets Init y Apply (ADR 0002)' {
             $cmd = Get-Command Publish-FlutterWeb
             $sets = $cmd.ParameterSets | Select-Object -ExpandProperty Name
             $sets | Should -Contain 'Init'
-            $sets | Should -Contain 'Publish'
+            $sets | Should -Contain 'Apply'
         }
     }
 
@@ -614,17 +614,17 @@ Describe 'Step 9: Publish-FlutterWeb -DeployReport' {
 
     Context 'ParameterSet existe' {
 
-        # -DeployReport debe ser un ParameterSet válido junto a Init y Publish.
-        It 'tiene ParameterSet DeployReport' {
+        # -Plan debe ser un ParameterSet válido junto a Init y Apply (ADR 0002).
+        It 'tiene ParameterSet Plan (ADR 0002)' {
             $cmd = Get-Command Publish-FlutterWeb
             $sets = $cmd.ParameterSets | Select-Object -ExpandProperty Name
-            $sets | Should -Contain 'DeployReport'
+            $sets | Should -Contain 'Plan'
         }
 
-        # El default sigue siendo Publish (no cambia).
-        It 'DefaultParameterSetName sigue siendo Publish' {
+        # El default es Apply (ADR 0002).
+        It 'DefaultParameterSetName es Apply (ADR 0002)' {
             $cmd = Get-Command Publish-FlutterWeb
-            $cmd.DefaultParameterSet | Should -Be 'Publish'
+            $cmd.DefaultParameterSet | Should -Be 'Apply'
         }
     }
 
