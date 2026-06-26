@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [5.1.0] - 2026-06-26
+
+### Added
+- **New-SshAccess / Remove-SshAccess: `-BootstrapIdentityFile`.** The install/revoke connection can now authenticate with an explicit private key (passed to ssh as `-i`), so the bootstrap works **without ssh-agent**. Motivating use case: **key rotation** — authenticate with the OLD key while installing the new one (New-SshAccess) and while revoking the old one (Remove-SshAccess). Backward compatible: when omitted, ssh falls back to its default auth (agent/password). Validated end-to-end by rotating a host from a shared key to a dedicated per-host key.
+
 ## [5.0.0] - 2026-06-25
 
 ### Changed
