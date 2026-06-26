@@ -52,19 +52,25 @@ Requiere:
 #>
 function Publish-FlutterWeb {
 
-    [CmdletBinding(DefaultParameterSetName = 'Publish')]
+    [CmdletBinding(DefaultParameterSetName = 'Apply')]
     param(
         [Parameter(Mandatory, ParameterSetName = 'Init',
-            HelpMessage = "Genera archivo de configuración (publish.yaml)")]
+            HelpMessage = "Generate the configuration file (publish.yaml)")]
         [switch]$Init,
 
-        [Parameter(Mandatory, ParameterSetName = 'Publish',
-            HelpMessage = "Ejecuta el despliegue completo al servidor remoto")]
-        [switch]$Publish,
+        [Parameter(Mandatory, ParameterSetName = 'Plan',
+            HelpMessage = "Dry-run: show what -Apply would do, without making changes")]
+        [Alias('DeployReport')]
+        [switch]$Plan,
 
-        [Parameter(Mandatory, ParameterSetName = 'DeployReport',
-            HelpMessage = "Muestra las acciones que realizará -Publish sin ejecutarlas")]
-        [switch]$DeployReport
+        [Parameter(Mandatory, ParameterSetName = 'Apply',
+            HelpMessage = "Execute the deployment to the remote server")]
+        [Alias('Publish')]
+        [switch]$Apply,
+
+        [Parameter(ParameterSetName = 'Apply',
+            HelpMessage = "Skip the confirmation prompt for unattended/CI use (ADR 0002)")]
+        [switch]$AutoApprove
     )
 
     begin {
@@ -79,6 +85,11 @@ function Publish-FlutterWeb {
         Write-Host "║     Publish-FlutterWeb — macss-devops           ║" -ForegroundColor Cyan
         Write-Host "╚══════════════════════════════════════════════════╝" -ForegroundColor Cyan
         Write-Host ""
+
+        # Deprecation notice for the pre-ADR-0002 vocabulary.
+        if ($MyInvocation.Line -match '-(Publish|DeployReport)\b') {
+            Write-Warning "-Publish/-DeployReport are deprecated; use -Apply/-Plan (ADR 0002). They will be removed in a future major."
+        }
 
         switch ($PSCmdlet.ParameterSetName) {
 
@@ -132,7 +143,7 @@ function Publish-FlutterWeb {
             # ═══════════════════════════════════════════════════
             # PUBLISH — Despliegue completo
             # ═══════════════════════════════════════════════════
-            'Publish' {
+            'Apply' {
                 $cwd = (Get-Location).Path
 
                 # ─── 1. Cargar helpers ───────────────────────
@@ -182,6 +193,12 @@ function Publish-FlutterWeb {
                 Write-Host "  Servidor:   $server" -ForegroundColor Cyan
                 Write-Host "  Puerto:     $port" -ForegroundColor Cyan
                 Write-Host ""
+
+                # ─── Confirmation (ADR 0002): the summary above is the plan; confirm before applying. ───
+                if (-not (Confirm-MacssChange -Action "Deploy $appName $release to '$server' (port $port)" -AutoApprove:$AutoApprove)) {
+                    Write-Host "  Apply cancelled." -ForegroundColor Yellow
+                    return
+                }
 
                 # ─── 4. SSH Config ───────────────────────────
                 $sshConfig = Read-SSHConfig -HostAlias $server
@@ -308,7 +325,7 @@ fi
             # ═══════════════════════════════════════════════════
             # DEPLOY REPORT — Reporte pre-deploy (dry-run)
             # ═══════════════════════════════════════════════════
-            'DeployReport' {
+            'Plan' {
                 $cwd = (Get-Location).Path
 
                 # ─── 1. Cargar helpers ───────────────────────
