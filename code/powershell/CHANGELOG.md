@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [5.0.0] - 2026-06-25
+
+### Changed
+- **BREAKING — deployment cmdlet taxonomy (ADR 0002):** `Publish-NodeApi`, `Invoke-SqlPackage` and `Publish-FlutterWeb` now share a consistent `-Init` / `-Plan` / `-Apply` vocabulary (Terraform-like plan/apply). `-Apply` (was `-Publish`) renders the plan and asks for confirmation before applying; `-Plan` (was `-DeployReport`) is the dry-run. The old `-Publish` / `-DeployReport` names are kept as **deprecated aliases** (emit a warning) and will be removed in a future major.
+- **BREAKING — confirmation by default:** `-Apply` (and `Invoke-SqlPackage -Import`) now require confirmation. Unattended/CI callers must pass **`-AutoApprove`** (a conscious opt-in for non-interactive use). In a non-interactive shell without `-AutoApprove`, the cmdlet **fails with a clear, actionable error** instead of hanging on `Read-Host` (the previous `Invoke-SqlPackage` behavior) or applying silently (the previous `Publish-NodeApi` behavior). Implemented once in the shared `Confirm-MacssChange` helper; covered by Pester and a real non-interactive **container** behavioral test. See [ADR 0002](docs/adr/0002-publish-lifecycle-taxonomy.md).
+- **Migration:** rename `-Publish`→`-Apply` and `-DeployReport`→`-Plan` (the aliases still work for now), and add `-AutoApprove` to any scripted/CI deploys.
+
 ## [4.0.0] - 2026-06-23
 
 ### Changed
