@@ -38,6 +38,11 @@ edit a service account's authorized_keys.
 .PARAMETER Sudo
 Edit the target user's authorized_keys via sudo. Implied when BootstrapUser differs.
 
+.PARAMETER BootstrapIdentityFile
+Private key used to authenticate the revoke connection (passed to ssh as -i). Use it to
+bootstrap WITHOUT ssh-agent - e.g. revoke the old key while authenticating with it (still
+valid until removed). When omitted, ssh uses its default auth (agent/password).
+
 .PARAMETER RemoveLocal
 Also remove the local private/public key files and the ~/.ssh/config alias.
 
@@ -57,6 +62,7 @@ function Remove-SshAccess {
         [string]$PublicKey,
         [string]$Fingerprint,
         [string]$BootstrapUser,
+        [string]$BootstrapIdentityFile,
         [switch]$Sudo,
         [switch]$RemoveLocal,
         [switch]$Force
@@ -112,7 +118,7 @@ function Remove-SshAccess {
         '__USE_SUDO__'    = ($(if ($useSudo) { '1' } else { '0' }))
         '__FORCE__'       = ($(if ($Force) { '1' } else { '0' }))
     }
-    Invoke-RemoteBash -ScriptContent $script -User $bootstrap -HostName $HostName -Port $Port -Tty:$useSudo -Prefix 'macss_revoke_'
+    Invoke-RemoteBash -ScriptContent $script -User $bootstrap -HostName $HostName -Port $Port -IdentityFile $BootstrapIdentityFile -Tty:$useSudo -Prefix 'macss_revoke_'
     $rc = $LASTEXITCODE
     if ($rc -ne 0) { throw "Key revocation failed (exit $rc). Nothing was left in a partial state (backup kept on server)." }
     Write-Host "  Revoked on $HostName (backup kept as authorized_keys.bak.*)" -ForegroundColor Green
