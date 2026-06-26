@@ -75,19 +75,21 @@
         Author: @ccisnedev
         Version: 1.0.1
     #>
-    [CmdletBinding(DefaultParameterSetName = 'Publish')]
+    [CmdletBinding(DefaultParameterSetName = 'Apply')]
     param(
         [Parameter(Mandatory, ParameterSetName = 'Init',
-            HelpMessage = "Genera archivos de configuración (sqlpackage.yaml y .env)")]
+            HelpMessage = "Generate configuration files (sqlpackage.yaml and .env)")]
         [switch]$Init,
 
-        [Parameter(Mandatory, ParameterSetName = 'Publish',
-            HelpMessage = "Despliega el .dacpac al servidor (build → report → confirm → publish)")]
-        [switch]$Publish,
+        [Parameter(Mandatory, ParameterSetName = 'Apply',
+            HelpMessage = "Deploy the .dacpac to the server (build -> plan -> confirm -> apply)")]
+        [Alias('Publish')]
+        [switch]$Apply,
 
-        [Parameter(Mandatory, ParameterSetName = 'DeployReport',
-            HelpMessage = "Genera reporte XML de diferencias (dry-run)")]
-        [switch]$DeployReport,
+        [Parameter(Mandatory, ParameterSetName = 'Plan',
+            HelpMessage = "Dry-run: XML diff report of what -Apply would change")]
+        [Alias('DeployReport')]
+        [switch]$Plan,
 
         [Parameter(Mandatory, ParameterSetName = 'Script',
             HelpMessage = "Genera el script SQL que Publish ejecutaría")]
@@ -103,7 +105,12 @@
 
         [Parameter(Mandatory, ParameterSetName = 'Import',
             HelpMessage = "Importa un archivo .bacpac al servidor")]
-        [switch]$Import
+        [switch]$Import,
+
+        [Parameter(ParameterSetName = 'Apply',
+            HelpMessage = "Skip the confirmation prompt for unattended/CI use (ADR 0002)")]
+        [Parameter(ParameterSetName = 'Import')]
+        [switch]$AutoApprove
     )
 
     begin {
@@ -117,6 +124,11 @@
         Write-Host "║        SqlPackage — macss-devops                ║" -ForegroundColor Cyan
         Write-Host "╚══════════════════════════════════════════════════╝" -ForegroundColor Cyan
         Write-Host ""
+
+        # Deprecation notice for the pre-ADR-0002 vocabulary.
+        if ($MyInvocation.Line -match '-(Publish|DeployReport)\b') {
+            Write-Warning "-Publish/-DeployReport are deprecated; use -Apply/-Plan (ADR 0002). They will be removed in a future major."
+        }
 
         switch ($PSCmdlet.ParameterSetName) {
             'Init' {
@@ -136,7 +148,7 @@
                 Write-Host ""
             }
 
-            'Publish' {
+            'Apply' {
                 # Validar prerequisitos
                 $sqlproj = Get-ChildItem -Path "." -Filter "*.sqlproj" -File | Select-Object -First 1
                 if (-not $sqlproj) { throw "No se encontró .sqlproj en el directorio actual." }
@@ -190,10 +202,9 @@
                         return
                     }
 
-                    # 4. Confirmación
-                    $confirm = Read-Host "  ¿Aplicar estos cambios? (S/N)"
-                    if ($confirm -notmatch '^[Ss]$') {
-                        Write-Host "  Despliegue cancelado." -ForegroundColor Yellow
+                    # 4. Confirmation (ADR 0002): -AutoApprove skips; fails clearly when non-interactive.
+                    if (-not (Confirm-MacssChange -Action "Apply dacpac to '$($envVars['DB_NAME'])' on '$($envVars['DB_SERVER'])'" -AutoApprove:$AutoApprove)) {
+                        Write-Host "  Apply cancelled." -ForegroundColor Yellow
                         Remove-Item $reportPath -ErrorAction SilentlyContinue
                         return
                     }
@@ -220,7 +231,7 @@
                 }
             }
 
-            'DeployReport' {
+            'Plan' {
                 # Validar prerequisitos
                 if (-not (Test-Path ".\sqlpackage.yaml")) { throw "No se encontró sqlpackage.yaml. Ejecute 'Invoke-SqlPackage -Init'." }
                 if (-not (Test-Path ".\.env")) { throw "No se encontró .env. Ejecute 'Invoke-SqlPackage -Init'." }
@@ -439,9 +450,8 @@
                     Write-Host "  ADVERTENCIA: Esta acción reemplazará la base de datos completa." -ForegroundColor Red
                     Write-Host ""
 
-                    $confirm = Read-Host "  ¿Continuar con la importación? (S/N)"
-                    if ($confirm -notmatch '^[Ss]$') {
-                        Write-Host "  Importación cancelada." -ForegroundColor Yellow
+                    if (-not (Confirm-MacssChange -Action "Import bacpac into '$($envVars['DB_NAME'])' on '$($envVars['DB_SERVER'])' (replaces the whole database)" -AutoApprove:$AutoApprove)) {
+                        Write-Host "  Import cancelled." -ForegroundColor Yellow
                         return
                     }
 

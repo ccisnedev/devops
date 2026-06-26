@@ -25,9 +25,9 @@ Describe 'Etapa 1: Infraestructura del módulo' {
         $cmd.CommandType | Should -Be 'Function'
     }
 
-    It 'Tiene 7 ParameterSets: Init, Publish, DeployReport, Script, Extract, Export, Import' {
+    It 'Tiene 7 ParameterSets: Init, Apply, Plan, Script, Extract, Export, Import (ADR 0002)' {
         $cmd = Get-Command Invoke-SqlPackage
-        $expectedSets = @('Init', 'Publish', 'DeployReport', 'Script', 'Extract', 'Export', 'Import')
+        $expectedSets = @('Init', 'Apply', 'Plan', 'Script', 'Extract', 'Export', 'Import')
         $actualSets = $cmd.ParameterSets | Select-Object -ExpandProperty Name
         foreach ($set in $expectedSets) {
             $actualSets | Should -Contain $set
@@ -39,15 +39,15 @@ Describe 'Etapa 1: Infraestructura del módulo' {
         $help.Synopsis | Should -Not -BeNullOrEmpty
     }
 
-    It 'El ParameterSet por defecto es Publish' {
+    It 'El ParameterSet por defecto es Apply (ADR 0002)' {
         $cmd = Get-Command Invoke-SqlPackage
         $defaultSet = $cmd.ParameterSets | Where-Object { $_.IsDefault }
-        $defaultSet.Name | Should -Be 'Publish'
+        $defaultSet.Name | Should -Be 'Apply'
     }
 
     It 'Cada acción es un switch Mandatory en su ParameterSet' {
         $cmd = Get-Command Invoke-SqlPackage
-        $switchParams = @('Init', 'Publish', 'DeployReport', 'Script', 'Extract', 'Export', 'Import')
+        $switchParams = @('Init', 'Apply', 'Plan', 'Script', 'Extract', 'Export', 'Import')
         foreach ($paramName in $switchParams) {
             $param = $cmd.Parameters[$paramName]
             $param | Should -Not -BeNullOrEmpty -Because "Parámetro -$paramName debe existir"
