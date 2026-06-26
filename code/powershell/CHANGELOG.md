@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [5.1.1] - 2026-06-26
+
+### Fixed
+- **New-SshAccess on Windows PowerShell 5.1: empty passphrase no longer prompts.** `New-SshKeyPair` passed `-N ''` for an unattended key, but Windows PowerShell 5.1 silently drops empty-string arguments to native commands, so `ssh-keygen` received no value and **prompted for a passphrase** (and could hang). Fixed by routing the empty-passphrase case through `cmd.exe` (where `-N ""` survives) on PS 5.1; PowerShell 7 (Windows/Linux) is unchanged. Unblocks colleagues on stock Windows PowerShell provisioning a key with `New-SshAccess`.
+
 ## [5.1.0] - 2026-06-26
 
 ### Added
