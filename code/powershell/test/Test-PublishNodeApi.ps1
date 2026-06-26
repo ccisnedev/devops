@@ -84,13 +84,13 @@ Write-TestHeader "1. Metadata del cmdlet"
 $params = (Get-Command Publish-NodeApi).Parameters
 
 Assert-True ($params.ContainsKey('Init')) "Parámetro -Init existe"
-Assert-True ($params.ContainsKey('Publish')) "Parámetro -Publish existe"
+Assert-True ($params.ContainsKey('Apply')) "Parámetro -Apply existe (ADR 0002)"
 
 # Verificar ParameterSets
 $paramSets = (Get-Command Publish-NodeApi).ParameterSets
 $setNames = $paramSets | ForEach-Object { $_.Name }
 Assert-True ($setNames -contains 'Init') "ParameterSet 'Init' existe"
-Assert-True ($setNames -contains 'Publish') "ParameterSet 'Publish' existe"
+Assert-True ($setNames -contains 'Apply') "ParameterSet 'Apply' existe"
 
 # ════════════════════════════════════════════════════════════════════
 # TEST GROUP 2: -Init en proyecto TypeScript válido
@@ -379,15 +379,15 @@ Write-TestHeader "13. -DeployReport metadata y validaciones"
 
 # ParameterSet existe
 $setNames = (Get-Command Publish-NodeApi).ParameterSets | ForEach-Object { $_.Name }
-Assert-True ($setNames -contains 'DeployReport') "ParameterSet 'DeployReport' existe"
+Assert-True ($setNames -contains 'Plan') "ParameterSet 'Plan' existe"
 
 # Parámetro existe
 $params = (Get-Command Publish-NodeApi).Parameters
-Assert-True ($params.ContainsKey('DeployReport')) "Parámetro -DeployReport existe"
+Assert-True ($params.ContainsKey('Plan')) "Parámetro -Plan existe"
 
-# DefaultParameterSetName sigue siendo Publish
+# DefaultParameterSetName is Apply (ADR 0002)
 $defaultSet = (Get-Command Publish-NodeApi).DefaultParameterSet
-Assert-True ($defaultSet -eq 'Publish') "DefaultParameterSetName sigue siendo 'Publish'"
+Assert-True ($defaultSet -eq 'Apply') "DefaultParameterSetName es 'Apply' (ADR 0002)"
 
 # Falla sin package.json
 $testDrNoPackage = Join-Path $env:TEMP "psdevops_test_dr_nopkg_$([guid]::NewGuid().ToString().Substring(0,8))"
