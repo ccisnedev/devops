@@ -32,6 +32,12 @@ account and install into the service account's authorized_keys with -Sudo.
 .PARAMETER Sudo
 Install into -User's authorized_keys via sudo. Implied when BootstrapUser differs from User.
 
+.PARAMETER BootstrapIdentityFile
+Private key used to authenticate the install connection (passed to ssh as -i, with
+IdentitiesOnly). Use it to bootstrap WITHOUT ssh-agent - e.g. during a key rotation,
+authenticate with the OLD key while installing the new one. When omitted, ssh uses its
+default auth (agent/password).
+
 .PARAMETER KeyType
 Key algorithm (default ed25519).
 
@@ -56,6 +62,7 @@ function New-SshAccess {
         [Parameter(Mandatory)][string]$User,
         [int]$Port = 22,
         [string]$BootstrapUser,
+        [string]$BootstrapIdentityFile,
         [switch]$Sudo,
         [string]$KeyType = 'ed25519',
         [string]$KeyPath,
@@ -101,7 +108,7 @@ function New-SshAccess {
         '__PUBKEY__'      = $pub
         '__USE_SUDO__'    = ($(if ($useSudo) { '1' } else { '0' }))
     }
-    Invoke-RemoteBash -ScriptContent $installScript -User $bootstrap -HostName $HostName -Port $Port -Tty:$useSudo -Prefix 'macss_authkey_'
+    Invoke-RemoteBash -ScriptContent $installScript -User $bootstrap -HostName $HostName -Port $Port -IdentityFile $BootstrapIdentityFile -Tty:$useSudo -Prefix 'macss_authkey_'
     $rc = $LASTEXITCODE
     if ($rc -ne 0) { throw "Public key install failed (exit $rc)." }
 
