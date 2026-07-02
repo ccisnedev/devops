@@ -92,3 +92,54 @@ Describe "Get-ProdModulesPlan (REQ-6)" {
         Get-ProdModulesPlan -IsWindowsHost $false | Should -Be 'native'
     }
 }
+
+Describe "Publish-NodeApi -AllowDirty parameter (ADR 0003)" {
+
+    BeforeAll {
+        Import-Module "$PSScriptRoot/../macss-devops.psd1" -Force
+        $script:cmd = Get-Command Publish-NodeApi
+    }
+
+    It "exposes -AllowDirty" {
+        $script:cmd.Parameters.ContainsKey('AllowDirty') | Should -BeTrue
+    }
+
+    It "places -AllowDirty in the Apply parameter set" {
+        $script:cmd.Parameters['AllowDirty'].ParameterSets.Keys | Should -Contain 'Apply'
+    }
+}
+
+Describe "Publish-NodeApi -Init scaffolds runtime by tsconfig presence (ADR 0003)" {
+
+    BeforeAll {
+        Import-Module "$PSScriptRoot/../macss-devops.psd1" -Force
+    }
+
+    BeforeEach {
+        $script:proj = Join-Path ([IO.Path]::GetTempPath()) "initrt-$([guid]::NewGuid().ToString('N').Substring(0,8))"
+        New-Item -ItemType Directory -Path $script:proj -Force | Out-Null
+        Set-Content -Path (Join-Path $script:proj 'package.json') -Value '{ "name": "demo", "version": "1.0.0" }'
+        $script:prev = Get-Location
+        Set-Location $script:proj
+    }
+
+    AfterEach {
+        Set-Location $script:prev
+        Remove-Item -Recurse -Force -Path $script:proj -ErrorAction SilentlyContinue
+    }
+
+    It "no tsconfig -> build:false + entrypoint server.js" {
+        Publish-NodeApi -Init | Out-Null
+        $yaml = Get-Content (Join-Path $script:proj 'publish.yaml') -Raw
+        $yaml | Should -Match 'build:\s*false'
+        $yaml | Should -Match 'entrypoint:\s*server\.js'
+    }
+
+    It "with tsconfig -> build:true + entrypoint dist/main.js" {
+        Set-Content -Path (Join-Path $script:proj 'tsconfig.json') -Value '{}'
+        Publish-NodeApi -Init | Out-Null
+        $yaml = Get-Content (Join-Path $script:proj 'publish.yaml') -Raw
+        $yaml | Should -Match 'build:\s*true'
+        $yaml | Should -Match 'entrypoint:\s*dist/main\.js'
+    }
+}

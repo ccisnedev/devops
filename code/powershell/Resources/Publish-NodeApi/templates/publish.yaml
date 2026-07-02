@@ -9,6 +9,8 @@ server: your-ssh-alias        # alias en ~/.ssh/config
 # ─── Runtime ──────────────────────────────────────────
 runtime:
   processManager: systemd     # systemd | pm2
+  build: true                 # true: compila TS (npm run build). false: sin build, empaqueta el fuente desde git HEAD
+  entrypoint: dist/main.js    # ejecutable relativo dentro de la release (build:false suele ser server.js)
   nodeVersion: ">=18"
   useSudo: false              # true: instala archivos con sudo (deploy a un dir que no es tuyo); false (default): rootless
 
