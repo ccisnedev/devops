@@ -75,7 +75,11 @@ function Publish-NodeApi {
 
         [Parameter(ParameterSetName = 'Apply',
             HelpMessage = "Skip the confirmation prompt for unattended/CI use (ADR 0002)")]
-        [switch]$AutoApprove
+        [switch]$AutoApprove,
+
+        [Parameter(ParameterSetName = 'Apply',
+            HelpMessage = "Allow deploying a dirty worktree in build:false (packages the working dir, tags +dirty)")]
+        [switch]$AllowDirty
     )
 
     begin {
@@ -109,11 +113,10 @@ function Publish-NodeApi {
                     throw "No se encontró package.json en $cwd. Ejecute este cmdlet dentro de un proyecto Node.js."
                 }
 
-                # Validar tsconfig.json (solo TypeScript)
+                # Detectar modo (ADR 0003): con tsconfig.json → build:true (TS);
+                # sin tsconfig.json → build:false (API Node sin build, empaqueta el fuente).
                 $tsconfigPath = Join-Path $cwd "tsconfig.json"
-                if (-not (Test-Path $tsconfigPath)) {
-                    throw "No se encontró tsconfig.json en $cwd. Este cmdlet solo soporta proyectos TypeScript."
-                }
+                $isBuildProject = Test-Path $tsconfigPath
 
                 # Validar que publish.yaml no exista (ni el legacy deploy.yaml)
                 $publishYamlPath = Join-Path $cwd "publish.yaml"
@@ -139,7 +142,16 @@ function Publish-NodeApi {
                     throw "Template no encontrado: $templatePath"
                 }
                 Copy-Item -Path $templatePath -Destination $publishYamlPath
-                Write-Host "  Creado: publish.yaml" -ForegroundColor Green
+                # Sin tsconfig.json: configurar el runtime no-build (ADR 0003).
+                if (-not $isBuildProject) {
+                    $yaml = Get-Content $publishYamlPath -Raw
+                    $yaml = $yaml -replace 'build: true', 'build: false'
+                    $yaml = $yaml -replace 'entrypoint: dist/main\.js', 'entrypoint: server.js'
+                    Set-Content -Path $publishYamlPath -Value $yaml -Encoding UTF8
+                    Write-Host "  Creado: publish.yaml (runtime build:false — sin tsconfig.json)" -ForegroundColor Green
+                } else {
+                    Write-Host "  Creado: publish.yaml (runtime build:true — TypeScript)" -ForegroundColor Green
+                }
 
                 # Crear .env.production si no existe
                 $envProdPath = Join-Path $cwd ".env.production"
@@ -208,9 +220,8 @@ NODE_ENV=production
                 if (-not (Test-Path $packageJsonPath)) {
                     throw "No se encontró package.json en $cwd."
                 }
-                if (-not (Test-Path $tsconfigPath)) {
-                    throw "No se encontró tsconfig.json en $cwd."
-                }
+                # tsconfig.json solo se exige en modo build:true (ADR 0003) — se valida
+                # más abajo, una vez leída la configuración de runtime.
                 if (-not (Test-Path $envProdPath)) {
                     throw "No se encontró .env.production. Cree el archivo con las variables de entorno de producción."
                 }
@@ -223,7 +234,36 @@ NODE_ENV=production
                 $pkg = Get-Content $packageJsonPath -Raw | ConvertFrom-Json
                 $appName = $pkg.name
                 $appVersion = ($pkg.version -split '\+')[0]  # sin build metadata
-                $release = "v$appVersion"
+
+                # ─── Runtime (ADR 0003): build (default true) + entrypoint ───
+                $runtime = Resolve-NodeRuntime -PublishConfig $deployConfig
+                $entrypoint = $runtime.Entrypoint
+
+                # tsconfig.json se exige solo en modo build:true
+                if ($runtime.Build -and -not (Test-Path $tsconfigPath)) {
+                    throw "No se encontró tsconfig.json en $cwd (requerido en modo build:true). Para una API sin build declare 'runtime.build: false' en publish.yaml."
+                }
+
+                # ─── Identidad de release: v{version}+{shortSha} (ADR 0003) ───
+                $gitSha = (& git -C $cwd rev-parse --short HEAD 2>$null)
+                $inGitRepo = ($LASTEXITCODE -eq 0 -and $gitSha)
+                if ($inGitRepo) {
+                    # Guard de árbol limpio: build:false despliega desde HEAD.
+                    if (-not $runtime.Build -and -not (Test-CleanWorktree -Path $cwd)) {
+                        if (-not $AllowDirty) {
+                            throw "El árbol de trabajo tiene cambios sin commitear. build:false despliega desde HEAD (git archive); commitee los cambios o use -AllowDirty."
+                        }
+                        Write-Warning "Árbol sucio: -AllowDirty empaqueta el working dir. La release se marcará +dirty."
+                        $gitSha = "$gitSha-dirty"
+                    }
+                    $release = Get-ReleaseId -Version $appVersion -ShortSha $gitSha
+                } else {
+                    if (-not $runtime.Build) {
+                        throw "build:false requiere un repositorio git (el artefacto se arma desde HEAD). No se detectó repo en $cwd."
+                    }
+                    $gitSha = ''
+                    $release = "v$appVersion"
+                }
 
                 # .env.production (PORT)
                 $envConfig = Read-DotEnv -Path $envProdPath -DefaultPort 8080
@@ -262,7 +302,8 @@ NODE_ENV=production
                 }
 
                 Write-Host "  Proyecto:   $appName" -ForegroundColor Cyan
-                Write-Host "  Versión:    $release" -ForegroundColor Cyan
+                Write-Host "  Release:    $release" -ForegroundColor Cyan
+                Write-Host "  Runtime:    $(if ($runtime.Build) { 'build (TypeScript)' } else { 'no-build (source)' }) → $entrypoint" -ForegroundColor Cyan
                 Write-Host "  Servidor:   $server" -ForegroundColor Cyan
                 Write-Host "  Proceso:    $processManager" -ForegroundColor Cyan
                 Write-Host "  Puerto:     $port" -ForegroundColor Cyan
@@ -288,67 +329,114 @@ NODE_ENV=production
                 $remoteRoot = "/opt/app"
                 $releaseDir = "$remoteRoot/$appName/releases/$release"
                 $currentLink = "$remoteRoot/$appName/current"
-                $entryPath = "$currentLink/dist/main.js"
+                $entryPath = "$currentLink/$entrypoint"
                 $workingDir = "$currentLink"
                 $envFile = "$currentLink/.env"
                 $tarballName = "${appName}-${release}.tar.gz"
                 $remoteTarball = "/tmp/$tarballName"
                 $remoteEnvFile = "/tmp/${appName}.env.production"
 
-                # ─── 5. Build local ──────────────────────────
-                Write-Host "  Compilando localmente..." -ForegroundColor Cyan
-
-                # 5a. Instalar TODAS las dependencias (incluye devDeps para tsc)
-                Write-Host "    npm ci..." -ForegroundColor DarkGray
-                $npmCiResult = & npm ci 2>&1
-                if ($LASTEXITCODE -ne 0) {
-                    $npmCiResult | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
-                    throw "npm ci falló con código $LASTEXITCODE"
-                }
-                Write-Host "    Dependencias instaladas" -ForegroundColor Green
-
-                # 5b. Build TypeScript
-                Write-Host "    npm run build..." -ForegroundColor DarkGray
-                $buildResult = & npm run build 2>&1
-                if ($LASTEXITCODE -ne 0) {
-                    $buildResult | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
-                    throw "npm run build falló con código $LASTEXITCODE"
-                }
-
-                # Verificar que dist/main.js se generó
-                $distMain = Join-Path $cwd "dist\main.js"
-                if (-not (Test-Path $distMain)) {
-                    throw "Build completó pero dist/main.js no existe. Verifique tsconfig.json."
-                }
-                Write-Host "    Build completado (dist/main.js OK)" -ForegroundColor Green
-
-                # 5c. Reinstalar solo dependencias de producción (para tarball liviano)
-                Write-Host "    npm ci --omit=dev (producción)..." -ForegroundColor DarkGray
-                $npmProdResult = & npm ci --omit=dev 2>&1
-                if ($LASTEXITCODE -ne 0) {
-                    $npmProdResult | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
-                    throw "npm ci --omit=dev falló con código $LASTEXITCODE"
-                }
-                Write-Host "    node_modules optimizado para producción" -ForegroundColor Green
-
-                # ─── 6. Empaquetar artefactos ────────────────
-                Write-Host "  Empaquetando artefactos..." -ForegroundColor Cyan
-
+                # ─── 5. Preparar artefactos ──────────────────
                 $localTarball = Join-Path $env:TEMP $tarballName
+                $isWindowsHost = ($env:OS -eq 'Windows_NT')
 
-                # Package the prebuilt artifacts ready to run with node:
-                # dist/ + node_modules/ + package.json. Include ecosystem.config.js
-                # when present so the pm2 path can deploy a declarative process topology.
-                $tarItems = @('dist', 'node_modules', 'package.json')
-                if (Test-Path (Join-Path $cwd 'ecosystem.config.js')) {
-                    $tarItems += 'ecosystem.config.js'
-                    Write-Host "  ecosystem.config.js detected (config-as-code)" -ForegroundColor Green
-                }
-                $tarCmd = "tar.exe -czf `"$localTarball`" -C `"$cwd`" $($tarItems -join ' ')"
-                $tarResult = Invoke-Expression $tarCmd 2>&1
+                if ($runtime.Build) {
+                    # ══ Modo build:true (TypeScript) — flujo original ══
+                    Write-Host "  Compilando localmente..." -ForegroundColor Cyan
 
-                if (-not (Test-Path $localTarball)) {
-                    throw "Error al crear tarball: $tarResult"
+                    # 5a. Instalar TODAS las dependencias (incluye devDeps para tsc)
+                    Write-Host "    npm ci..." -ForegroundColor DarkGray
+                    $npmCiResult = & npm ci 2>&1
+                    if ($LASTEXITCODE -ne 0) {
+                        $npmCiResult | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+                        throw "npm ci falló con código $LASTEXITCODE"
+                    }
+                    Write-Host "    Dependencias instaladas" -ForegroundColor Green
+
+                    # 5b. Build TypeScript
+                    Write-Host "    npm run build..." -ForegroundColor DarkGray
+                    $buildResult = & npm run build 2>&1
+                    if ($LASTEXITCODE -ne 0) {
+                        $buildResult | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+                        throw "npm run build falló con código $LASTEXITCODE"
+                    }
+
+                    # Verificar que el entrypoint compilado se generó
+                    $entryLocal = Join-Path $cwd ($entrypoint -replace '/', '\')
+                    if (-not (Test-Path $entryLocal)) {
+                        throw "Build completó pero el entrypoint '$entrypoint' no existe. Verifique tsconfig.json / runtime.entrypoint."
+                    }
+                    Write-Host "    Build completado ($entrypoint OK)" -ForegroundColor Green
+
+                    # 5c. Reinstalar solo dependencias de producción (para tarball liviano)
+                    Write-Host "    npm ci --omit=dev (producción)..." -ForegroundColor DarkGray
+                    $npmProdResult = & npm ci --omit=dev 2>&1
+                    if ($LASTEXITCODE -ne 0) {
+                        $npmProdResult | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+                        throw "npm ci --omit=dev falló con código $LASTEXITCODE"
+                    }
+                    Write-Host "    node_modules optimizado para producción" -ForegroundColor Green
+
+                    # 6. Empaquetar: dist/ + node_modules/ + package.json (+ ecosystem.config.js)
+                    Write-Host "  Empaquetando artefactos..." -ForegroundColor Cyan
+                    $tarItems = @('dist', 'node_modules', 'package.json')
+                    if (Test-Path (Join-Path $cwd 'ecosystem.config.js')) {
+                        $tarItems += 'ecosystem.config.js'
+                        Write-Host "  ecosystem.config.js detected (config-as-code)" -ForegroundColor Green
+                    }
+                    $tarCmd = "tar.exe -czf `"$localTarball`" -C `"$cwd`" $($tarItems -join ' ')"
+                    $tarResult = Invoke-Expression $tarCmd 2>&1
+                    if (-not (Test-Path $localTarball)) {
+                        throw "Error al crear tarball: $tarResult"
+                    }
+                } else {
+                    # ══ Modo build:false (ADR 0003) — empaquetar el fuente desde HEAD ══
+                    Write-Host "  Modo build:false (sin compilación)" -ForegroundColor Cyan
+
+                    # node_modules de producción, compatible con Linux según el SO host.
+                    $plan = Get-ProdModulesPlan -IsWindowsHost $isWindowsHost
+                    Write-Host "    npm ci --omit=dev ($plan)..." -ForegroundColor DarkGray
+                    if ($plan -eq 'wsl') {
+                        $distro = Get-ValidWSLDistro
+                        $wslCwd = ConvertTo-WSLPath -winPath $cwd -WSLDistro $distro
+                        & wsl.exe -d $distro -- bash -lc "cd '$wslCwd' && npm ci --omit=dev" 2>&1 |
+                            ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+                        if ($LASTEXITCODE -ne 0) { throw "npm ci --omit=dev en WSL falló con código $LASTEXITCODE" }
+                    } else {
+                        & npm ci --omit=dev 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+                        if ($LASTEXITCODE -ne 0) { throw "npm ci --omit=dev falló con código $LASTEXITCODE" }
+                    }
+                    if (-not (Test-Path (Join-Path $cwd 'node_modules'))) {
+                        throw "node_modules no existe tras npm ci --omit=dev."
+                    }
+                    Write-Host "    node_modules (producción) listo" -ForegroundColor Green
+
+                    # Empaquetar: git archive del subárbol (solo lo versionado) + node_modules.
+                    Write-Host "  Empaquetando fuente (git archive HEAD)..." -ForegroundColor Cyan
+                    $prefix = "$(& git -C $cwd rev-parse --show-prefix 2>$null)".Trim()
+                    $treeish = if ($prefix) { "HEAD:$($prefix.TrimEnd('/'))" } else { 'HEAD' }
+                    $staging = Join-Path $env:TEMP "psdevops_src_$([guid]::NewGuid().ToString('N').Substring(0,8))"
+                    $archiveTar = "$staging.tar"
+                    New-Item -ItemType Directory -Path $staging | Out-Null
+                    try {
+                        & git -C $cwd archive --format=tar -o $archiveTar $treeish
+                        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $archiveTar)) {
+                            throw "git archive falló (treeish=$treeish)."
+                        }
+                        & tar.exe -xf $archiveTar -C $staging
+                        $entryStaged = Join-Path $staging ($entrypoint -replace '/', '\')
+                        if (-not (Test-Path $entryStaged)) {
+                            throw "El entrypoint '$entrypoint' no está versionado en git (no aparece en el archivo HEAD)."
+                        }
+                        # tar.gz = fuente versionado (staging) + node_modules del cwd, sin copiar.
+                        & tar.exe -czf $localTarball -C $staging . -C $cwd node_modules
+                        if (-not (Test-Path $localTarball)) {
+                            throw "Error al crear el tarball de fuente."
+                        }
+                    } finally {
+                        Remove-Item -LiteralPath $archiveTar -ErrorAction SilentlyContinue
+                        Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+                    }
                 }
 
                 $tarSize = [math]::Round((Get-Item $localTarball).Length / 1MB, 1)
@@ -382,6 +470,9 @@ NODE_ENV=production
                         '__NODE_VERSION__'  = $nodeVersion
                         '__USER__'          = $user
                         '__USE_SUDO__'      = ($(if ($useSudo) { '1' } else { '0' }))
+                        '__ENTRYPOINT__'    = $entrypoint
+                        '__RELEASE_ID__'    = $release
+                        '__GIT_SHA__'       = $gitSha
                     }
 
                     $exitCode = Invoke-RemoteScript -ScriptContent $installScript `
@@ -489,10 +580,21 @@ NODE_ENV=production
                 # ─── 2. Leer configuración ───────────────────
                 $packageJson = Get-Content $packageJsonPath -Raw | ConvertFrom-Json
                 $appName = $packageJson.name
-                $appVersion = $packageJson.version
-                $release = "v$appVersion"
+                $appVersion = ($packageJson.version -split '\+')[0]
 
                 $deployConfig = Get-Content $publishYamlPath -Raw | ConvertFrom-Yaml
+
+                # Runtime + release id (ADR 0003): mismo cálculo que -Apply.
+                $runtime = Resolve-NodeRuntime -PublishConfig $deployConfig
+                $entrypoint = $runtime.Entrypoint
+                $gitSha = (& git -C $cwd rev-parse --short HEAD 2>$null)
+                if ($LASTEXITCODE -eq 0 -and $gitSha) {
+                    if (-not $runtime.Build -and -not (Test-CleanWorktree -Path $cwd)) { $gitSha = "$gitSha-dirty" }
+                    $release = Get-ReleaseId -Version $appVersion -ShortSha $gitSha
+                } else {
+                    $release = "v$appVersion"
+                }
+
                 $server = $deployConfig.server
                 $processManager = if ($deployConfig.runtime -and $deployConfig.runtime.processManager) {
                     $deployConfig.runtime.processManager
@@ -523,7 +625,8 @@ NODE_ENV=production
                 Write-Host ""
                 Write-Host "  ─── Configuración local ───" -ForegroundColor Cyan
                 Write-Host "  Proyecto:   $appName" -ForegroundColor White
-                Write-Host "  Versión:    $release" -ForegroundColor White
+                Write-Host "  Release:    $release" -ForegroundColor White
+                Write-Host "  Runtime:    $(if ($runtime.Build) { 'build (TypeScript)' } else { 'no-build (source)' }) → $entrypoint" -ForegroundColor White
                 Write-Host "  Servidor:   $server ($ip)" -ForegroundColor White
                 Write-Host "  Proceso:    $processManager" -ForegroundColor White
                 Write-Host "  Puerto:     $port" -ForegroundColor White

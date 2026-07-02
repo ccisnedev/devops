@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [5.2.0] - 2026-07-02
+
+### Added
+- **Publish-NodeApi: no-build runtime for any Node API (ADR 0003).** The cmdlet no longer
+  assumes TypeScript. `publish.yaml` gains `runtime.build` (default `true`) and
+  `runtime.entrypoint` (default `dist/main.js` in build:true, `server.js` in build:false).
+  With `build: false` the cmdlet skips `tsconfig.json`/`npm run build` and ships the project
+  **source packaged from `git archive HEAD`** (subtree-aware, tracked files only) plus the
+  production `node_modules`. Motivating case: deploy a plain-JavaScript Express API
+  (impulsa) as immutable, versioned releases while migrating to TS — same cmdlet.
+- **Release identity `v{version}+{shortSha}` + provenance.** Every deploy in a git repo is
+  tagged with the short commit sha (so static `package.json` versions still yield unique
+  releases), and a `RELEASE` file (name/version/release/sha/timestamp) is written into the
+  release for server-side drift detection.
+- **Clean-worktree guard for build:false.** `-Apply` refuses a dirty worktree (build:false
+  ships from `HEAD`); override with the new **`-AllowDirty`** (tags the release `+dirty`).
+- **`-Init` scaffolds by project type.** With no `tsconfig.json`, `-Init` writes
+  `build: false` + `entrypoint: server.js` instead of failing.
+- **Behavioral evidence:** new Docker container tests for the source install
+  (`Install-NodeApiNoBuild.container.test.sh`) and a full end-to-end deploy
+  (`PublishNodeApi.e2e.container.test.sh`: install → pm2 → live `/health` 200).
+
+### Changed
+- **Linux-native `node_modules` on Windows hosts (build:false).** The production
+  `npm ci --omit=dev` runs inside **WSL** on Windows so native bindings (e.g. `oracledb`
+  thick) match the Linux target; native on Linux hosts. Scoped to `build: false`; the
+  TypeScript (`build: true`) build path is unchanged.
+- **Release directory naming.** Deploys in a git repo now use `releases/v{version}+{sha}`
+  (previously `releases/v{version}`). Rollback-by-symlink and healthchecks are unaffected.
+- `Install-NodeApi.sh` validates the configured entrypoint (was hard-coded `dist/main.js`);
+  backward-compatible via a generic `__*__` placeholder fallback.
+
 ## [5.1.1] - 2026-06-26
 
 ### Fixed
