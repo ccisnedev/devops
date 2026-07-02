@@ -11,6 +11,11 @@
 #   __NODE_VERSION__: versión mínima requerida (ej: >=18)
 #   __USER__        : usuario propietario de los archivos
 #   __USE_SUDO__    : "1" usa sudo para las operaciones de archivos; "0" (default) rootless
+#   __ENTRYPOINT__  : (ADR 0003, opcional) ruta relativa del entrypoint a validar
+#                     (default dist/main.js si no se reemplaza)
+#   __RELEASE_ID__  : (ADR 0003, opcional) id de release v{version}+{sha}
+#                     (default v$VERSION si no se reemplaza)
+#   __GIT_SHA__     : (ADR 0003, opcional) sha corto del commit desplegado (provenance)
 
 set -e
 
@@ -30,8 +35,18 @@ USE_SUDO="__USE_SUDO__"
 # directory the user does not own.
 if [ "$USE_SUDO" = "1" ]; then SUDO="sudo"; else SUDO=""; fi
 
-RELEASE_DIR="$REMOTE_ROOT/$NAME/releases/v$VERSION"
-TARBALL="/tmp/${NAME}-v${VERSION}.tar.gz"
+# Placeholders opcionales (ADR 0003 — runtime no-build). Si el caller no los
+# reemplaza quedan como tokens __FOO__; el guard generico __*__ aplica un default
+# retrocompatible (asi el flujo build:true / dist/main.js no requiere cambios).
+ENTRYPOINT="__ENTRYPOINT__"
+case "$ENTRYPOINT" in __*__) ENTRYPOINT="dist/main.js";; esac
+RELEASE_ID="__RELEASE_ID__"
+case "$RELEASE_ID" in __*__) RELEASE_ID="v$VERSION";; esac
+GIT_SHA="__GIT_SHA__"
+case "$GIT_SHA" in __*__) GIT_SHA="";; esac
+
+RELEASE_DIR="$REMOTE_ROOT/$NAME/releases/$RELEASE_ID"
+TARBALL="/tmp/${NAME}-${RELEASE_ID}.tar.gz"
 ENV_FILE="/tmp/${NAME}.env.production"
 
 # ─── 1. Verificar Node.js ───────────────────────────────
@@ -73,14 +88,22 @@ else
     echo "WARNING: No se encontró $ENV_FILE" >&2
 fi
 
-# ─── 5. Verificar entrypoint ────────────────────────────
-if [ ! -f "$RELEASE_DIR/dist/main.js" ]; then
-    echo "ERROR: dist/main.js no encontrado en el tarball" >&2
-    echo "Contenido de dist/:" >&2
-    ls -la "$RELEASE_DIR/dist/" 2>&1 || echo "  (directorio dist/ no existe)"
+# ─── 5. Verificar entrypoint (configurable, ADR 0003) ───
+if [ ! -f "$RELEASE_DIR/$ENTRYPOINT" ]; then
+    echo "ERROR: entrypoint '$ENTRYPOINT' no encontrado en el release" >&2
+    echo "Contenido de $(dirname "$RELEASE_DIR/$ENTRYPOINT"):" >&2
+    ls -la "$(dirname "$RELEASE_DIR/$ENTRYPOINT")" 2>&1 || echo "  (directorio no existe)"
     exit 1
 fi
-echo "  dist/main.js OK"
+echo "  entrypoint OK: $ENTRYPOINT"
+
+# ─── 5b. Provenance: escribir archivo RELEASE ───────────
+# Registra que commit corre en este release (anti-drift). En modo sudo el chown -R
+# posterior lo incluye; en rootless el deploy user ya es dueno.
+printf 'name=%s\nversion=%s\nrelease=%s\nsha=%s\ndeployed_at=%s\n' \
+    "$NAME" "$VERSION" "$RELEASE_ID" "$GIT_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    | $SUDO tee "$RELEASE_DIR/RELEASE" >/dev/null
+echo "  RELEASE escrito (sha=${GIT_SHA:-none})"
 
 # ─── 6. Ajustar permisos (solo en modo sudo; en rootless el deploy user ya es dueño) ───
 if [ "$USE_SUDO" = "1" ]; then
@@ -97,5 +120,5 @@ fi
 
 $SUDO ln -sfn "$RELEASE_DIR" "$CURRENT_LINK"
 
-echo "Symlink 'current' -> releases/v$VERSION"
-echo "DEPLOYED:v$VERSION"
+echo "Symlink 'current' -> releases/$RELEASE_ID"
+echo "DEPLOYED:$RELEASE_ID"
