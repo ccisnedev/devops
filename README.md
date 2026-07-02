@@ -48,6 +48,7 @@ PSDevOps/
 | `Invoke-SqlPackage` | Gestión declarativa de BD SQL Server | `Get-Help Invoke-SqlPackage` |
 | `Publish-FlutterWeb` | Compilar y desplegar Flutter Web (`-Init`, `-Publish`, `-DeployReport`) | `Get-Help Publish-FlutterWeb` |
 | `Publish-NodeApi` | Desplegar API Node.js/TypeScript (`-Init`, `-Publish`, `-DeployReport`) | `Get-Help Publish-NodeApi` |
+| `Publish-DockerStack` | Desplegar un stack Docker Compose a un servidor remoto vía SSH (`-Init`, `-Plan`, `-Apply`) | [Docs](code/powershell/Resources/Publish-DockerStack/README.md) |
 | `New-Issue` | Crear issues en GitHub desde markdown | [Docs](code/powershell/Resources/New-Issue/README.md) |
 | `Get-SQLiteDB` | Operaciones SQLite | `Get-Help Get-SQLiteDB` |
 | `Merge-DevToMain` | Merge automatizado dev→main | `Get-Help Merge-DevToMain` |
