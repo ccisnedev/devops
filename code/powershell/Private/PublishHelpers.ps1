@@ -475,6 +475,139 @@ function Get-BashScript {
         $value = $Placeholders[$key]
         $content = $content -replace [regex]::Escape($key), $value
     }
-    
+
     return $content
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# ADR 0003 — No-build runtime helpers (build:false / any Node API)
+# ═══════════════════════════════════════════════════════════════════
+
+<#
+.SYNOPSIS
+Resuelve el modo de runtime (build) y el entrypoint desde publish.yaml.
+
+.DESCRIPTION
+ADR 0003. Precedencia retrocompatible:
+  - build:   runtime.build (si se declara) > $true (default, flujo TypeScript actual).
+  - entrypoint: runtime.entrypoint (explicito) > 'dist/main.js' (build:true) > 'server.js' (build:false).
+El entrypoint se normaliza quitando un './' inicial. Es la ruta relativa a la
+release que ejecuta el proceso (current/<entrypoint>).
+
+.PARAMETER PublishConfig
+Objeto de publish.yaml ya parseado (ConvertFrom-Yaml) o hashtable equivalente.
+
+.EXAMPLE
+$rt = Resolve-NodeRuntime -PublishConfig $deployConfig
+if (-not $rt.Build) { # saltar tsconfig/build, empaquetar fuente
+}
+#>
+function Resolve-NodeRuntime {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        $PublishConfig
+    )
+
+    $runtime = if ($PublishConfig) { $PublishConfig.runtime } else { $null }
+
+    $build = $true
+    if ($runtime -and ($null -ne $runtime.build)) {
+        $build = [bool]$runtime.build
+    }
+
+    $entrypoint = $null
+    if ($runtime -and $runtime.entrypoint) {
+        $entrypoint = [string]$runtime.entrypoint
+    }
+    if (-not $entrypoint) {
+        $entrypoint = if ($build) { 'dist/main.js' } else { 'server.js' }
+    }
+
+    # Normalizar: quitar './' inicial y backslashes -> '/'
+    $entrypoint = ($entrypoint -replace '\\', '/') -replace '^\./', ''
+
+    return @{
+        Build      = $build
+        Entrypoint = $entrypoint
+    }
+}
+
+<#
+.SYNOPSIS
+Compone el identificador de release: v{version}+{shortSha} (ADR 0003).
+
+.DESCRIPTION
+Toma la version de package.json (descartando cualquier build metadata previo tras '+')
+y le adjunta el sha corto de git para identificar univocamente cada despliegue, incluso
+cuando la version de package.json es estatica.
+
+.EXAMPLE
+Get-ReleaseId -Version '1.0.0' -ShortSha 'abc1234'   # => v1.0.0+abc1234
+#>
+function Get-ReleaseId {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Version,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ShortSha
+    )
+
+    $baseVersion = ($Version -split '\+')[0]
+    return "v$baseVersion+$ShortSha"
+}
+
+<#
+.SYNOPSIS
+Indica si el arbol de trabajo de git esta limpio (ADR 0003).
+
+.DESCRIPTION
+En modo build:false el tarball se arma desde HEAD (git archive), asi que un arbol
+sucio desplegaria algo distinto de lo que se ve. Este guard permite que -Apply exija
+un arbol limpio (salvo -AllowDirty). Retorna $true si no hay cambios pendientes.
+
+.PARAMETER Path
+Directorio dentro del repo git a inspeccionar.
+
+.EXAMPLE
+if (-not (Test-CleanWorktree -Path $cwd)) { throw "Commit or use -AllowDirty" }
+#>
+function Test-CleanWorktree {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $status = & git -C $Path status --porcelain 2>$null
+    return [string]::IsNullOrWhiteSpace(($status | Out-String))
+}
+
+<#
+.SYNOPSIS
+Decide como instalar node_modules de produccion segun el SO host (ADR 0003).
+
+.DESCRIPTION
+Los binarios nativos (p. ej. oracledb thick) se compilan por plataforma; un `npm ci`
+en Windows produce un binario que no carga en el servidor Linux. En un host Windows la
+instalacion se enruta a WSL para obtener binarios Linux; en Linux se instala nativo.
+Helper de decision puro (sin efectos), testeable de forma unitaria.
+
+.PARAMETER IsWindowsHost
+$true si el host es Windows.
+
+.EXAMPLE
+$plan = Get-ProdModulesPlan -IsWindowsHost $IsWindows   # 'wsl' | 'native'
+#>
+function Get-ProdModulesPlan {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [bool]$IsWindowsHost
+    )
+
+    if ($IsWindowsHost) { return 'wsl' }
+    return 'native'
 }
