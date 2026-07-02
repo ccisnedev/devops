@@ -1,0 +1,37 @@
+# stack.yaml — Despliegue de un stack Docker Compose a un servidor remoto vía SSH.
+# Generado por: Publish-DockerStack -Init
+# NO incluya secretos en este archivo — este archivo SÍ se versiona.
+# Los secretos van en .env (gitignored), que se copia al servidor y consume docker compose.
+
+# ─── Servidor ─────────────────────────────────────────
+server: your-ssh-alias          # alias en ~/.ssh/config (Host, HostName, User, IdentityFile[, Port])
+
+# ─── Stack ────────────────────────────────────────────
+stack:
+  name: my-stack                # nombre del proyecto compose (-p) y carpeta en /opt/stacks/<name>
+  version: "0.0.0"              # etiqueta de versión; el release se marca v{version}+{gitSha}
+  composeFile: docker-compose.yml
+  build: server                 # server: build en el servidor (sync del contexto)
+                                # transfer: build local + docker save/load (mismo artefacto, sin registry)
+                                # none: la imagen ya está en el servidor o compose la hace pull
+  # image: my-stack:dev         # requerido solo con build: transfer (imagen a serializar)
+
+# Archivos/carpetas que se empaquetan y suben, además del compose y .env.
+# Rutas relativas a este stack.yaml. En build:server incluya TODO el contexto de build.
+include:
+  - docker-compose.yml
+
+# ─── Health ───────────────────────────────────────────
+# Espera a que un contenedor quede 'healthy' (o 'running' si no tiene healthcheck),
+# o a que una URL responda con curl desde el servidor. 'url' tiene precedencia.
+health:
+  container: ""                 # nombre del servicio en el compose (ej: keycloak)
+  url: ""                       # o una URL probada desde el server (ej: http://127.0.0.1:9000/health/ready)
+  retries: 30
+  interval: 4
+
+# ─── Post-deploy (opcional) ───────────────────────────
+# Comandos ejecutados en el servidor tras 'up -d' (se corren desde el directorio 'current').
+# Útil, p.ej., para aplicar configuración declarativa (realm-as-code) con un contenedor efímero.
+postDeploy: []
+  # - docker compose -p my-stack run --rm config-cli

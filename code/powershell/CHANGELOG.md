@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [5.3.0] - 2026-07-02
+
+### Added
+- **Publish-DockerStack: despliegue de stacks Docker Compose a un servidor remoto vía SSH.**
+  Contraparte de `Publish-NodeApi` para infraestructura contenedorizada, con la misma taxonomía
+  `Init`/`Plan`/`Apply` + `-AutoApprove` (ADR 0002) y la misma disciplina de secretos
+  (`stack.yaml` versionado sin secretos; `.env` gitignored que se copia al servidor como env-file
+  del stack). Releases versionados en `/opt/stacks/<name>/releases/<v{version}+{sha}>` con symlink
+  `current` para rollback. Tres modos de build: `server` (build en el servidor), `transfer`
+  (build local + `docker save`/`load`, mismo artefacto sin registry) y `none`. Healthcheck por
+  contenedor (`healthy`/`running`) o URL, y hooks `postDeploy` (p.ej. aplicar realm-as-code).
+  Reutiliza los helpers de publicación existentes (SSH config, `Invoke-RemoteScript`,
+  `Confirm-MacssChange`, `Get-BashScript`). Motivación: desplegar el stack de Keycloak (IAM) sin
+  Terraform, en el mismo toolchain que ya se opera.
+
 ## [5.2.0] - 2026-07-02
 
 ### Added
