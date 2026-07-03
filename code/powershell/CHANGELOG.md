@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [5.3.1] - 2026-07-02
+
+### Fixed
+- **Publish-NodeApi `-Apply` (build:false) crashed with "Cannot convert String to
+  SwitchParameter".** The local variable `$plan` (holding `'wsl'`/`'native'` from
+  `Get-ProdModulesPlan`) collided with the cmdlet's own `[switch]$Plan` parameter — PowerShell
+  variable names are case-insensitive, so `$plan = 'wsl'` tried to assign a String to the
+  `[switch]` parameter variable and threw. The error surfaced only inside the full cmdlet (the
+  `$Plan` parameter is in scope there), so unit/harness/container tests missed it. Renamed the
+  local to `$modulesPlan`. Added a static AST guard test that fails if **any** local assignment
+  target in `Publish-NodeApi` collides (case-insensitively) with one of its `[switch]`
+  parameters (`Init`/`Plan`/`Apply`/`AutoApprove`/`AllowDirty`).
+
 ## [5.3.0] - 2026-07-02
 
 ### Added
