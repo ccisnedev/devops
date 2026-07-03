@@ -30,6 +30,18 @@ if [ ! -f "$BUILD_DIR/$ENTRYPOINT" ]; then
   exit 3
 fi
 
+# 2b. npm ci needs a committed lockfile for a reproducible install. build:false
+# ships from git HEAD, so the lockfile must be tracked (not gitignored).
+if [ ! -f "$BUILD_DIR/package-lock.json" ] && [ ! -f "$BUILD_DIR/npm-shrinkwrap.json" ]; then
+  echo "ERROR: no package-lock.json (nor npm-shrinkwrap.json) is versioned in HEAD." >&2
+  echo "       build:false uses 'npm ci' for a reproducible install, which requires the lockfile." >&2
+  echo "       Fix: commit the lockfile in the project repo:" >&2
+  echo "         1) remove 'package-lock.json' from .gitignore" >&2
+  echo "         2) git add package-lock.json && git commit" >&2
+  echo "         3) re-run Publish-NodeApi -Apply" >&2
+  exit 5
+fi
+
 # 3. Production node_modules, built natively (ext4) for the Linux target.
 cd "$BUILD_DIR"
 npm ci --omit=dev
