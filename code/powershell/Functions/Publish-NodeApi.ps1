@@ -394,9 +394,11 @@ NODE_ENV=production
                     Write-Host "  Modo build:false (sin compilación)" -ForegroundColor Cyan
 
                     # node_modules de producción, compatible con Linux según el SO host.
-                    $plan = Get-ProdModulesPlan -IsWindowsHost $isWindowsHost
-                    Write-Host "    npm ci --omit=dev ($plan)..." -ForegroundColor DarkGray
-                    if ($plan -eq 'wsl') {
+                    # NB: no usar $plan como nombre — colisiona con el parámetro [switch]$Plan
+                    # del cmdlet (PowerShell es case-insensitive) y falla al asignar el String.
+                    $modulesPlan = Get-ProdModulesPlan -IsWindowsHost $isWindowsHost
+                    Write-Host "    npm ci --omit=dev ($modulesPlan)..." -ForegroundColor DarkGray
+                    if ($modulesPlan -eq 'wsl') {
                         $distro = Get-ValidWSLDistro
                         $wslCwd = ConvertTo-WSLPath -winPath $cwd -WSLDistro $distro
                         & wsl.exe -d $distro -- bash -lc "cd '$wslCwd' && npm ci --omit=dev" 2>&1 |
