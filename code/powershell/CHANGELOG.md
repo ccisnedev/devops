@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [5.3.3] - 2026-07-03
+
+### Fixed
+- **build:false: clear, actionable error when the source has no committed lockfile.**
+  `npm ci` (used for reproducible production installs) requires a `package-lock.json` /
+  `npm-shrinkwrap.json`, and build:false ships from `git archive HEAD` (tracked files only).
+  When the lockfile was gitignored/untracked it was absent from the package and `npm ci`
+  failed deep in WSL with a cryptic `EUSAGE`. `Build-NodeApiPackage.sh` now checks for a
+  versioned lockfile up front and exits with a message telling the user to commit it
+  (un-gitignore → `git add` → re-run) — no silent `npm install` fallback, so releases stay
+  reproducible. Container test extended: source without a lockfile → exit 5 + actionable
+  message. Validated by a real end-to-end deploy of the plain-JS `impulsa` API to pre-prod
+  (WSL `npm ci` of `oracledb`/`mssql` → scp → pm2 → live `/health` 200).
+
 ## [5.3.2] - 2026-07-03
 
 ### Fixed
