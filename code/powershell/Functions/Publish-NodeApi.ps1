@@ -393,52 +393,44 @@ NODE_ENV=production
                     # ══ Modo build:false (ADR 0003) — empaquetar el fuente desde HEAD ══
                     Write-Host "  Modo build:false (sin compilación)" -ForegroundColor Cyan
 
-                    # node_modules de producción, compatible con Linux según el SO host.
-                    # NB: no usar $plan como nombre — colisiona con el parámetro [switch]$Plan
-                    # del cmdlet (PowerShell es case-insensitive) y falla al asignar el String.
+                    # Empaquetado build:false: fuente versionado (git archive HEAD) +
+                    # node_modules de producción. Todo se construye en un dir temporal
+                    # ext4 (mktemp) vía Build-NodeApiPackage.sh — NO muta el working tree
+                    # (no borra devDependencies) y NO corre npm ci sobre drvfs (/mnt/c en
+                    # WSL, que da EIO). En Windows se ejecuta dentro de WSL; en Linux, nativo.
                     $modulesPlan = Get-ProdModulesPlan -IsWindowsHost $isWindowsHost
-                    Write-Host "    npm ci --omit=dev ($modulesPlan)..." -ForegroundColor DarkGray
-                    if ($modulesPlan -eq 'wsl') {
-                        $distro = Get-ValidWSLDistro
-                        $wslCwd = ConvertTo-WSLPath -winPath $cwd -WSLDistro $distro
-                        & wsl.exe -d $distro -- bash -lc "cd '$wslCwd' && npm ci --omit=dev" 2>&1 |
-                            ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
-                        if ($LASTEXITCODE -ne 0) { throw "npm ci --omit=dev en WSL falló con código $LASTEXITCODE" }
-                    } else {
-                        & npm ci --omit=dev 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
-                        if ($LASTEXITCODE -ne 0) { throw "npm ci --omit=dev falló con código $LASTEXITCODE" }
-                    }
-                    if (-not (Test-Path (Join-Path $cwd 'node_modules'))) {
-                        throw "node_modules no existe tras npm ci --omit=dev."
-                    }
-                    Write-Host "    node_modules (producción) listo" -ForegroundColor Green
+                    Write-Host "  Empaquetando (git archive HEAD + npm ci --omit=dev, $modulesPlan)..." -ForegroundColor Cyan
 
-                    # Empaquetar: git archive del subárbol (solo lo versionado) + node_modules.
-                    Write-Host "  Empaquetando fuente (git archive HEAD)..." -ForegroundColor Cyan
                     $prefix = "$(& git -C $cwd rev-parse --show-prefix 2>$null)".Trim()
                     $treeish = if ($prefix) { "HEAD:$($prefix.TrimEnd('/'))" } else { 'HEAD' }
-                    $staging = Join-Path $env:TEMP "psdevops_src_$([guid]::NewGuid().ToString('N').Substring(0,8))"
-                    $archiveTar = "$staging.tar"
-                    New-Item -ItemType Directory -Path $staging | Out-Null
+                    $srcTar = Join-Path $env:TEMP "psdevops_src_$([guid]::NewGuid().ToString('N').Substring(0,8)).tar"
+
+                    # LF para bash; el script se lee de stdin (bash -s) y recibe args posicionales.
+                    $buildScript = (Get-BashScript -ScriptName 'Build-NodeApiPackage.sh' -Placeholders @{}) -replace "`r`n", "`n"
                     try {
-                        & git -C $cwd archive --format=tar -o $archiveTar $treeish
-                        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $archiveTar)) {
+                        & git -C $cwd archive --format=tar -o $srcTar $treeish
+                        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $srcTar)) {
                             throw "git archive falló (treeish=$treeish)."
                         }
-                        & tar.exe -xf $archiveTar -C $staging
-                        $entryStaged = Join-Path $staging ($entrypoint -replace '/', '\')
-                        if (-not (Test-Path $entryStaged)) {
-                            throw "El entrypoint '$entrypoint' no está versionado en git (no aparece en el archivo HEAD)."
+                        if ($modulesPlan -eq 'wsl') {
+                            $distro = Get-ValidWSLDistro
+                            $wslSrc = ConvertTo-WSLPath -winPath $srcTar -WSLDistro $distro
+                            $wslOut = ConvertTo-WSLPath -winPath $localTarball -WSLDistro $distro
+                            $buildScript | & wsl.exe -d $distro -- bash -s -- $wslSrc $entrypoint $wslOut 2>&1 |
+                                ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+                            if ($LASTEXITCODE -ne 0) { throw "Empaquetado en WSL falló con código $LASTEXITCODE" }
+                        } else {
+                            $buildScript | & bash -s -- $srcTar $entrypoint $localTarball 2>&1 |
+                                ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+                            if ($LASTEXITCODE -ne 0) { throw "Empaquetado falló con código $LASTEXITCODE" }
                         }
-                        # tar.gz = fuente versionado (staging) + node_modules del cwd, sin copiar.
-                        & tar.exe -czf $localTarball -C $staging . -C $cwd node_modules
                         if (-not (Test-Path $localTarball)) {
                             throw "Error al crear el tarball de fuente."
                         }
                     } finally {
-                        Remove-Item -LiteralPath $archiveTar -ErrorAction SilentlyContinue
-                        Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+                        Remove-Item -LiteralPath $srcTar -ErrorAction SilentlyContinue
                     }
+                    Write-Host "    node_modules (producción) listo — working tree intacto" -ForegroundColor Green
                 }
 
                 $tarSize = [math]::Round((Get-Item $localTarball).Length / 1MB, 1)
