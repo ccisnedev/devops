@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [5.3.2] - 2026-07-03
+
+### Fixed
+- **build:false packaging no longer mutates the working tree, and works on WSL.** The
+  production `npm ci --omit=dev` previously ran **in place** in the project directory: on a
+  Windows host that meant running it over `/mnt/c` (drvfs) inside WSL, which failed with
+  `EIO` on `unlink` (e.g. deleting the pre-existing `oracledb-*-win32-x64.node`); and on any
+  host it stripped the developer's `devDependencies` from their local `node_modules`.
+  Packaging now runs in an **ephemeral `mktemp` dir** (native ext4, never drvfs, never the
+  working tree) via a new `Build-NodeApiPackage.sh`: `git archive HEAD` → temp dir →
+  `npm ci --omit=dev` → tar. Same script drives both the WSL (Windows host) and native (Linux
+  host) paths. Covered by a new Docker container test
+  (`BuildNodeApiPackage.container.test.sh`): build in a throwaway dir, `--omit=dev` honoured,
+  source tree untouched, missing-entrypoint rejected.
+
 ## [5.3.1] - 2026-07-02
 
 ### Fixed
