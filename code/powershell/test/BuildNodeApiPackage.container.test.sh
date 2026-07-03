@@ -63,5 +63,24 @@ EOF
   test "$rc" -eq 3                                          # rejects missing entrypoint
   test ! -e /tmp/out2.tar.gz                                # no tarball on failure
   echo "  entrypoint validation (exit 3): PASS"
+
+  # ── Lockfile validation: source WITHOUT package-lock.json must fail (exit 5) ──
+  NOLOCK=/tmp/nolock
+  mkdir -p "$NOLOCK"; cd "$NOLOCK"
+  echo "{\"name\":\"nolock\",\"version\":\"1.0.0\",\"dependencies\":{\"is-number\":\"7.0.0\"}}" > package.json
+  cat > server.js <<EOF
+const http = require("http");
+http.createServer((_, r) => r.end("ok")).listen(process.env.PORT || 8080);
+EOF
+  git init -q && git add -A && git commit -qm init            # note: NO lockfile committed
+  git archive --format=tar -o /tmp/nolock.tar HEAD
+  set +e
+  msg=$(bash -s -- /tmp/nolock.tar server.js /tmp/out3.tar.gz < /scripts/Build-NodeApiPackage.sh 2>&1)
+  rc=$?
+  set -e
+  test "$rc" -eq 5                                          # rejects missing lockfile
+  test ! -e /tmp/out3.tar.gz                                # no tarball on failure
+  echo "$msg" | grep -q "package-lock.json"                 # actionable message mentions the lockfile
+  echo "  lockfile validation (exit 5): PASS"
 '
 echo "ALL BUILD-PACKAGE CONTAINER TESTS PASSED"
