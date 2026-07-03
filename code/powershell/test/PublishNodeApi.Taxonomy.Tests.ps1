@@ -28,3 +28,50 @@ Describe "Publish-NodeApi taxonomy (ADR 0002)" {
         $script:cmd.Parameters['AutoApprove'].ParameterSets.Keys | Should -Contain 'Apply'
     }
 }
+
+Describe "Publish-NodeApi body hygiene — no local var collides with a [switch] param" {
+    # Regressione: $plan (variable local) colisionaba con el parámetro [switch]$Plan.
+    # PowerShell es case-insensitive, así que `$plan = 'wsl'` intentaba asignar un String
+    # a la variable-parámetro [switch]$Plan → "Cannot convert String to SwitchParameter".
+    # Este guard estático detecta cualquier reincidencia sobre CUALQUIER switch del cmdlet.
+    BeforeAll {
+        $fnPath = "$PSScriptRoot/../Functions/Publish-NodeApi.ps1"
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($fnPath, [ref]$null, [ref]$null)
+        $fnAst = $ast.Find({
+                param($n)
+                $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Publish-NodeApi'
+            }, $true)
+
+        $script:switchParams = @(
+            $fnAst.Body.ParamBlock.Parameters |
+                Where-Object { $_.StaticType -eq [System.Management.Automation.SwitchParameter] } |
+                ForEach-Object { $_.Name.VariablePath.UserPath }
+        )
+
+        $assignments = $fnAst.FindAll({
+                param($n)
+                $n -is [System.Management.Automation.Language.AssignmentStatementAst]
+            }, $true)
+        $script:assignedNames = @(
+            $assignments |
+                ForEach-Object { $_.Left } |
+                Where-Object { $_ -is [System.Management.Automation.Language.VariableExpressionAst] } |
+                ForEach-Object { $_.VariablePath.UserPath }
+        )
+    }
+
+    It "detecta los parámetros [switch] del cmdlet" {
+        $script:switchParams | Should -Contain 'Plan'
+        $script:switchParams | Should -Contain 'Apply'
+    }
+
+    It "no asigna ninguna variable local cuyo nombre coincida con un parámetro [switch] (case-insensitive)" {
+        $collisions = @(
+            $script:assignedNames | Where-Object {
+                $name = $_
+                @($script:switchParams | Where-Object { $_ -ieq $name }).Count -gt 0
+            } | Select-Object -Unique
+        )
+        $collisions | Should -BeNullOrEmpty -Because "asignar a una variable con el mismo nombre que un [switch] lanza 'Cannot convert String to SwitchParameter' (p.ej. `$plan` vs [switch]`$Plan)"
+    }
+}
