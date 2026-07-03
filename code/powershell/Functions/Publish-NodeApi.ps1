@@ -405,8 +405,12 @@ NODE_ENV=production
                     $treeish = if ($prefix) { "HEAD:$($prefix.TrimEnd('/'))" } else { 'HEAD' }
                     $srcTar = Join-Path $env:TEMP "psdevops_src_$([guid]::NewGuid().ToString('N').Substring(0,8)).tar"
 
-                    # LF para bash; el script se lee de stdin (bash -s) y recibe args posicionales.
-                    $buildScript = (Get-BashScript -ScriptName 'Build-NodeApiPackage.sh' -Placeholders @{}) -replace "`r`n", "`n"
+                    # Materializar el script a un temp con LF (sin BOM) y ejecutarlo como
+                    # archivo — NO por stdin: al pipear, PowerShell añade un CRLF final que
+                    # bash interpreta como un comando `\r` (exit 127 espurio tras el build).
+                    $buildScript = (Get-BashScript -ScriptName 'Build-NodeApiPackage.sh' -Placeholders @{}) -replace "`r`n", "`n" -replace "`r", "`n"
+                    $buildScriptTmp = Join-Path $env:TEMP "psdevops_build_$([guid]::NewGuid().ToString('N').Substring(0,8)).sh"
+                    [System.IO.File]::WriteAllText($buildScriptTmp, $buildScript, (New-Object System.Text.UTF8Encoding $false))
                     try {
                         & git -C $cwd archive --format=tar -o $srcTar $treeish
                         if ($LASTEXITCODE -ne 0 -or -not (Test-Path $srcTar)) {
@@ -416,11 +420,12 @@ NODE_ENV=production
                             $distro = Get-ValidWSLDistro
                             $wslSrc = ConvertTo-WSLPath -winPath $srcTar -WSLDistro $distro
                             $wslOut = ConvertTo-WSLPath -winPath $localTarball -WSLDistro $distro
-                            $buildScript | & wsl.exe -d $distro -- bash -s -- $wslSrc $entrypoint $wslOut 2>&1 |
+                            $wslScript = ConvertTo-WSLPath -winPath $buildScriptTmp -WSLDistro $distro
+                            & wsl.exe -d $distro -- bash $wslScript $wslSrc $entrypoint $wslOut 2>&1 |
                                 ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
                             if ($LASTEXITCODE -ne 0) { throw "Empaquetado en WSL falló con código $LASTEXITCODE" }
                         } else {
-                            $buildScript | & bash -s -- $srcTar $entrypoint $localTarball 2>&1 |
+                            & bash $buildScriptTmp $srcTar $entrypoint $localTarball 2>&1 |
                                 ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
                             if ($LASTEXITCODE -ne 0) { throw "Empaquetado falló con código $LASTEXITCODE" }
                         }
@@ -428,7 +433,7 @@ NODE_ENV=production
                             throw "Error al crear el tarball de fuente."
                         }
                     } finally {
-                        Remove-Item -LiteralPath $srcTar -ErrorAction SilentlyContinue
+                        Remove-Item -LiteralPath $srcTar, $buildScriptTmp -ErrorAction SilentlyContinue
                     }
                     Write-Host "    node_modules (producción) listo — working tree intacto" -ForegroundColor Green
                 }
