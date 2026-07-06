@@ -104,8 +104,14 @@ elif [ "$PROCESS_MANAGER" = "pm2" ]; then
         # Process names, cwd and env are owned by ecosystem.config.js, not by CLI flags.
         echo "Using ecosystem.config.js (config-as-code): $ECOSYSTEM_FILE"
 
-        # startOrReload is idempotent: starts apps the first time, reloads them on later deploys.
-        pm2 startOrReload "$ECOSYSTEM_FILE" --update-env
+        # Immutable deploys swap the 'current' symlink to a new release dir. A graceful
+        # 'pm2 reload' keeps each app's already-resolved script realpath (the PREVIOUS
+        # release), so after the symlink swap it would keep running the old code. Delete
+        # + start forces pm2 to re-resolve the script through the updated 'current'
+        # symlink so the new release actually runs. (Brief restart; a zero-downtime
+        # reload would need cluster mode + a stable non-symlinked script path.)
+        pm2 delete "$ECOSYSTEM_FILE" >/dev/null 2>&1 || true
+        pm2 start "$ECOSYSTEM_FILE" --update-env
 
         # Persist the process list so 'pm2 startup' can resurrect it after a reboot.
         pm2 save

@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [5.3.4] - 2026-07-03
+
+### Fixed
+- **pm2 (config-as-code) kept running the previous release after a deploy.** Immutable
+  deploys swap the `current` symlink to the new release dir, but `pm2 startOrReload` did a
+  graceful reload that reuses each app's already-resolved script realpath (the *previous*
+  release), so the process kept executing the old code even though `current`, the source and
+  the `RELEASE` file all pointed at the new release. `Manage-NodeProcess.sh` now does
+  `pm2 delete` + `pm2 start` on the ecosystem file so pm2 re-resolves the script through the
+  updated `current` symlink and actually runs the new release (brief restart; a zero-downtime
+  reload would need cluster mode + a stable non-symlinked script path). Covered by a new Docker
+  container test (`ManageNodeProcessPm2Symlink.container.test.sh`): two releases behind a
+  `current` symlink, swap the symlink, assert the live process serves the new release.
+
 ## [5.3.3] - 2026-07-03
 
 ### Fixed
