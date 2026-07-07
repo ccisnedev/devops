@@ -401,8 +401,6 @@ NODE_ENV=production
                     $modulesPlan = Get-ProdModulesPlan -IsWindowsHost $isWindowsHost
                     Write-Host "  Empaquetando (git archive HEAD + npm ci --omit=dev, $modulesPlan)..." -ForegroundColor Cyan
 
-                    $prefix = "$(& git -C $cwd rev-parse --show-prefix 2>$null)".Trim()
-                    $treeish = if ($prefix) { "HEAD:$($prefix.TrimEnd('/'))" } else { 'HEAD' }
                     $srcTar = Join-Path $env:TEMP "psdevops_src_$([guid]::NewGuid().ToString('N').Substring(0,8)).tar"
 
                     # Materializar el script a un temp con LF (sin BOM) y ejecutarlo como
@@ -412,10 +410,11 @@ NODE_ENV=production
                     $buildScriptTmp = Join-Path $env:TEMP "psdevops_build_$([guid]::NewGuid().ToString('N').Substring(0,8)).sh"
                     [System.IO.File]::WriteAllText($buildScriptTmp, $buildScript, (New-Object System.Text.UTF8Encoding $false))
                     try {
-                        & git -C $cwd archive --format=tar -o $srcTar $treeish
-                        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $srcTar)) {
-                            throw "git archive falló (treeish=$treeish)."
-                        }
+                        # Empaqueta el subarbol versionado del componente desde el TOPLEVEL del
+                        # repo (depth-agnostico; ver Export-GitSubtreeTar). Evita el tar vacio que
+                        # producia 'git -C <subdir> archive HEAD:<prefix>' cuando el api vive en un
+                        # subdir del monorepo (p. ej. code/api).
+                        Export-GitSubtreeTar -Path $cwd -OutTar $srcTar
                         if ($modulesPlan -eq 'wsl') {
                             $distro = Get-ValidWSLDistro
                             $wslSrc = ConvertTo-WSLPath -winPath $srcTar -WSLDistro $distro

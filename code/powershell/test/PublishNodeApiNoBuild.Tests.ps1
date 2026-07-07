@@ -82,6 +82,86 @@ Describe "Test-CleanWorktree (REQ-5)" {
     }
 }
 
+Describe "Test-CleanWorktree scoped to component (monorepo, REQ-7)" {
+
+    BeforeAll {
+        $script:mrepo = Join-Path ([IO.Path]::GetTempPath()) "mono-$([guid]::NewGuid().ToString('N').Substring(0,8))"
+        New-Item -ItemType Directory -Path (Join-Path $script:mrepo 'code/api') -Force | Out-Null
+        New-Item -ItemType Directory -Path (Join-Path $script:mrepo 'code/db')  -Force | Out-Null
+        & git -C $script:mrepo init -q
+        & git -C $script:mrepo config user.email "t@t.t"
+        & git -C $script:mrepo config user.name "t"
+        Set-Content -Path (Join-Path $script:mrepo 'code/api/server.js') -Value 'console.log(1)'
+        Set-Content -Path (Join-Path $script:mrepo 'code/db/schema.sql') -Value 'SELECT 1'
+        & git -C $script:mrepo add -A
+        & git -C $script:mrepo commit -q -m "init monorepo"
+        $script:apiDir = Join-Path $script:mrepo 'code/api'
+    }
+
+    AfterAll { Remove-Item -Recurse -Force -Path $script:mrepo -ErrorAction SilentlyContinue }
+
+    It "REQ-7: true for a clean component subdir" {
+        Test-CleanWorktree -Path $script:apiDir | Should -BeTrue
+    }
+
+    It "REQ-7: NOT blocked by an uncommitted change in ANOTHER component (code/db)" {
+        Set-Content -Path (Join-Path $script:mrepo 'code/db/dirty.tmp') -Value 'x'
+        try { Test-CleanWorktree -Path $script:apiDir | Should -BeTrue }
+        finally { Remove-Item -Force (Join-Path $script:mrepo 'code/db/dirty.tmp') -ErrorAction SilentlyContinue }
+    }
+
+    It "REQ-7: false when the change is INSIDE the component subdir" {
+        Set-Content -Path (Join-Path $script:apiDir 'dirty.tmp') -Value 'x'
+        try { Test-CleanWorktree -Path $script:apiDir | Should -BeFalse }
+        finally { Remove-Item -Force (Join-Path $script:apiDir 'dirty.tmp') -ErrorAction SilentlyContinue }
+    }
+}
+
+Describe "Export-GitSubtreeTar (monorepo subdir packaging, REQ-8)" {
+
+    BeforeAll {
+        $script:xrepo = Join-Path ([IO.Path]::GetTempPath()) "xtar-$([guid]::NewGuid().ToString('N').Substring(0,8))"
+        New-Item -ItemType Directory -Path (Join-Path $script:xrepo 'code/api') -Force | Out-Null
+        & git -C $script:xrepo init -q
+        & git -C $script:xrepo config user.email "t@t.t"
+        & git -C $script:xrepo config user.name "t"
+        Set-Content -Path (Join-Path $script:xrepo 'code/api/server.js')    -Value 'console.log(1)'
+        Set-Content -Path (Join-Path $script:xrepo 'code/api/package.json') -Value '{}'
+        Set-Content -Path (Join-Path $script:xrepo 'README.md')             -Value 'root'
+        & git -C $script:xrepo add -A
+        & git -C $script:xrepo commit -q -m "init"
+        $script:xapi = Join-Path $script:xrepo 'code/api'
+    }
+
+    AfterAll { Remove-Item -Recurse -Force -Path $script:xrepo -ErrorAction SilentlyContinue }
+
+    It "REQ-8: packages a NON-EMPTY subtree tar (regression: cwd-relative treeish -> empty tar)" {
+        $out = Join-Path ([IO.Path]::GetTempPath()) "sub-$([guid]::NewGuid().ToString('N').Substring(0,8)).tar"
+        try {
+            Export-GitSubtreeTar -Path $script:xapi -OutTar $out
+            Test-Path $out | Should -BeTrue
+            # el bug (treeish relativo al cwd en un subdir) producia un tar VACIO -> 0 entradas.
+            # (No sirve chequear tamaño: tar rellena al blocking factor de 10240 bytes, asi que
+            #  un tar vacio y uno con archivos chicos pesan igual.)
+            Push-Location (Split-Path $out -Parent)
+            try { $entries = @(& tar -tf (Split-Path $out -Leaf)) } finally { Pop-Location }
+            $entries.Count | Should -BeGreaterThan 0
+        } finally { Remove-Item -Force $out -ErrorAction SilentlyContinue }
+    }
+
+    It "REQ-8: places component files at the ROOT of the tar (excludes repo-root files)" {
+        $out = Join-Path ([IO.Path]::GetTempPath()) "sub-$([guid]::NewGuid().ToString('N').Substring(0,8)).tar"
+        try {
+            Export-GitSubtreeTar -Path $script:xapi -OutTar $out
+            # Push-Location + nombre relativo: evita que 'tar' interprete 'C:' como host remoto.
+            Push-Location (Split-Path $out -Parent)
+            try { $entries = & tar -tf (Split-Path $out -Leaf) } finally { Pop-Location }
+            $entries | Should -Contain 'server.js'
+            $entries | Should -Not -Contain 'README.md'
+        } finally { Remove-Item -Force $out -ErrorAction SilentlyContinue }
+    }
+}
+
 Describe "Get-ProdModulesPlan (REQ-6)" {
 
     It "REQ-6: selects wsl on a Windows host" {
