@@ -25,7 +25,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   `MACSS_DEPLOY_*`, crypto `/agenda_detalle_mes` → 200, 0 restarts).
 - **`Invoke-SqlPackage` gains `-EnvFile`** (same environment-selection model): the SQL server
   credentials already lived in `.env`; `-EnvFile` (default `.env`) lets you pick the environment
-  (`.env` / `.env.production`) at invocation instead of the hard-coded `.env`.
+  (`.env` / `.env.production`) at invocation instead of the hard-coded `.env`. Validated e2e
+  against SQL Server 2022 **in a container** (`test/InvokeSqlPackage.container.test.ps1`):
+  `-Apply -EnvFile .env.container` builds the SQL project and deploys the table to the
+  containerized server, while a bare `-Plan` (default `.env` pointing at a dead server) fails to
+  connect — proving `-EnvFile` genuinely selects the target file, not a hard-coded path.
 
 ### Removed
 - **`-Server` override and the `servers:` allowlist (5.3.7) — superseded by ADR 0004.** Their
