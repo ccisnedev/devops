@@ -581,8 +581,56 @@ function Test-CleanWorktree {
         [string]$Path
     )
 
-    $status = & git -C $Path status --porcelain 2>$null
+    # Acotado al subarbol de $Path con el pathspec '-- .': en un monorepo,
+    # Publish-NodeApi corre desde el subdir del componente (p. ej. code/api) y el
+    # guard NO debe bloquearse por cambios sin commitear en OTROS componentes
+    # (code/db, code/app, docs...). Cuando $Path es la raiz del repo, '-- .'
+    # abarca todo el repo => comportamiento identico al anterior.
+    $status = & git -C $Path status --porcelain -- . 2>$null
     return [string]::IsNullOrWhiteSpace(($status | Out-String))
+}
+
+<#
+.SYNOPSIS
+Empaqueta como tar el subarbol versionado (HEAD) del directorio indicado, con sus
+archivos en la RAIZ del tar. Agnostico a la profundidad del subdir en el repo.
+
+.DESCRIPTION
+En build:false el tarball se arma con 'git archive' desde HEAD. En un monorepo el
+componente vive en un subdir (p. ej. code/api), asi que hay que archivar ese
+SUBARBOL con sus archivos en la raiz del tar.
+
+Clave: 'git archive' se corre desde el TOPLEVEL del repo. Si se corriera con -C en
+el subdir, git resuelve 'HEAD:<prefix>' relativo al cwd (=> <prefix>/<prefix>,
+arbol inexistente => tar VACIO => el entrypoint "no aparece"). Con --show-prefix
+(ruta raiz->cwd) y --show-toplevel (raiz del repo), el empaquetado funciona igual
+sin importar cuantas carpetas arriba este el .git.
+
+.PARAMETER Path
+Directorio del componente a empaquetar (desde donde se corre Publish-NodeApi).
+
+.PARAMETER OutTar
+Ruta del archivo .tar de salida.
+
+.EXAMPLE
+Export-GitSubtreeTar -Path (Get-Location) -OutTar $srcTar
+#>
+function Export-GitSubtreeTar {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$OutTar
+    )
+
+    $prefix   = "$(& git -C $Path rev-parse --show-prefix   2>$null)".Trim()
+    $toplevel = "$(& git -C $Path rev-parse --show-toplevel 2>$null)".Trim()
+    if (-not $toplevel) { $toplevel = $Path }
+    $treeish  = if ($prefix) { "HEAD:$($prefix.TrimEnd('/'))" } else { 'HEAD' }
+
+    & git -C $toplevel archive --format=tar -o $OutTar $treeish
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $OutTar)) {
+        throw "git archive fallo (treeish=$treeish, toplevel=$toplevel)."
+    }
 }
 
 <#

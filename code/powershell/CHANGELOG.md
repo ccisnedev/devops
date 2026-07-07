@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [5.3.5] - 2026-07-07
+
+### Fixed
+- **build:false: deploying from a subdirectory of the repo (monorepo) produced an empty
+  package and failed with "entrypoint not versioned in git".** The packaging ran
+  `git -C <cwd> archive HEAD:<prefix>` with git's cwd set to the component subdir (e.g.
+  `code/api`), so git resolved `HEAD:<prefix>` **relative to the cwd** (`<prefix>/<prefix>`) —
+  an inexistent tree → empty tar → the entrypoint check tripped (exit 3). Extracted the
+  packaging into `Export-GitSubtreeTar`, which runs `git archive` from the repo **toplevel**
+  (`--show-toplevel`) with the treeish from `--show-prefix`, archiving the component subtree
+  with its files at the tar root. Depth-agnostic: works whether the api is at the repo root
+  or N folders deep — you still just `cd` into the api folder and run the cmdlet.
+- **build:false clean-worktree guard blocked on unrelated changes elsewhere in the repo.**
+  `Test-CleanWorktree` ran `git status --porcelain` with no pathspec (whole repo), so in a
+  monorepo an uncommitted file in *another* component (`code/db`, `code/app`, `docs/…`) would
+  block the api deploy. It now scopes to `-- .` (the component subtree); when `-Path` is the
+  repo root the behavior is unchanged.
+
+Both surfaced while deploying impulsa's `code/api` from the new monorepo. Covered by new
+Pester specs (REQ-7 scoped worktree ×3, REQ-8 subdir packaging ×2).
+
 ## [5.3.4] - 2026-07-03
 
 ### Fixed
