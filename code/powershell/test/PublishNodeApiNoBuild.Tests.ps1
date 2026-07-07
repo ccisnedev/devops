@@ -42,6 +42,26 @@ Describe "Resolve-NodeRuntime (REQ-1..3)" {
         $r = Resolve-NodeRuntime -PublishConfig @{ runtime = @{ build = $false; entrypoint = './server.js' } }
         $r.Entrypoint | Should -Be 'server.js'
     }
+
+    It "REQ-9: SharedPaths is an empty array when runtime.sharedPaths is absent" {
+        $r = Resolve-NodeRuntime -PublishConfig @{ runtime = @{ build = $false } }
+        @($r.SharedPaths).Count | Should -Be 0
+    }
+
+    It "REQ-9: SharedPaths carries a declared list of gitignored runtime paths" {
+        $r = Resolve-NodeRuntime -PublishConfig @{ runtime = @{ build = $false; sharedPaths = @('key', 'certs/tls') } }
+        $r.SharedPaths | Should -Be @('key', 'certs/tls')
+    }
+
+    It "REQ-9: SharedPaths normalizes ./ , backslashes and trailing slashes" {
+        $r = Resolve-NodeRuntime -PublishConfig @{ runtime = @{ build = $false; sharedPaths = @('./key/', 'a\b\') } }
+        $r.SharedPaths | Should -Be @('key', 'a/b')
+    }
+
+    It "REQ-9: SharedPaths accepts a single (non-array) value" {
+        $r = Resolve-NodeRuntime -PublishConfig @{ runtime = @{ build = $false; sharedPaths = 'key' } }
+        $r.SharedPaths | Should -Be @('key')
+    }
 }
 
 Describe "Get-ReleaseId (REQ-4)" {

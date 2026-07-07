@@ -88,6 +88,32 @@ else
     echo "WARNING: No se encontró $ENV_FILE" >&2
 fi
 
+# ─── 4b. Enlazar shared paths (secretos/archivos runtime gitignoreados, ADR 0003) ───
+# Archivos que la app lee en runtime pero que NO estan en git (claves RSA, certs) y
+# por tanto no viajan en el tarball. Viven en $REMOTE_ROOT/$NAME/shared/<path> (los
+# stagea el operador UNA vez) y se symlinkean dentro de cada release. Falla claro
+# (exit 6) si un shared declarado no fue preparado -> evita un crash-loop por ENOENT.
+SHARED_PATHS="__SHARED_PATHS__"
+case "$SHARED_PATHS" in __*__) SHARED_PATHS="";; esac
+if [ -n "$SHARED_PATHS" ]; then
+    SHARED_DIR="$REMOTE_ROOT/$NAME/shared"
+    for p in $SHARED_PATHS; do
+        SRC="$SHARED_DIR/$p"
+        if [ ! -e "$SRC" ]; then
+            echo "ERROR: shared path '$p' (publish.yaml runtime.sharedPaths) no existe en el servidor:" >&2
+            echo "         $SRC" >&2
+            echo "       Es un archivo runtime NO versionado (secreto/clave). Prepárelo UNA vez:" >&2
+            echo "         mkdir -p \"$SHARED_DIR/\$(dirname $p)\" && cp -a <origen>/$p \"$SRC\"" >&2
+            exit 6
+        fi
+        DEST="$RELEASE_DIR/$p"
+        $SUDO mkdir -p "$(dirname "$DEST")"
+        $SUDO rm -rf "$DEST"
+        $SUDO ln -sfn "$SRC" "$DEST"
+        echo "  shared enlazado: $p -> $SRC"
+    done
+fi
+
 # ─── 5. Verificar entrypoint (configurable, ADR 0003) ───
 if [ ! -f "$RELEASE_DIR/$ENTRYPOINT" ]; then
     echo "ERROR: entrypoint '$ENTRYPOINT' no encontrado en el release" >&2
