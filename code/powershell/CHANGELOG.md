@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [5.3.7] - 2026-07-07
+
+### Added
+- **`-Server` override: pick the deploy target at invocation time (no PR to switch env).**
+  The target server is a deploy-time decision, not a property of the code, but it lived only
+  as `server:` in the versioned `publish.yaml` — so alternating pre-prod↔prod meant editing
+  and committing the file (a PR on a protected main, polluting history). `Publish-NodeApi` now
+  accepts `-Server <alias>` (on `-Apply` and `-Plan`) that overrides `publish.yaml`'s `server`.
+  Precedence: `-Server` → else `publish.yaml server:`. The committed `server:` stays as the
+  **default** (a bare deploy still goes to a known target — the original mis-target guardrail),
+  and `publish.yaml` may declare an optional **`servers:` allowlist**; the chosen target (default
+  or `-Server`) must be in it, so a `-Server` that's mistyped or copied from another project
+  **fails fast** instead of deploying to the wrong host. Covered by new Pester specs (REQ-10,
+  `Resolve-DeployServer`).
+
 ## [5.3.6] - 2026-07-07
 
 ### Added
