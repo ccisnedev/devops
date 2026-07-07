@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [5.3.8] - 2026-07-07
+
+### Changed
+- **Deploy target moved out of `publish.yaml` into the gitignored env file (ADR 0004).**
+  The target server was an SSH alias in the *versioned* `publish.yaml` — but an alias is
+  **machine-local** (each workstation/CI names the same environment differently), so committing
+  it coupled the shared repo to one machine. Following how kubectl/docker-context/Terraform
+  keep environment identity separate from the local connection binding, the target now lives in
+  the (already gitignored, already per-environment) **env file** under a namespaced key
+  **`MACSS_DEPLOY_SERVER`** (an alias in the operator's `~/.ssh/config`). The environment is
+  selected at invocation with **`-EnvFile <path>`** (default `.env`; prod is explicit:
+  `-EnvFile .env.production`) — so switching or adding a target is a local, gitignored change,
+  never a PR. A bare `-Apply` targets `.env` (the developer's own / pre-prod), so **production
+  is never the default**. `MACSS_DEPLOY_*` keys are **stripped from the `.env` uploaded** to the
+  server (deploy-time metadata, not app runtime config). `-Init` scaffolds `MACSS_DEPLOY_SERVER=`
+  into both `.env` and `.env.production`. `publish.yaml` keeps only the portable deploy contract.
+  New helpers `Resolve-DeployTarget`, `Remove-DeployOnlyEnvKeys`, `Add-EnvDeployKey` (Pester
+  REQ-11..15); validated end-to-end on pre-prod (target from env, `.env` uploaded without
+  `MACSS_DEPLOY_*`, crypto `/agenda_detalle_mes` → 200, 0 restarts).
+- **`Invoke-SqlPackage` gains `-EnvFile`** (same environment-selection model): the SQL server
+  credentials already lived in `.env`; `-EnvFile` (default `.env`) lets you pick the environment
+  (`.env` / `.env.production`) at invocation instead of the hard-coded `.env`.
+
+### Removed
+- **`-Server` override and the `servers:` allowlist (5.3.7) — superseded by ADR 0004.** Their
+  sole consumer (impulsa, on a branch) migrated to `MACSS_DEPLOY_SERVER` in the same change. The
+  allowlist re-introduced the very friction `-Server` was meant to remove (duplicating the
+  default; a PR to add a new target), and the alias-in-`publish.yaml` was not portable.
+
 ## [5.3.7] - 2026-07-07
 
 ### Added
