@@ -82,10 +82,10 @@ function Publish-NodeApi {
         [switch]$AllowDirty,
 
         [Parameter(ParameterSetName = 'Apply',
-            HelpMessage = "Override the target server alias from publish.yaml (must be in the 'servers:' allowlist if declared)")]
+            HelpMessage = "Env file selecting the environment (default .env). Its MACSS_DEPLOY_SERVER names the target; prod is explicit: -EnvFile .env.production")]
         [Parameter(ParameterSetName = 'Plan',
-            HelpMessage = "Override the target server alias from publish.yaml (must be in the 'servers:' allowlist if declared)")]
-        [string]$Server
+            HelpMessage = "Env file selecting the environment (default .env). Its MACSS_DEPLOY_SERVER names the target.")]
+        [string]$EnvFile = '.env'
     )
 
     begin {
@@ -159,43 +159,44 @@ function Publish-NodeApi {
                     Write-Host "  Creado: publish.yaml (runtime build:true — TypeScript)" -ForegroundColor Green
                 }
 
-                # Crear .env.production si no existe
-                $envProdPath = Join-Path $cwd ".env.production"
-                if (-not (Test-Path $envProdPath)) {
-                    $envContent = @"
-# .env.production — Variables de entorno para producción
-# Este archivo se copia al servidor como .env en cada despliegue.
-# NO versionar este archivo (está en .gitignore).
-
-PORT=8080
-NODE_ENV=production
-"@
-                    Set-Content -Path $envProdPath -Value $envContent -Encoding UTF8
-                    Write-Host "  Creado: .env.production" -ForegroundColor Green
-                } else {
-                    Write-Host "  Existe: .env.production (no se modificó)" -ForegroundColor Yellow
+                # Env files (ADR 0004): asegurar MACSS_DEPLOY_SERVER en .env (default: dev/pre-prod)
+                # y .env.production (prod). Ambos gitignored; cada uno lleva su propio destino.
+                foreach ($ef in @(
+                    @{ Name = '.env';            Label = 'default (dev/pre-prod)' },
+                    @{ Name = '.env.production'; Label = 'producción' }
+                )) {
+                    $efPath = Join-Path $cwd $ef.Name
+                    $status = Add-EnvDeployKey -Path $efPath -EnvLabel $ef.Label
+                    switch ($status) {
+                        'created'  { Write-Host "  Creado: $($ef.Name) (con MACSS_DEPLOY_SERVER=)" -ForegroundColor Green }
+                        'appended' { Write-Host "  Actualizado: $($ef.Name) (+MACSS_DEPLOY_SERVER=)" -ForegroundColor Green }
+                        'exists'   { Write-Host "  Existe: $($ef.Name) (ya tiene MACSS_DEPLOY_SERVER)" -ForegroundColor Yellow }
+                    }
                 }
 
-                # Agregar .env.production a .gitignore
+                # Gitignorar los env files (patrón .env*, excepto ejemplos)
                 $gitignorePath = Join-Path $cwd ".gitignore"
+                $ignoreRules = @('.env', '.env.production', '.env.*', '!.env.example')
                 if (Test-Path $gitignorePath) {
                     $gitignoreContent = Get-Content $gitignorePath -Raw
-                    if ($gitignoreContent -notmatch '\.env\.production') {
-                        Add-Content -Path $gitignorePath -Value "`n.env.production"
-                        Write-Host "  Actualizado: .gitignore (+.env.production)" -ForegroundColor Green
+                    $toAdd = $ignoreRules | Where-Object { $gitignoreContent -notmatch ([regex]::Escape($_) + '(\r?\n|$)') }
+                    if ($toAdd) {
+                        Add-Content -Path $gitignorePath -Value ("`n" + ($toAdd -join "`n"))
+                        Write-Host "  Actualizado: .gitignore (+$($toAdd -join ', '))" -ForegroundColor Green
                     }
                 } else {
-                    Set-Content -Path $gitignorePath -Value ".env.production`n" -Encoding UTF8
+                    Set-Content -Path $gitignorePath -Value (($ignoreRules -join "`n") + "`n") -Encoding UTF8
                     Write-Host "  Creado: .gitignore" -ForegroundColor Green
                 }
 
                 # Instrucciones
                 Write-Host ""
                 Write-Host "  Configuración creada. Próximos pasos:" -ForegroundColor Green
-                Write-Host "    1. Edite publish.yaml → cambie 'server' por su alias SSH" -ForegroundColor DarkGray
-                Write-Host "    2. Edite .env.production → configure variables de entorno" -ForegroundColor DarkGray
+                Write-Host "    1. Edite .env → MACSS_DEPLOY_SERVER=<su alias de ~/.ssh/config> + variables del entorno dev/pre-prod" -ForegroundColor DarkGray
+                Write-Host "    2. Edite .env.production → MACSS_DEPLOY_SERVER=<alias prod> + variables de producción" -ForegroundColor DarkGray
                 Write-Host "    3. (modular_api) Declare el basePath en package.json: `"modularApi`": { `"basePath`": `"/api/v1`" }" -ForegroundColor DarkGray
-                Write-Host "    4. Ejecute: Publish-NodeApi -Publish" -ForegroundColor DarkGray
+                Write-Host "    4. Deploy: Publish-NodeApi -Apply           (usa .env)" -ForegroundColor DarkGray
+                Write-Host "              Publish-NodeApi -Apply -EnvFile .env.production   (prod, explícito)" -ForegroundColor DarkGray
                 Write-Host ""
             }
 
@@ -215,7 +216,9 @@ NODE_ENV=production
                 $publishYamlPath = $configResolution.Path
                 $packageJsonPath = Join-Path $cwd "package.json"
                 $tsconfigPath = Join-Path $cwd "tsconfig.json"
-                $envProdPath = Join-Path $cwd ".env.production"
+                # Env file que selecciona el entorno (ADR 0004): default .env, sobreescribible
+                # con -EnvFile (p.ej. .env.production para prod). Lleva MACSS_DEPLOY_SERVER.
+                $envProdPath = if ([System.IO.Path]::IsPathRooted($EnvFile)) { $EnvFile } else { Join-Path $cwd $EnvFile }
 
                 if (-not $publishYamlPath) {
                     throw "No se encontró publish.yaml. Ejecute 'Publish-NodeApi -Init' primero."
@@ -229,7 +232,7 @@ NODE_ENV=production
                 # tsconfig.json solo se exige en modo build:true (ADR 0003) — se valida
                 # más abajo, una vez leída la configuración de runtime.
                 if (-not (Test-Path $envProdPath)) {
-                    throw "No se encontró .env.production. Cree el archivo con las variables de entorno de producción."
+                    throw "No se encontró el env file '$EnvFile' en $cwd. Ejecute 'Publish-NodeApi -Init' o especifique -EnvFile <archivo>."
                 }
 
                 # ─── 2. Leer configuración ───────────────────
@@ -271,13 +274,12 @@ NODE_ENV=production
                     $release = "v$appVersion"
                 }
 
-                # .env.production (PORT)
+                # env file (PORT + destino). ADR 0004: el destino sale de MACSS_DEPLOY_SERVER
+                # del env elegido, no de publish.yaml (que ya no lleva 'server').
                 $envConfig = Read-DotEnv -Path $envProdPath -DefaultPort 8080
                 $port = $envConfig.Port
+                $server = Resolve-DeployTarget -EnvVars $envConfig.Env -EnvFilePath $EnvFile
 
-                # Extraer config de publish.yaml con defaults
-                # server: default del yaml, sobreescribible por -Server (validado vs allowlist).
-                $server = Resolve-DeployServer -PublishConfig $deployConfig -ServerOverride $Server
                 $processManager = if ($deployConfig.runtime -and $deployConfig.runtime.processManager) {
                     $deployConfig.runtime.processManager
                 } else { 'systemd' }
@@ -460,13 +462,15 @@ NODE_ENV=production
                     if ($LASTEXITCODE -ne 0) { throw "Error al subir tarball (scp exit: $LASTEXITCODE)" }
                     Write-Host "    Tarball subido" -ForegroundColor Green
 
-                    # Subir .env.production (normalizado a LF para compatibilidad con bash en Linux)
-                    $envContent = Get-Content $envProdPath -Raw
+                    # Subir el env como .env del release (LF para bash en Linux). ADR 0004: se
+                    # quitan las claves MACSS_DEPLOY_* (metadato deploy-time) para no contaminar
+                    # el runtime env de la app.
+                    $envContent = (Remove-DeployOnlyEnvKeys -Lines @(Get-Content $envProdPath)) -join "`n"
                     $tmpEnvPath = New-UnixTempFile -Content $envContent -Prefix "psdevops_env_"
                     $scpEnvArgs = @('-i', $privateKeyPath, '-P', $sshPort, $tmpEnvPath, "$($user)@$($ip):$remoteEnvFile")
                     & scp @scpEnvArgs 2>&1 | Out-Null
-                    if ($LASTEXITCODE -ne 0) { throw "Error al subir .env.production (scp exit: $LASTEXITCODE)" }
-                    Write-Host "    .env.production subido (LF)" -ForegroundColor Green
+                    if ($LASTEXITCODE -ne 0) { throw "Error al subir el env (scp exit: $LASTEXITCODE)" }
+                    Write-Host "    $EnvFile subido como .env (LF, sin MACSS_DEPLOY_*)" -ForegroundColor Green
 
                     # ─── 8. Instalar release ─────────────────
                     Write-Host "  Instalando release $release..." -ForegroundColor Cyan
@@ -571,7 +575,8 @@ NODE_ENV=production
                 $packageJsonPath = Join-Path $cwd "package.json"
                 $configResolution = Resolve-PublishConfigPath -ProjectRoot $cwd
                 $publishYamlPath = $configResolution.Path
-                $envProdPath = Join-Path $cwd ".env.production"
+                # Env file que selecciona el entorno (ADR 0004): default .env, -EnvFile lo pisa.
+                $envProdPath = if ([System.IO.Path]::IsPathRooted($EnvFile)) { $EnvFile } else { Join-Path $cwd $EnvFile }
 
                 if (-not (Test-Path $packageJsonPath)) {
                     throw "No se encontró package.json en $cwd."
@@ -583,7 +588,7 @@ NODE_ENV=production
                     Write-Host "  Aviso: 'deploy.yaml' está deprecado; renómbrelo a 'publish.yaml'." -ForegroundColor Yellow
                 }
                 if (-not (Test-Path $envProdPath)) {
-                    throw "No se encontró .env.production. Ejecute 'Publish-NodeApi -Init' primero."
+                    throw "No se encontró el env file '$EnvFile' en $cwd. Ejecute 'Publish-NodeApi -Init' o especifique -EnvFile <archivo>."
                 }
 
                 # ─── 2. Leer configuración ───────────────────
@@ -604,19 +609,18 @@ NODE_ENV=production
                     $release = "v$appVersion"
                 }
 
-                $server = Resolve-DeployServer -PublishConfig $deployConfig -ServerOverride $Server
+                # env file (PORT + destino). ADR 0004: destino desde MACSS_DEPLOY_SERVER.
+                $envConfig = Read-DotEnv -Path $envProdPath -DefaultPort 8080
+                $port = $envConfig.Port
+                $server = Resolve-DeployTarget -EnvVars $envConfig.Env -EnvFilePath $EnvFile
+
                 $processManager = if ($deployConfig.runtime -and $deployConfig.runtime.processManager) {
                     $deployConfig.runtime.processManager
                 } else { 'systemd' }
 
-                $envConfig = Read-DotEnv -Path $envProdPath -DefaultPort 8080
-                $port = $envConfig.Port
                 $apiBasePath = Resolve-ApiBasePath -PackageJson $packageJson -PublishConfig $deployConfig
 
                 # ─── 3. Validaciones de config ───────────────
-                if (-not $server) {
-                    throw "No se encontró 'server:' en publish.yaml."
-                }
                 if ($server -eq 'your-ssh-alias') {
                     throw "publish.yaml contiene el valor de ejemplo 'your-ssh-alias'. Cambie 'server' por el alias SSH real de su servidor."
                 }
