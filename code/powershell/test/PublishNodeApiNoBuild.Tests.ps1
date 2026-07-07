@@ -64,6 +64,34 @@ Describe "Resolve-NodeRuntime (REQ-1..3)" {
     }
 }
 
+Describe "Resolve-DeployServer (REQ-10)" {
+
+    It "REQ-10: defaults to publish.yaml 'server' when no override is given" {
+        Resolve-DeployServer -PublishConfig @{ server = 'prod' } | Should -Be 'prod'
+    }
+
+    It "REQ-10: -Server override wins over the yaml default" {
+        Resolve-DeployServer -PublishConfig @{ server = 'prod' } -ServerOverride 'pre-prod' | Should -Be 'pre-prod'
+    }
+
+    It "REQ-10: an empty override falls back to the yaml default" {
+        Resolve-DeployServer -PublishConfig @{ server = 'prod' } -ServerOverride '' | Should -Be 'prod'
+    }
+
+    It "REQ-10: allowlist permits a declared target (via override)" {
+        Resolve-DeployServer -PublishConfig @{ server = 'prod'; servers = @('pre-prod', 'prod') } -ServerOverride 'pre-prod' | Should -Be 'pre-prod'
+    }
+
+    It "REQ-10: allowlist rejects a target not declared (guardrail vs copied/typo'd -Server)" {
+        { Resolve-DeployServer -PublishConfig @{ server = 'prod'; servers = @('pre-prod', 'prod') } -ServerOverride 'otro-host' } |
+            Should -Throw -ExpectedMessage '*no está en los destinos declarados*'
+    }
+
+    It "REQ-10: throws when neither 'server' nor -Server is provided" {
+        { Resolve-DeployServer -PublishConfig @{ } } | Should -Throw -ExpectedMessage '*No hay servidor destino*'
+    }
+}
+
 Describe "Get-ReleaseId (REQ-4)" {
 
     It "REQ-4: composes v{version}+{shortSha}" {
