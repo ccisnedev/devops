@@ -304,6 +304,9 @@ NODE_ENV=production
                 Write-Host "  Proyecto:   $appName" -ForegroundColor Cyan
                 Write-Host "  Release:    $release" -ForegroundColor Cyan
                 Write-Host "  Runtime:    $(if ($runtime.Build) { 'build (TypeScript)' } else { 'no-build (source)' }) → $entrypoint" -ForegroundColor Cyan
+                if (@($runtime.SharedPaths).Count -gt 0) {
+                    Write-Host "  Shared:     $(@($runtime.SharedPaths) -join ', ') (symlink desde shared/, no versionado)" -ForegroundColor Cyan
+                }
                 Write-Host "  Servidor:   $server" -ForegroundColor Cyan
                 Write-Host "  Proceso:    $processManager" -ForegroundColor Cyan
                 Write-Host "  Puerto:     $port" -ForegroundColor Cyan
@@ -471,6 +474,7 @@ NODE_ENV=production
                         '__ENTRYPOINT__'    = $entrypoint
                         '__RELEASE_ID__'    = $release
                         '__GIT_SHA__'       = $gitSha
+                        '__SHARED_PATHS__'  = (@($runtime.SharedPaths) -join ' ')
                     }
 
                     $exitCode = Invoke-RemoteScript -ScriptContent $installScript `
