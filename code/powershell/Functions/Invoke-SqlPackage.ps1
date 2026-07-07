@@ -110,7 +110,18 @@
         [Parameter(ParameterSetName = 'Apply',
             HelpMessage = "Skip the confirmation prompt for unattended/CI use (ADR 0002)")]
         [Parameter(ParameterSetName = 'Import')]
-        [switch]$AutoApprove
+        [switch]$AutoApprove,
+
+        # Env file que selecciona el entorno (ADR 0004): default .env, -EnvFile lo pisa
+        # (p.ej. .env.production para prod). Lleva las credenciales del servidor SQL.
+        [Parameter(ParameterSetName = 'Apply')]
+        [Parameter(ParameterSetName = 'Plan')]
+        [Parameter(ParameterSetName = 'Script')]
+        [Parameter(ParameterSetName = 'Extract')]
+        [Parameter(ParameterSetName = 'Export')]
+        [Parameter(ParameterSetName = 'Import',
+            HelpMessage = "Env file selecting the environment (default .env). Prod: -EnvFile .env.production")]
+        [string]$EnvFile = '.env'
     )
 
     begin {
@@ -153,10 +164,10 @@
                 $sqlproj = Get-ChildItem -Path "." -Filter "*.sqlproj" -File | Select-Object -First 1
                 if (-not $sqlproj) { throw "No se encontró .sqlproj en el directorio actual." }
                 if (-not (Test-Path ".\sqlpackage.yaml")) { throw "No se encontró sqlpackage.yaml. Ejecute 'Invoke-SqlPackage -Init'." }
-                if (-not (Test-Path ".\.env")) { throw "No se encontró .env. Ejecute 'Invoke-SqlPackage -Init'." }
+                if (-not (Test-Path $EnvFile)) { throw "No se encontró el env file '$EnvFile'. Ejecute 'Invoke-SqlPackage -Init' o especifique -EnvFile <archivo>." }
 
                 $config = Read-SqlPackageConfig
-                $envConfig = Read-DotEnv -Path ".\.env"
+                $envConfig = Read-DotEnv -Path $EnvFile
                 $envVars = $envConfig.Env
 
                 try {
@@ -234,10 +245,10 @@
             'Plan' {
                 # Validar prerequisitos
                 if (-not (Test-Path ".\sqlpackage.yaml")) { throw "No se encontró sqlpackage.yaml. Ejecute 'Invoke-SqlPackage -Init'." }
-                if (-not (Test-Path ".\.env")) { throw "No se encontró .env. Ejecute 'Invoke-SqlPackage -Init'." }
+                if (-not (Test-Path $EnvFile)) { throw "No se encontró el env file '$EnvFile'. Ejecute 'Invoke-SqlPackage -Init' o especifique -EnvFile <archivo>." }
 
                 $config = Read-SqlPackageConfig
-                $envConfig = Read-DotEnv -Path ".\.env"
+                $envConfig = Read-DotEnv -Path $EnvFile
                 $envVars = $envConfig.Env
                 $outputDir = "."
                 if ($config.deployReport -and $config.deployReport.outputDir) {
@@ -288,10 +299,10 @@
 
             'Script' {
                 if (-not (Test-Path ".\sqlpackage.yaml")) { throw "No se encontró sqlpackage.yaml. Ejecute 'Invoke-SqlPackage -Init'." }
-                if (-not (Test-Path ".\.env")) { throw "No se encontró .env. Ejecute 'Invoke-SqlPackage -Init'." }
+                if (-not (Test-Path $EnvFile)) { throw "No se encontró el env file '$EnvFile'. Ejecute 'Invoke-SqlPackage -Init' o especifique -EnvFile <archivo>." }
 
                 $config = Read-SqlPackageConfig
-                $envConfig = Read-DotEnv -Path ".\.env"
+                $envConfig = Read-DotEnv -Path $EnvFile
                 $envVars = $envConfig.Env
                 $outputDir = "."
                 if ($config.script -and $config.script.outputDir) {
@@ -341,11 +352,11 @@
             }
 
             'Extract' {
-                if (-not (Test-Path ".\.env")) { throw "No se encontró .env. Ejecute 'Invoke-SqlPackage -Init'." }
+                if (-not (Test-Path $EnvFile)) { throw "No se encontró el env file '$EnvFile'. Ejecute 'Invoke-SqlPackage -Init' o especifique -EnvFile <archivo>." }
                 if (-not (Test-Path ".\sqlpackage.yaml")) { throw "No se encontró sqlpackage.yaml. Ejecute 'Invoke-SqlPackage -Init'." }
 
                 $config = Read-SqlPackageConfig
-                $envConfig = Read-DotEnv -Path ".\.env"
+                $envConfig = Read-DotEnv -Path $EnvFile
                 $envVars = $envConfig.Env
 
                 try {
@@ -383,11 +394,11 @@
             }
 
             'Export' {
-                if (-not (Test-Path ".\.env")) { throw "No se encontró .env. Ejecute 'Invoke-SqlPackage -Init'." }
+                if (-not (Test-Path $EnvFile)) { throw "No se encontró el env file '$EnvFile'. Ejecute 'Invoke-SqlPackage -Init' o especifique -EnvFile <archivo>." }
                 if (-not (Test-Path ".\sqlpackage.yaml")) { throw "No se encontró sqlpackage.yaml. Ejecute 'Invoke-SqlPackage -Init'." }
 
                 $config = Read-SqlPackageConfig
-                $envConfig = Read-DotEnv -Path ".\.env"
+                $envConfig = Read-DotEnv -Path $EnvFile
                 $envVars = $envConfig.Env
 
                 try {
@@ -425,11 +436,11 @@
             }
 
             'Import' {
-                if (-not (Test-Path ".\.env")) { throw "No se encontró .env. Ejecute 'Invoke-SqlPackage -Init'." }
+                if (-not (Test-Path $EnvFile)) { throw "No se encontró el env file '$EnvFile'. Ejecute 'Invoke-SqlPackage -Init' o especifique -EnvFile <archivo>." }
                 if (-not (Test-Path ".\sqlpackage.yaml")) { throw "No se encontró sqlpackage.yaml. Ejecute 'Invoke-SqlPackage -Init'." }
 
                 $config = Read-SqlPackageConfig
-                $envConfig = Read-DotEnv -Path ".\.env"
+                $envConfig = Read-DotEnv -Path $EnvFile
                 $envVars = $envConfig.Env
 
                 # Obtener ruta del .bacpac
