@@ -548,6 +548,62 @@ function Resolve-NodeRuntime {
 
 <#
 .SYNOPSIS
+Resuelve el servidor destino del despliegue (alias SSH), con override opcional.
+
+.DESCRIPTION
+El destino no es una propiedad del codigo sino una decision del momento del despliegue.
+Precedencia:
+  1. -ServerOverride (parametro -Server del cmdlet)  — override deliberado por invocacion.
+  2. publish.yaml -> server                          — default versionado (guardrail: un
+                                                        deploy "pelado" va a un destino conocido).
+publish.yaml puede declarar ademas 'servers: [a, b]' (allowlist): el destino elegido —venga
+del default o de -Server— debe estar en esa lista. Acota los destinos validos del proyecto,
+de modo que un -Server tipeado mal o copiado de OTRO proyecto falle en vez de desplegar mal.
+Si no se declara 'servers', no se restringe.
+
+.PARAMETER PublishConfig
+Objeto de publish.yaml ya parseado (ConvertFrom-Yaml) o hashtable equivalente.
+
+.PARAMETER ServerOverride
+Alias del servidor pasado por linea de comando (-Server). Vacio/omitido => usa el default.
+
+.EXAMPLE
+$server = Resolve-DeployServer -PublishConfig $deployConfig -ServerOverride $Server
+#>
+function Resolve-DeployServer {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $PublishConfig,
+
+        [Parameter(Mandatory = $false)]
+        [string]$ServerOverride
+    )
+
+    $allowed = @()
+    if ($PublishConfig -and $PublishConfig.servers) {
+        foreach ($s in @($PublishConfig.servers)) {
+            $v = "$s".Trim()
+            if ($v) { $allowed += $v }
+        }
+    }
+
+    $default = if ($PublishConfig -and $PublishConfig.server) { "$($PublishConfig.server)".Trim() } else { '' }
+    $chosen  = if ($ServerOverride) { $ServerOverride.Trim() } else { $default }
+
+    if (-not $chosen) {
+        throw "No hay servidor destino: declare 'server:' en publish.yaml o pase -Server <alias>."
+    }
+
+    if ($allowed.Count -gt 0 -and ($allowed -notcontains $chosen)) {
+        throw "Servidor '$chosen' no está en los destinos declarados del proyecto (servers: $($allowed -join ', ')). Corrija -Server o actualice publish.yaml."
+    }
+
+    return $chosen
+}
+
+<#
+.SYNOPSIS
 Compone el identificador de release: v{version}+{shortSha} (ADR 0003).
 
 .DESCRIPTION
