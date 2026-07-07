@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [5.3.6] - 2026-07-07
+
+### Added
+- **build:false: `runtime.sharedPaths` for gitignored runtime files (secrets/keys).** A
+  build:false release ships only what's in git (`git archive HEAD`), so files the app reads
+  at runtime but that are **not** versioned — RSA keys, certs, credentials — were absent from
+  the release. The app would boot and pass `/health` (which doesn't touch them) but then
+  **crash on the first real request** that needs them (`ENOENT`), pm2 crash-loops, and the
+  reverse proxy sees the port down → 5xx. Surfaced deploying impulsa: `utils/cripto.js` reads
+  `./key/privatekey.pem` (gitignored `*.pem`) → unhandledRejection → crash-loop → nginx 503,
+  while `/health` stayed green. `publish.yaml` now accepts `runtime.sharedPaths: [<path>, ...]`:
+  each path is staged **once** by the operator under `<remoteRoot>/<name>/shared/<path>` (never
+  in git) and `Install-NodeApi.sh` symlinks it into every release. If a declared shared path
+  isn't staged, the install **fails fast (exit 6)** with a clear message instead of shipping a
+  release that would crash-loop. `.env` continues to be handled as before (copied per release).
+  Covered by new Pester specs (REQ-9, `Resolve-NodeRuntime.SharedPaths`).
+
 ## [5.3.5] - 2026-07-07
 
 ### Fixed

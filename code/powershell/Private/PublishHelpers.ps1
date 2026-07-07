@@ -527,9 +527,22 @@ function Resolve-NodeRuntime {
     # Normalizar: quitar './' inicial y backslashes -> '/'
     $entrypoint = ($entrypoint -replace '\\', '/') -replace '^\./', ''
 
+    # sharedPaths (ADR 0003): archivos/directorios que la app necesita en runtime pero
+    # que NO estan versionados en git (secretos, claves, certs) y por tanto NO viajan en
+    # el tarball (git archive HEAD). Se stagean una vez en $REMOTE_ROOT/$NAME/shared/<path>
+    # y el instalador los symlinkea dentro de cada release. Se normalizan como el entrypoint.
+    $sharedPaths = @()
+    if ($runtime -and $runtime.sharedPaths) {
+        foreach ($p in @($runtime.sharedPaths)) {
+            $norm = ((([string]$p) -replace '\\', '/') -replace '^\./', '').Trim().TrimEnd('/')
+            if ($norm) { $sharedPaths += $norm }
+        }
+    }
+
     return @{
-        Build      = $build
-        Entrypoint = $entrypoint
+        Build       = $build
+        Entrypoint  = $entrypoint
+        SharedPaths = $sharedPaths
     }
 }
 
