@@ -79,7 +79,13 @@ function Publish-NodeApi {
 
         [Parameter(ParameterSetName = 'Apply',
             HelpMessage = "Allow deploying a dirty worktree in build:false (packages the working dir, tags +dirty)")]
-        [switch]$AllowDirty
+        [switch]$AllowDirty,
+
+        [Parameter(ParameterSetName = 'Apply',
+            HelpMessage = "Override the target server alias from publish.yaml (must be in the 'servers:' allowlist if declared)")]
+        [Parameter(ParameterSetName = 'Plan',
+            HelpMessage = "Override the target server alias from publish.yaml (must be in the 'servers:' allowlist if declared)")]
+        [string]$Server
     )
 
     begin {
@@ -270,9 +276,10 @@ NODE_ENV=production
                 $port = $envConfig.Port
 
                 # Extraer config de publish.yaml con defaults
-                $server = $deployConfig.server
-                $processManager = if ($deployConfig.runtime -and $deployConfig.runtime.processManager) { 
-                    $deployConfig.runtime.processManager 
+                # server: default del yaml, sobreescribible por -Server (validado vs allowlist).
+                $server = Resolve-DeployServer -PublishConfig $deployConfig -ServerOverride $Server
+                $processManager = if ($deployConfig.runtime -and $deployConfig.runtime.processManager) {
+                    $deployConfig.runtime.processManager
                 } else { 'systemd' }
                 $nodeVersion = if ($deployConfig.runtime -and $deployConfig.runtime.nodeVersion) { 
                     $deployConfig.runtime.nodeVersion 
@@ -597,7 +604,7 @@ NODE_ENV=production
                     $release = "v$appVersion"
                 }
 
-                $server = $deployConfig.server
+                $server = Resolve-DeployServer -PublishConfig $deployConfig -ServerOverride $Server
                 $processManager = if ($deployConfig.runtime -and $deployConfig.runtime.processManager) {
                     $deployConfig.runtime.processManager
                 } else { 'systemd' }
