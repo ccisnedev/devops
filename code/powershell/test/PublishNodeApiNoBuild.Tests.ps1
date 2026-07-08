@@ -64,31 +64,83 @@ Describe "Resolve-NodeRuntime (REQ-1..3)" {
     }
 }
 
-Describe "Resolve-DeployServer (REQ-10)" {
+Describe "Resolve-DeployTarget (ADR 0004, REQ-11/REQ-12)" {
 
-    It "REQ-10: defaults to publish.yaml 'server' when no override is given" {
-        Resolve-DeployServer -PublishConfig @{ server = 'prod' } | Should -Be 'prod'
+    It "REQ-11: returns MACSS_DEPLOY_SERVER from the parsed env" {
+        Resolve-DeployTarget -EnvVars @{ 'MACSS_DEPLOY_SERVER' = 'pre-prod'; 'PORT' = '3042' } | Should -Be 'pre-prod'
     }
 
-    It "REQ-10: -Server override wins over the yaml default" {
-        Resolve-DeployServer -PublishConfig @{ server = 'prod' } -ServerOverride 'pre-prod' | Should -Be 'pre-prod'
+    It "REQ-11: trims surrounding whitespace" {
+        Resolve-DeployTarget -EnvVars @{ 'MACSS_DEPLOY_SERVER' = '  prod  ' } | Should -Be 'prod'
     }
 
-    It "REQ-10: an empty override falls back to the yaml default" {
-        Resolve-DeployServer -PublishConfig @{ server = 'prod' } -ServerOverride '' | Should -Be 'prod'
+    It "REQ-11: key lookup is case-insensitive (PowerShell hashtable)" {
+        Resolve-DeployTarget -EnvVars @{ 'macss_deploy_server' = 'staging' } | Should -Be 'staging'
     }
 
-    It "REQ-10: allowlist permits a declared target (via override)" {
-        Resolve-DeployServer -PublishConfig @{ server = 'prod'; servers = @('pre-prod', 'prod') } -ServerOverride 'pre-prod' | Should -Be 'pre-prod'
+    It "REQ-12: throws (actionable, names the file) when MACSS_DEPLOY_SERVER is absent" {
+        { Resolve-DeployTarget -EnvVars @{ 'PORT' = '3042' } -EnvFilePath '.env' } |
+            Should -Throw -ExpectedMessage '*MACSS_DEPLOY_SERVER*'
     }
 
-    It "REQ-10: allowlist rejects a target not declared (guardrail vs copied/typo'd -Server)" {
-        { Resolve-DeployServer -PublishConfig @{ server = 'prod'; servers = @('pre-prod', 'prod') } -ServerOverride 'otro-host' } |
-            Should -Throw -ExpectedMessage '*no está en los destinos declarados*'
+    It "REQ-12: throws when MACSS_DEPLOY_SERVER is empty" {
+        { Resolve-DeployTarget -EnvVars @{ 'MACSS_DEPLOY_SERVER' = '' } } | Should -Throw
+    }
+}
+
+Describe "Remove-DeployOnlyEnvKeys (ADR 0004, REQ-13)" {
+
+    It "REQ-13: strips every MACSS_DEPLOY_* line, preserves the rest verbatim" {
+        $lines = @('# comentario', 'PORT=3042', 'MACSS_DEPLOY_SERVER=pre-prod', 'DB_HOST=10.0.0.1', 'MACSS_DEPLOY_FOO=bar', '')
+        $out = Remove-DeployOnlyEnvKeys -Lines $lines
+        ($out -join "`n") | Should -Be (@('# comentario', 'PORT=3042', 'DB_HOST=10.0.0.1', '') -join "`n")
     }
 
-    It "REQ-10: throws when neither 'server' nor -Server is provided" {
-        { Resolve-DeployServer -PublishConfig @{ } } | Should -Throw -ExpectedMessage '*No hay servidor destino*'
+    It "REQ-13: leaves content without MACSS_DEPLOY_* untouched" {
+        $lines = @('PORT=3042', 'DB_HOST=x')
+        (Remove-DeployOnlyEnvKeys -Lines $lines) -join "`n" | Should -Be ($lines -join "`n")
+    }
+
+    It "REQ-13: only strips keys that START with the prefix (not mid-name matches)" {
+        $lines = @('APP_MACSS_DEPLOY_SERVER=keep')
+        (Remove-DeployOnlyEnvKeys -Lines $lines) -join "`n" | Should -Be ($lines -join "`n")
+    }
+
+    It "REQ-13: tolerates leading whitespace before the key" {
+        $lines = @('  MACSS_DEPLOY_SERVER=x', 'PORT=1')
+        (Remove-DeployOnlyEnvKeys -Lines $lines) -join "`n" | Should -Be 'PORT=1'
+    }
+}
+
+Describe "Add-EnvDeployKey (ADR 0004, REQ-15)" {
+
+    BeforeEach {
+        $script:dir = Join-Path ([IO.Path]::GetTempPath()) "envkey-$([guid]::NewGuid().ToString('N').Substring(0,8))"
+        New-Item -ItemType Directory -Path $script:dir -Force | Out-Null
+    }
+    AfterEach { Remove-Item -Recurse -Force -Path $script:dir -ErrorAction SilentlyContinue }
+
+    It "REQ-15: creates a missing env file with MACSS_DEPLOY_SERVER=" {
+        $p = Join-Path $script:dir '.env'
+        Add-EnvDeployKey -Path $p | Should -Be 'created'
+        Test-Path $p | Should -BeTrue
+        (Get-Content $p -Raw) | Should -Match '(?m)^MACSS_DEPLOY_SERVER='
+    }
+
+    It "REQ-15: appends the key to an existing file that lacks it" {
+        $p = Join-Path $script:dir '.env'
+        Set-Content -Path $p -Value "PORT=3042`nDB_HOST=x"
+        Add-EnvDeployKey -Path $p | Should -Be 'appended'
+        $c = Get-Content $p -Raw
+        $c | Should -Match '(?m)^MACSS_DEPLOY_SERVER='
+        $c | Should -Match 'PORT=3042'   # no pisa lo existente
+    }
+
+    It "REQ-15: is idempotent — returns 'exists' and does not duplicate the key" {
+        $p = Join-Path $script:dir '.env'
+        Set-Content -Path $p -Value "MACSS_DEPLOY_SERVER=pre-prod`nPORT=1"
+        Add-EnvDeployKey -Path $p | Should -Be 'exists'
+        ([regex]::Matches((Get-Content $p -Raw), 'MACSS_DEPLOY_SERVER=')).Count | Should -Be 1
     }
 }
 
