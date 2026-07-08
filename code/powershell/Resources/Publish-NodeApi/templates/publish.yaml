@@ -2,9 +2,10 @@
 # Generado por: Publish-NodeApi -Init
 # name y version se leen siempre de package.json
 # NO incluya secretos en este archivo — este archivo SÍ se versiona.
-
-# ─── Servidor ─────────────────────────────────────────
-server: your-ssh-alias        # alias en ~/.ssh/config
+#
+# El SERVIDOR DESTINO no vive aquí (sería un alias específico de cada máquina). Vive en el
+# env file gitignored, en 'MACSS_DEPLOY_SERVER' (un alias de ~/.ssh/config). Se elige el
+# entorno con -EnvFile (default .env; prod = -EnvFile .env.production). Ver ADR 0004.
 
 # ─── Runtime ──────────────────────────────────────────
 runtime:

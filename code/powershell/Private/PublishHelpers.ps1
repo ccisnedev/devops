@@ -548,58 +548,129 @@ function Resolve-NodeRuntime {
 
 <#
 .SYNOPSIS
-Resuelve el servidor destino del despliegue (alias SSH), con override opcional.
+Resuelve el servidor destino del despliegue desde el env file elegido (ADR 0004).
 
 .DESCRIPTION
-El destino no es una propiedad del codigo sino una decision del momento del despliegue.
-Precedencia:
-  1. -ServerOverride (parametro -Server del cmdlet)  — override deliberado por invocacion.
-  2. publish.yaml -> server                          — default versionado (guardrail: un
-                                                        deploy "pelado" va a un destino conocido).
-publish.yaml puede declarar ademas 'servers: [a, b]' (allowlist): el destino elegido —venga
-del default o de -Server— debe estar en esa lista. Acota los destinos validos del proyecto,
-de modo que un -Server tipeado mal o copiado de OTRO proyecto falle en vez de desplegar mal.
-Si no se declara 'servers', no se restringe.
+El destino no es una propiedad del codigo sino config per-entorno/per-maquina: vive en el
+env file gitignored (`.env`, `.env.production`, ...) bajo la clave namespaced
+`MACSS_DEPLOY_SERVER` (un alias de ~/.ssh/config). El env file se elige con -EnvFile
+(default `.env`), asi "que entorno" = "que archivo" y prod nunca es el default.
+Falla claro si la clave no esta, en vez de desplegar a un destino silencioso/equivocado.
 
-.PARAMETER PublishConfig
-Objeto de publish.yaml ya parseado (ConvertFrom-Yaml) o hashtable equivalente.
+.PARAMETER EnvVars
+Hashtable de variables ya parseadas del env file (Read-DotEnv .Env). Case-insensitive.
 
-.PARAMETER ServerOverride
-Alias del servidor pasado por linea de comando (-Server). Vacio/omitido => usa el default.
+.PARAMETER EnvFilePath
+Ruta del env file, solo para el mensaje de error (default '.env').
 
 .EXAMPLE
-$server = Resolve-DeployServer -PublishConfig $deployConfig -ServerOverride $Server
+$target = Resolve-DeployTarget -EnvVars $envConfig.Env -EnvFilePath $envFile
 #>
-function Resolve-DeployServer {
+function Resolve-DeployTarget {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        $PublishConfig,
+        $EnvVars,
 
         [Parameter(Mandatory = $false)]
-        [string]$ServerOverride
+        [string]$EnvFilePath = '.env'
     )
 
-    $allowed = @()
-    if ($PublishConfig -and $PublishConfig.servers) {
-        foreach ($s in @($PublishConfig.servers)) {
-            $v = "$s".Trim()
-            if ($v) { $allowed += $v }
-        }
+    $target = ''
+    if ($EnvVars -and $EnvVars['MACSS_DEPLOY_SERVER']) {
+        $target = "$($EnvVars['MACSS_DEPLOY_SERVER'])".Trim()
     }
 
-    $default = if ($PublishConfig -and $PublishConfig.server) { "$($PublishConfig.server)".Trim() } else { '' }
-    $chosen  = if ($ServerOverride) { $ServerOverride.Trim() } else { $default }
-
-    if (-not $chosen) {
-        throw "No hay servidor destino: declare 'server:' en publish.yaml o pase -Server <alias>."
+    if (-not $target) {
+        throw "No hay destino de despliegue: falta 'MACSS_DEPLOY_SERVER' en '$EnvFilePath'. " +
+              "Ejecute 'Publish-NodeApi -Init' o agregue 'MACSS_DEPLOY_SERVER=<alias de ~/.ssh/config>' al env file."
     }
 
-    if ($allowed.Count -gt 0 -and ($allowed -notcontains $chosen)) {
-        throw "Servidor '$chosen' no está en los destinos declarados del proyecto (servers: $($allowed -join ', ')). Corrija -Server o actualice publish.yaml."
+    return $target
+}
+
+<#
+.SYNOPSIS
+Quita del contenido del env las claves deploy-time (MACSS_DEPLOY_*) antes de subirlo (ADR 0004).
+
+.DESCRIPTION
+Las claves `MACSS_DEPLOY_*` son metadato de despliegue (p.ej. el destino), no config runtime
+de la app. Se leen localmente pero NO deben viajar al env de la app en el servidor. Filtra por
+linea, preservando comentarios, lineas vacias y el resto de claves tal cual (orden y valores
+intactos). Solo elimina claves cuyo NOMBRE empieza con `MACSS_DEPLOY_`.
+
+.PARAMETER Lines
+Lineas del env file (Get-Content, sin -Raw).
+
+.EXAMPLE
+$clean = Remove-DeployOnlyEnvKeys -Lines (Get-Content $envFile)
+#>
+function Remove-DeployOnlyEnvKeys {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [AllowEmptyString()]
+        [string[]]$Lines
+    )
+
+    return @($Lines | Where-Object { $_ -notmatch '^\s*MACSS_DEPLOY_[A-Za-z0-9_]*\s*=' })
+}
+
+<#
+.SYNOPSIS
+Asegura que un env file declare MACSS_DEPLOY_SERVER (ADR 0004), idempotente.
+
+.DESCRIPTION
+Usado por -Init. Si el archivo no existe lo crea con una plantilla mínima (incluye
+MACSS_DEPLOY_SERVER=, PORT, NODE_ENV). Si existe pero no tiene la clave, la agrega al final.
+Si ya la tiene, no toca nada. Retorna 'created' | 'appended' | 'exists'.
+
+.PARAMETER Path
+Ruta del env file.
+
+.PARAMETER EnvLabel
+Etiqueta para el comentario del archivo nuevo (p.ej. 'producción'). Opcional.
+
+.EXAMPLE
+Add-EnvDeployKey -Path (Join-Path $cwd '.env') -EnvLabel 'default (dev/pre-prod)'
+#>
+function Add-EnvDeployKey {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $false)]
+        [string]$EnvLabel = ''
+    )
+
+    $keyComment = '# Destino del despliegue: alias de ~/.ssh/config (config local, per-máquina).'
+
+    if (-not (Test-Path $Path)) {
+        $header = if ($EnvLabel) { "# Env file — $EnvLabel." } else { '# Env file.' }
+        $tpl = @"
+$header Se copia al servidor como .env del release
+# (sin las claves MACSS_DEPLOY_*). NO versionar (está en .gitignore).
+
+$keyComment
+MACSS_DEPLOY_SERVER=
+
+PORT=8080
+NODE_ENV=production
+"@
+        Set-Content -Path $Path -Value $tpl -Encoding UTF8
+        return 'created'
     }
 
-    return $chosen
+    $content = Get-Content $Path -Raw
+    if ($content -match '(?m)^\s*MACSS_DEPLOY_SERVER\s*=') {
+        return 'exists'
+    }
+
+    $sep = if ($content -and -not $content.EndsWith("`n")) { "`n" } else { '' }
+    Add-Content -Path $Path -Value "$sep`n$keyComment`nMACSS_DEPLOY_SERVER="
+    return 'appended'
 }
 
 <#
