@@ -29,6 +29,29 @@ Describe "Publish-NodeApi taxonomy (ADR 0002)" {
     }
 }
 
+Describe "Publish-NodeApi -PushShared (provisión de sharedPaths, reemplazo limpio)" {
+
+    It "exposes -PushShared" { $script:cmd.Parameters.ContainsKey('PushShared') | Should -BeTrue }
+
+    It "-PushShared is a switch" { $script:cmd.Parameters['PushShared'].SwitchParameter | Should -BeTrue }
+
+    It "places -PushShared in its own parameter set" {
+        $script:cmd.Parameters['PushShared'].ParameterSets.Keys | Should -Contain 'PushShared'
+    }
+
+    It "does NOT introduce a -Force switch (reemplazo limpio es el default)" {
+        $script:cmd.Parameters.ContainsKey('Force') | Should -BeFalse
+    }
+
+    It "makes -EnvFile available to the PushShared set" {
+        $script:cmd.Parameters['EnvFile'].ParameterSets.Keys | Should -Contain 'PushShared'
+    }
+
+    It "reuses -AutoApprove in the PushShared set" {
+        $script:cmd.Parameters['AutoApprove'].ParameterSets.Keys | Should -Contain 'PushShared'
+    }
+}
+
 Describe "Publish-NodeApi body hygiene — no local var collides with a [switch] param" {
     # Regressione: $plan (variable local) colisionaba con el parámetro [switch]$Plan.
     # PowerShell es case-insensitive, así que `$plan = 'wsl'` intentaba asignar un String
