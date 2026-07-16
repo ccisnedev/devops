@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [5.4.0] - 2026-07-16
+
+### Added
+- **`Publish-NodeApi -PushShared`**: provisiona los `sharedPaths` declarados en `publish.yaml`
+  mediante `Push-Shared.sh`, con reemplazo limpio del contenido en destino.
+
+### Changed
+- **`-Plan` muestra acciones verificadas**: el plan ahora refleja el build real y el env file
+  resuelto, en lugar de acciones asumidas.
+- **`Install-NodeApi.sh` endurece el guard de `sharedPaths`**: falla explícitamente si la lista
+  llega vacía, en vez de continuar silenciosamente.
+
 ## [5.3.8] - 2026-07-07
 
 ### Changed
