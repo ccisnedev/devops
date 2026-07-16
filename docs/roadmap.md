@@ -22,6 +22,13 @@ ecosistema.
 - [ ] Formalizar recursos y templates canónicos por comando.
 - [ ] Definir una política clara para versionado y publicación del módulo.
 - [ ] Alinear README, CHANGELOG y manifiesto con la identidad macss-devops.
+- [ ] Garantizar soporte multiplataforma: los cmdlets deben funcionar de forma
+	equivalente en Windows, Linux y macOS sobre PowerShell 7+ (Core). Evitar rutas
+	y binarios específicos de Windows; preferir separadores neutrales
+	(`Join-Path`) y herramientas multiplataforma (p. ej. la herramienta dotnet
+	`microsoft.sqlpackage`, `pgschema`, Docker, `ssh`).
+- [ ] Ejecutar la suite Pester en CI en Windows, Linux y macOS para validar la
+	paridad multiplataforma.
 
 ## Fase 2 — Documentación y gobierno del proyecto
 

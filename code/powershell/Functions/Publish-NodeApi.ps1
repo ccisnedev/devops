@@ -75,15 +75,23 @@ function Publish-NodeApi {
 
         [Parameter(ParameterSetName = 'Apply',
             HelpMessage = "Skip the confirmation prompt for unattended/CI use (ADR 0002)")]
+        [Parameter(ParameterSetName = 'PushShared',
+            HelpMessage = "Skip the confirmation prompt for unattended/CI use (ADR 0002)")]
         [switch]$AutoApprove,
 
         [Parameter(ParameterSetName = 'Apply',
             HelpMessage = "Allow deploying a dirty worktree in build:false (packages the working dir, tags +dirty)")]
         [switch]$AllowDirty,
 
+        [Parameter(Mandatory, ParameterSetName = 'PushShared',
+            HelpMessage = "Sube (reemplazo limpio) los runtime.sharedPaths locales al servidor. Modo propio, separado de -Apply. Confirma mostrando destino; -AutoApprove para desatendido.")]
+        [switch]$PushShared,
+
         [Parameter(ParameterSetName = 'Apply',
             HelpMessage = "Env file selecting the environment (default .env). Its MACSS_DEPLOY_SERVER names the target; prod is explicit: -EnvFile .env.production")]
         [Parameter(ParameterSetName = 'Plan',
+            HelpMessage = "Env file selecting the environment (default .env). Its MACSS_DEPLOY_SERVER names the target.")]
+        [Parameter(ParameterSetName = 'PushShared',
             HelpMessage = "Env file selecting the environment (default .env). Its MACSS_DEPLOY_SERVER names the target.")]
         [string]$EnvFile = '.env'
     )
@@ -651,6 +659,20 @@ function Publish-NodeApi {
                 # ─── 5. Consultar estado del servidor ────────
                 Write-Host "  ─── Estado del servidor ───" -ForegroundColor Cyan
 
+                # Chequeo de sharedPaths (estado por path) inyectado en el reporte remoto.
+                # Mismo criterio de "usable" que Install-NodeApi.sh (existe + no vacío).
+                $sharedDirPlan = "$remoteRoot/$appName/shared"
+                $sharedCheckBlock = ""
+                foreach ($sp in @($runtime.SharedPaths)) {
+                    $sharedCheckBlock += @"
+
+if [ ! -e "$sharedDirPlan/$sp" ]; then echo "SHARED:${sp}:missing"
+elif [ -f "$sharedDirPlan/$sp" ]; then { [ -s "$sharedDirPlan/$sp" ] && echo "SHARED:${sp}:ok"; } || echo "SHARED:${sp}:empty"
+elif [ -n "`$(find "$sharedDirPlan/$sp" -type f -size +0c -print -quit 2>/dev/null)" ]; then echo "SHARED:${sp}:ok"
+else echo "SHARED:${sp}:empty"; fi
+"@
+                }
+
                 $reportScript = @"
 #!/bin/bash
 # Versión actual (symlink current)
@@ -685,6 +707,7 @@ else
         echo "SERVICE:not-configured"
     fi
 fi
+$sharedCheckBlock
 "@
 
                 $tmpLocal = New-UnixTempFile -Content $reportScript -Prefix "psdevops_report_nodeapi_"
@@ -706,10 +729,12 @@ fi
                 $releaseStatus = 'desconocido'
                 $serviceStatus = 'desconocido'
 
+                $sharedStatuses = @{}
                 foreach ($line in $output) {
                     if ($line -match '^CURRENT:(.+)$') { $currentVersion = $Matches[1] }
                     if ($line -match '^RELEASE:(.+)$') { $releaseStatus = $Matches[1] }
                     if ($line -match '^SERVICE:(.+)$') { $serviceStatus = $Matches[1] }
+                    if ($line -match '^SHARED:(.+):(missing|empty|ok)$') { $sharedStatuses[$Matches[1]] = $Matches[2] }
                 }
 
                 if ($currentVersion -eq 'none') {
@@ -732,17 +757,171 @@ fi
                     Write-Host "  Servicio:   $serviceStatus" -ForegroundColor Yellow
                 }
 
-                # ─── 6. Acciones que realizará -Publish ──────
+                # Estado de sharedPaths (para saber si hay que correr -PushShared antes de -Apply)
+                if (@($runtime.SharedPaths).Count -gt 0) {
+                    Write-Host ""
+                    Write-Host "  ─── sharedPaths (runtime.sharedPaths) ───" -ForegroundColor Cyan
+                    foreach ($sp in @($runtime.SharedPaths)) {
+                        switch ($sharedStatuses[$sp]) {
+                            'ok'      { Write-Host "  ${sp}: OK (presente en shared/)" -ForegroundColor Green }
+                            'empty'   { Write-Host "  ${sp}: VACÍO -> corre 'Publish-NodeApi -PushShared'" -ForegroundColor Red }
+                            'missing' { Write-Host "  ${sp}: FALTA -> corre 'Publish-NodeApi -PushShared' antes de -Apply" -ForegroundColor Red }
+                            default   { Write-Host "  ${sp}: (estado desconocido)" -ForegroundColor Yellow }
+                        }
+                    }
+                }
+
+                # ─── 6. Acciones que realizará -Apply ──────
+                # Lista derivada de la config real (no genérica): el paso de build y el
+                # archivo de entorno reflejan runtime.build y -EnvFile efectivamente resueltos.
+                $acciones = @()
+                if ($runtime.Build) {
+                    $acciones += "Compilar TypeScript localmente (npm ci + tsc)"
+                    $acciones += "Empaquetar dist/ + node_modules(prod) + package.json en tar.gz"
+                } else {
+                    $acciones += "Sin build (runtime.build=false): empaquetar el fuente desde git HEAD + node_modules(prod) en tar.gz"
+                }
+                $acciones += "Subir tar.gz + '$EnvFile' (se instala como .env en el release) a ${ip}:/tmp/"
+                $acciones += "Instalar en ${remoteRoot}/${appName}/releases/${release}/"
+                if (@($runtime.SharedPaths).Count -gt 0) {
+                    $acciones += "Enlazar sharedPaths [$(@($runtime.SharedPaths) -join ', ')] desde shared/ (falla si no están staged)"
+                }
+                $acciones += "Actualizar symlink current -> $release"
+                $acciones += "Configurar/reiniciar servicio ($processManager)"
+                $acciones += "Healthcheck en http://127.0.0.1:$port$apiBasePath/health"
+
                 Write-Host ""
-                Write-Host "  ─── Acciones que realizará -Publish ───" -ForegroundColor Cyan
-                Write-Host "  1. Compilar TypeScript (npm ci + tsc)" -ForegroundColor White
-                Write-Host "  2. Empaquetar artefactos en tar.gz" -ForegroundColor White
-                Write-Host "  3. Subir tar.gz + .env.production a ${ip}:/tmp/" -ForegroundColor White
-                Write-Host "  4. Instalar en ${remoteRoot}/${appName}/releases/${release}/" -ForegroundColor White
-                Write-Host "  5. Actualizar symlink current → $release" -ForegroundColor White
-                Write-Host "  6. Configurar/reiniciar servicio ($processManager)" -ForegroundColor White
-                Write-Host "  7. Healthcheck en puerto $port" -ForegroundColor White
+                Write-Host "  ─── Acciones que realizará -Apply ───" -ForegroundColor Cyan
+                for ($i = 0; $i -lt $acciones.Count; $i++) {
+                    Write-Host "  $($i + 1). $($acciones[$i])" -ForegroundColor White
+                }
                 Write-Host ""
+            }
+
+            # ═══════════════════════════════════════════════════
+            # PUSH SHARED — subir/reemplazar (limpio) los sharedPaths en el servidor
+            # ═══════════════════════════════════════════════════
+            'PushShared' {
+                $cwd = (Get-Location).Path
+                Ensure-YamlModule
+
+                . "$PSScriptRoot/../Private/PublishHelpers.ps1"
+                . "$PSScriptRoot/../Private/Read-SSHConfig.ps1"
+
+                # ─── Config ──────────────────────────────────
+                $configResolution = Resolve-PublishConfigPath -ProjectRoot $cwd
+                $publishYamlPath = $configResolution.Path
+                $packageJsonPath = Join-Path $cwd "package.json"
+                $envProdPath = if ([System.IO.Path]::IsPathRooted($EnvFile)) { $EnvFile } else { Join-Path $cwd $EnvFile }
+
+                if (-not $publishYamlPath) { throw "No se encontró publish.yaml. Ejecute 'Publish-NodeApi -Init' primero." }
+                if (-not (Test-Path $packageJsonPath)) { throw "No se encontró package.json en $cwd." }
+                if (-not (Test-Path $envProdPath)) { throw "No se encontró el env file '$EnvFile' en $cwd." }
+
+                $deployConfig = (Get-Content $publishYamlPath -Raw) | ConvertFrom-Yaml
+                $pkg = Get-Content $packageJsonPath -Raw | ConvertFrom-Json
+                $appName = $pkg.name
+
+                $runtime = Resolve-NodeRuntime -PublishConfig $deployConfig
+                $sharedList = @($runtime.SharedPaths)
+                if ($sharedList.Count -eq 0) {
+                    throw "publish.yaml no declara runtime.sharedPaths; no hay nada que subir."
+                }
+
+                # Destino (mismo mecanismo que -Apply): MACSS_DEPLOY_SERVER del env elegido.
+                $envConfig = Read-DotEnv -Path $envProdPath -DefaultPort 8080
+                $server = Resolve-DeployTarget -EnvVars $envConfig.Env -EnvFilePath $EnvFile
+                if (-not $server) { throw "No se encontró 'MACSS_DEPLOY_SERVER' en '$EnvFile'." }
+
+                $sshConfig = Read-SSHConfig -HostAlias $server
+                $user = $sshConfig.User
+                $ip = $sshConfig.HostName
+                $sshPort = $sshConfig.Port
+                $privateKeyPath = $sshConfig.IdentityFile
+
+                $remoteRoot = "/opt/app"
+                $sharedDir = "$remoteRoot/$appName/shared"
+
+                # ─── Validación local: cada sharedPath debe existir y no estar vacío ───
+                foreach ($p in $sharedList) {
+                    $localPath = Join-Path $cwd $p
+                    if (-not (Test-Path $localPath)) {
+                        throw "El sharedPath '$p' no existe localmente en $cwd. Nada que subir."
+                    }
+                    $nonEmpty = @(Get-ChildItem -LiteralPath $localPath -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 0 })
+                    if ($nonEmpty.Count -eq 0) {
+                        throw "El sharedPath '$p' está vacío localmente (sin archivos con contenido). No se sube."
+                    }
+                }
+
+                # ─── Probe remoto (read-only): crear vs reemplazar por path ───
+                $probeLines = $sharedList | ForEach-Object { "if [ -e '$sharedDir/$_' ]; then echo 'EXISTS:$_'; else echo 'NEW:$_'; fi" }
+                $probeScript = "#!/bin/bash`n" + ($probeLines -join "`n") + "`n"
+                $tmpProbe = New-UnixTempFile -Content $probeScript -Prefix "psdevops_probe_shared_"
+                try {
+                    $remoteProbe = "/tmp/$([IO.Path]::GetFileName($tmpProbe))"
+                    & scp -i $privateKeyPath -P $sshPort $tmpProbe "$($user)@$($ip):$remoteProbe" 2>&1 | Out-Null
+                    if ($LASTEXITCODE -ne 0) { throw "Error al conectar con el servidor (scp exit: $LASTEXITCODE)" }
+                    $probeOut = & ssh -i $privateKeyPath -p $sshPort "$($user)@$($ip)" "bash $remoteProbe; rm -f $remoteProbe" 2>&1
+                } finally {
+                    Remove-Item -LiteralPath $tmpProbe -ErrorAction SilentlyContinue
+                }
+
+                # ─── Reporte (tipo plan) ─────────────────────
+                Write-Host "  Proyecto:   $appName" -ForegroundColor Cyan
+                Write-Host "  Servidor:   $server ($ip)" -ForegroundColor Cyan
+                Write-Host "  Shared dir: $sharedDir" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host "  ─── sharedPaths a subir (reemplazo limpio) ───" -ForegroundColor Cyan
+                foreach ($line in $probeOut) {
+                    if ($line -match '^EXISTS:(.+)$') { Write-Host "  $($Matches[1]): existe -> REEMPLAZO LIMPIO" -ForegroundColor Yellow }
+                    elseif ($line -match '^NEW:(.+)$') { Write-Host "  $($Matches[1]): nuevo  -> CREAR" -ForegroundColor Green }
+                }
+                Write-Host ""
+
+                # ─── Confirmación (ADR 0002) ─────────────────
+                if (-not (Confirm-MacssChange -Action "Push shared [$($sharedList -join ', ')] a '$server' ($ip), reemplazo limpio" -AutoApprove:$AutoApprove)) {
+                    Write-Host "  PushShared cancelado." -ForegroundColor Yellow
+                    return
+                }
+
+                # ─── Empaquetar el contenido local de los sharedPaths ───
+                $tarballName = "${appName}-shared.tar.gz"
+                $localTarball = Join-Path $env:TEMP $tarballName
+                $remoteTarball = "/tmp/$tarballName"
+                Remove-Item -LiteralPath $localTarball -ErrorAction SilentlyContinue
+                $tarCmd = "tar.exe -czf `"$localTarball`" -C `"$cwd`" $($sharedList -join ' ')"
+                Invoke-Expression $tarCmd 2>&1 | Out-Null
+                if (-not (Test-Path $localTarball)) { throw "Error al empaquetar los sharedPaths." }
+
+                try {
+                    Write-Host "  Subiendo shared a $ip..." -ForegroundColor Cyan
+                    & scp -i $privateKeyPath -P $sshPort $localTarball "$($user)@$($ip):$remoteTarball" 2>&1 | Out-Null
+                    if ($LASTEXITCODE -ne 0) { throw "Error al subir el tarball de shared (scp exit: $LASTEXITCODE)" }
+
+                    $useSudo = if ($deployConfig.runtime -and ($null -ne $deployConfig.runtime.useSudo)) {
+                        [bool]$deployConfig.runtime.useSudo
+                    } else { $false }
+
+                    $pushScript = Get-BashScript -ScriptName "Push-Shared.sh" -Placeholders @{
+                        '__NAME__'         = $appName
+                        '__REMOTE_ROOT__'  = $remoteRoot
+                        '__SHARED_PATHS__' = ($sharedList -join ' ')
+                        '__USE_SUDO__'     = ($(if ($useSudo) { '1' } else { '0' }))
+                    }
+
+                    $exitCode = Invoke-RemoteScript -ScriptContent $pushScript `
+                                                    -User $user -IP $ip -Port $sshPort `
+                                                    -KeyPath $privateKeyPath `
+                                                    -ScriptPrefix "psdevops_push_shared_"
+                    if ($exitCode -ne 0) { throw "Push-Shared.sh falló con código $exitCode." }
+
+                    Write-Host ""
+                    Write-Host "  Shared subido a $server ($ip): [$($sharedList -join ', ')]" -ForegroundColor Green
+                    Write-Host ""
+                } finally {
+                    Remove-Item -LiteralPath $localTarball -ErrorAction SilentlyContinue
+                }
             }
         }
     }
