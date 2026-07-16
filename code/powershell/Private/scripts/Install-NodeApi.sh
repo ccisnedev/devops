@@ -99,11 +99,22 @@ if [ -n "$SHARED_PATHS" ]; then
     SHARED_DIR="$REMOTE_ROOT/$NAME/shared"
     for p in $SHARED_PATHS; do
         SRC="$SHARED_DIR/$p"
-        if [ ! -e "$SRC" ]; then
-            echo "ERROR: shared path '$p' (publish.yaml runtime.sharedPaths) no existe en el servidor:" >&2
+        # Debe existir Y tener contenido usable: un symlink a algo vacío no fallaría aquí
+        # pero dejaría la crypto rota en runtime. Falla claro (exit 6) si el sharedPath:
+        #   - no existe
+        #   - es un archivo regular vacío (0 bytes)
+        #   - es una carpeta sin ningún archivo regular no-vacío
+        usable=0
+        if [ -f "$SRC" ]; then
+            [ -s "$SRC" ] && usable=1
+        elif [ -d "$SRC" ]; then
+            [ -n "$(find "$SRC" -type f -size +0c -print -quit 2>/dev/null)" ] && usable=1
+        fi
+        if [ "$usable" -ne 1 ]; then
+            echo "ERROR: shared path '$p' (publish.yaml runtime.sharedPaths) falta o está vacío en el servidor:" >&2
             echo "         $SRC" >&2
-            echo "       Es un archivo runtime NO versionado (secreto/clave). Prepárelo UNA vez:" >&2
-            echo "         mkdir -p \"$SHARED_DIR/\$(dirname $p)\" && cp -a <origen>/$p \"$SRC\"" >&2
+            echo "       Es un archivo/carpeta runtime NO versionado (secreto/clave) sin contenido usable." >&2
+            echo "       Suba su contenido con:  Publish-NodeApi -PushShared" >&2
             exit 6
         fi
         DEST="$RELEASE_DIR/$p"
