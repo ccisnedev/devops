@@ -732,16 +732,30 @@ fi
                     Write-Host "  Servicio:   $serviceStatus" -ForegroundColor Yellow
                 }
 
-                # ─── 6. Acciones que realizará -Publish ──────
+                # ─── 6. Acciones que realizará -Apply ──────
+                # Lista derivada de la config real (no genérica): el paso de build y el
+                # archivo de entorno reflejan runtime.build y -EnvFile efectivamente resueltos.
+                $acciones = @()
+                if ($runtime.Build) {
+                    $acciones += "Compilar TypeScript localmente (npm ci + tsc)"
+                    $acciones += "Empaquetar dist/ + node_modules(prod) + package.json en tar.gz"
+                } else {
+                    $acciones += "Sin build (runtime.build=false): empaquetar el fuente desde git HEAD + node_modules(prod) en tar.gz"
+                }
+                $acciones += "Subir tar.gz + '$EnvFile' (se instala como .env en el release) a ${ip}:/tmp/"
+                $acciones += "Instalar en ${remoteRoot}/${appName}/releases/${release}/"
+                if (@($runtime.SharedPaths).Count -gt 0) {
+                    $acciones += "Enlazar sharedPaths [$(@($runtime.SharedPaths) -join ', ')] desde shared/ (falla si no están staged)"
+                }
+                $acciones += "Actualizar symlink current -> $release"
+                $acciones += "Configurar/reiniciar servicio ($processManager)"
+                $acciones += "Healthcheck en http://127.0.0.1:$port$apiBasePath/health"
+
                 Write-Host ""
-                Write-Host "  ─── Acciones que realizará -Publish ───" -ForegroundColor Cyan
-                Write-Host "  1. Compilar TypeScript (npm ci + tsc)" -ForegroundColor White
-                Write-Host "  2. Empaquetar artefactos en tar.gz" -ForegroundColor White
-                Write-Host "  3. Subir tar.gz + .env.production a ${ip}:/tmp/" -ForegroundColor White
-                Write-Host "  4. Instalar en ${remoteRoot}/${appName}/releases/${release}/" -ForegroundColor White
-                Write-Host "  5. Actualizar symlink current → $release" -ForegroundColor White
-                Write-Host "  6. Configurar/reiniciar servicio ($processManager)" -ForegroundColor White
-                Write-Host "  7. Healthcheck en puerto $port" -ForegroundColor White
+                Write-Host "  ─── Acciones que realizará -Apply ───" -ForegroundColor Cyan
+                for ($i = 0; $i -lt $acciones.Count; $i++) {
+                    Write-Host "  $($i + 1). $($acciones[$i])" -ForegroundColor White
+                }
                 Write-Host ""
             }
         }
