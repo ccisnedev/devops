@@ -97,12 +97,21 @@ elif [ "$PROCESS_MANAGER" = "pm2" ]; then
 
     cd "$WORKING_DIR"
 
-    ECOSYSTEM_FILE="$WORKING_DIR/ecosystem.config.js"
+    # Config-as-code file resolution (ADR 0005): prefer the generated JSON (pm2 loads it
+    # natively — no CommonJS/ESM trap in a "type":"module" project), then .cjs (ESM-safe
+    # escape hatch for computed configs), then legacy .js (CommonJS). First existing wins.
+    ECOSYSTEM_FILE=""
+    for _eco_cand in ecosystem.config.json ecosystem.config.cjs ecosystem.config.js; do
+        if [ -f "$WORKING_DIR/$_eco_cand" ]; then
+            ECOSYSTEM_FILE="$WORKING_DIR/$_eco_cand"
+            break
+        fi
+    done
 
-    if [ -f "$ECOSYSTEM_FILE" ]; then
+    if [ -n "$ECOSYSTEM_FILE" ]; then
         # Config-as-code path: declarative process topology (one or more apps).
-        # Process names, cwd and env are owned by ecosystem.config.js, not by CLI flags.
-        echo "Using ecosystem.config.js (config-as-code): $ECOSYSTEM_FILE"
+        # Process names, cwd and env are owned by the config-as-code file, not by CLI flags.
+        echo "Using config-as-code: $ECOSYSTEM_FILE"
 
         # Immutable deploys swap the 'current' symlink to a new release dir. A graceful
         # 'pm2 reload' keeps each app's already-resolved script realpath (the PREVIOUS
@@ -124,7 +133,7 @@ elif [ "$PROCESS_MANAGER" = "pm2" ]; then
             pm2 logs --nostream --lines 20
             exit 1
         fi
-        echo "PM2 apps started from ecosystem.config.js"
+        echo "PM2 apps started from config-as-code"
     else
         # Direct path (backward compatible): a single process started imperatively.
         # Remove a previous process with the same name to force a clean start.

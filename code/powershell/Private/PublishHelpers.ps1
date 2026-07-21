@@ -799,3 +799,98 @@ function Get-ProdModulesPlan {
     if ($IsWindowsHost) { return 'wsl' }
     return 'native'
 }
+
+<#
+.SYNOPSIS
+Genera el ecosystem de pm2 en formato JSON (config-as-data) desde la topologia declarativa
+de publish.yaml (ADR 0005).
+
+.DESCRIPTION
+pm2 carga JSON de forma nativa, sin la trampa CommonJS/ESM de un ecosystem.config.js en un
+proyecto "type":"module". El schema es la interseccion systemd n pm2: por proceso solo se
+admiten name, script, cwd y env. Las claves pm2-only (instances/cluster, cron_restart, watch,
+max_memory_restart) quedan fuera y se rechazan; para esos casos existe la valvula de escape
+ecosystem.config.cjs.
+
+Sin -Processes genera un unico app (single-process) desde -AppName/-Entrypoint. El env de cada
+proceso se fusiona SOBRE -RuntimeEnv (env no-secreto, versionado en publish.yaml).
+
+.PARAMETER RuntimeEnv
+Mapa de env no-secreto (runtime.env). Acepta hashtable o PSCustomObject (deserializado de YAML).
+
+.PARAMETER Processes
+Array de procesos (runtime.processes). Cada uno acepta name, script, cwd, env.
+
+.EXAMPLE
+New-Pm2EcosystemJson -AppName 'micro' -Entrypoint 'server.js' -RuntimeEnv @{ NODE_ENV = 'production' }
+#>
+function New-Pm2EcosystemJson {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$AppName,
+        [Parameter(Mandatory = $true)][string]$Entrypoint,
+        [object]$RuntimeEnv,
+        [object]$Processes,
+        [ValidateSet('always', 'on-failure', 'no')][string]$Restart = 'always',
+        [int]$RestartDelaySec = 5
+    )
+
+    # Interseccion systemd n pm2 (ADR 0005): unicas claves portables por proceso.
+    $allowedKeys = @('name', 'script', 'cwd', 'env')
+
+    # Lee una clave de un hashtable o de un PSCustomObject (YAML deserializado).
+    $getKey = {
+        param($obj, $key)
+        if ($null -eq $obj) { return $null }
+        if ($obj -is [System.Collections.IDictionary]) { return $obj[$key] }
+        $prop = $obj.PSObject.Properties[$key]
+        if ($prop) { return $prop.Value }
+        return $null
+    }
+
+    # Enumera las claves de un hashtable o PSCustomObject.
+    $keysOf = {
+        param($obj)
+        if ($null -eq $obj) { return @() }
+        if ($obj -is [System.Collections.IDictionary]) { return @($obj.Keys) }
+        return @($obj.PSObject.Properties.Name)
+    }
+
+    # Fusiona dos mapas de env (base + override) preservando strings.
+    $mergeEnv = {
+        param($base, $override)
+        $m = [ordered]@{}
+        foreach ($src in @($base, $override)) {
+            if ($null -eq $src) { continue }
+            foreach ($k in (& $keysOf $src)) { $m[[string]$k] = [string](& $getKey $src $k) }
+        }
+        return $m
+    }
+
+    $procList = if ($Processes) { @($Processes) } else { @([ordered]@{ name = $AppName; script = $Entrypoint }) }
+
+    $apps = [System.Collections.ArrayList]::new()
+    foreach ($p in $procList) {
+        $bad = @((& $keysOf $p) | Where-Object { $_ -notin $allowedKeys })
+        if ($bad.Count -gt 0) {
+            throw "Clave(s) fuera de la interseccion systemd n pm2 en processes: $($bad -join ', '). El schema portable solo admite: $($allowedKeys -join ', '). Para configuracion pm2-only (instances/cluster, cron_restart, watch, max_memory_restart) use un ecosystem.config.cjs (valvula de escape, ADR 0005)."
+        }
+
+        $script = & $getKey $p 'script'
+        if (-not $script) { $script = $Entrypoint }
+        $mergedEnv = & $mergeEnv $RuntimeEnv (& $getKey $p 'env')
+
+        $app = [ordered]@{
+            name          = [string](& $getKey $p 'name')
+            script        = [string]$script
+            autorestart   = ($Restart -ne 'no')
+            restart_delay = ($RestartDelaySec * 1000)
+        }
+        $cwd = & $getKey $p 'cwd'
+        if ($cwd) { $app['cwd'] = [string]$cwd }
+        if ($mergedEnv.Count -gt 0) { $app['env'] = $mergedEnv }
+        [void]$apps.Add($app)
+    }
+
+    return ([ordered]@{ apps = @($apps) } | ConvertTo-Json -Depth 6)
+}
