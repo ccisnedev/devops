@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [5.5.0] - 2026-07-21
+
+### Added
+- **Topología de procesos declarativa (ADR 0005)**: `publish.yaml` acepta `runtime.env`
+  (env no-secreto, versionado) y `runtime.processes` (uno o varios procesos: api + worker).
+  Con el supervisor pm2, `Publish-NodeApi` renderiza un `ecosystem.config.json` (config-as-data)
+  vía `New-Pm2EcosystemJson` y lo coloca en el release. El schema es la intersección
+  systemd ∩ pm2 (name/script/cwd/env); rechaza claves pm2-only (instances/cluster,
+  cron_restart, watch, max_memory).
+
+### Fixed
+- **pm2 config-as-code en proyectos ESM (`type:module`)**: la detección resuelve por
+  precedencia `ecosystem.config.json` → `.cjs` → `.js`. Un `ecosystem.config.js` ESM ya no
+  rompe pm2 con "No script path"; el JSON generado lo carga nativo. El `.cjs` queda como
+  válvula de escape para configs con lógica.
+
+### Notes
+- Retrocompatible: los `ecosystem.config.js` (CommonJS) existentes y los proyectos systemd
+  single-process no cambian. La generación del JSON es opt-in (solo con `runtime.env`/
+  `runtime.processes`).
+
 ## [5.4.0] - 2026-07-16
 
 ### Added
