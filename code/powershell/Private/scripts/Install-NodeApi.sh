@@ -88,6 +88,16 @@ else
     echo "WARNING: No se encontró $ENV_FILE" >&2
 fi
 
+# ─── 4a. Copiar ecosystem.config.json generado (ADR 0005: config-as-data pm2) ───
+# Publish-NodeApi lo renderiza desde publish.yaml (runtime.env/processes) y lo deja aquí.
+# Idempotente: si no se generó (legacy o systemd), este bloque no hace nada.
+ECOSYSTEM_STAGED="/tmp/${NAME}.ecosystem.json"
+if [ -f "$ECOSYSTEM_STAGED" ]; then
+    echo "Copiando ecosystem.config.json generado al release..."
+    $SUDO cp "$ECOSYSTEM_STAGED" "$RELEASE_DIR/ecosystem.config.json"
+    $SUDO rm -f "$ECOSYSTEM_STAGED"
+fi
+
 # ─── 4b. Enlazar shared paths (secretos/archivos runtime gitignoreados, ADR 0003) ───
 # Archivos que la app lee en runtime pero que NO estan en git (claves RSA, certs) y
 # por tanto no viajan en el tarball. Viven en $REMOTE_ROOT/$NAME/shared/<path> (los
