@@ -480,6 +480,28 @@ function Publish-NodeApi {
                     if ($LASTEXITCODE -ne 0) { throw "Error al subir el env (scp exit: $LASTEXITCODE)" }
                     Write-Host "    $EnvFile subido como .env (LF, sin MACSS_DEPLOY_*)" -ForegroundColor Green
 
+                    # ─── 7b. Ecosystem pm2 generado (ADR 0005: config-as-data) ───
+                    # Si el supervisor es pm2 y el proyecto declara runtime.env o
+                    # runtime.processes, se renderiza un ecosystem.config.json (pm2 lo carga
+                    # nativo, sin trampa CJS/ESM) que viaja por el mismo riel que el .env.
+                    # Opt-in: sin esas claves no se genera (retrocompat con ecosystem.config.
+                    # {cjs,js} a mano o Direct path single-process).
+                    $rtEnv = if ($deployConfig.runtime) { $deployConfig.runtime.env } else { $null }
+                    $rtProcs = if ($deployConfig.runtime) { $deployConfig.runtime.processes } else { $null }
+                    if ($processManager -eq 'pm2' -and ($rtEnv -or $rtProcs)) {
+                        $rtRestart = if ($deployConfig.runtime.restart) { [string]$deployConfig.runtime.restart } else { 'always' }
+                        $rtDelay = if ($deployConfig.runtime.restartDelaySec) { [int]$deployConfig.runtime.restartDelaySec } else { 5 }
+                        $ecoJson = New-Pm2EcosystemJson -AppName $appName -Entrypoint $entrypoint `
+                            -RuntimeEnv $rtEnv -Processes $rtProcs -Restart $rtRestart -RestartDelaySec $rtDelay
+                        $tmpEcoPath = New-UnixTempFile -Content $ecoJson -Prefix "psdevops_eco_"
+                        $remoteEcoFile = "/tmp/${appName}.ecosystem.json"
+                        $scpEcoArgs = @('-i', $privateKeyPath, '-P', $sshPort, $tmpEcoPath, "$($user)@$($ip):$remoteEcoFile")
+                        & scp @scpEcoArgs 2>&1 | Out-Null
+                        if ($LASTEXITCODE -ne 0) { throw "Error al subir el ecosystem generado (scp exit: $LASTEXITCODE)" }
+                        $procCount = if ($rtProcs) { @($rtProcs).Count } else { 1 }
+                        Write-Host "    ecosystem.config.json generado ($procCount proceso(s), config-as-data)" -ForegroundColor Green
+                    }
+
                     # ─── 8. Instalar release ─────────────────
                     Write-Host "  Instalando release $release..." -ForegroundColor Cyan
 
