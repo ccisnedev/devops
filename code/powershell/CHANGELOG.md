@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [5.7.0] - 2026-07-22
+
+### Fixed
+- **Guard de handoff de puerto (pm2)**: antes de `pm2 start`, `Manage-NodeProcess.sh` espera
+  (acotado, `PORT_FREE_TIMEOUT`, default 15s) a que el `PORT` quede libre. Un restart de la
+  propia app libera el puerto en <2s y el deploy continúa; pero si un proceso **ajeno** (p. ej.
+  un git-clone/legacy en el mismo host) sigue reteniéndolo, el deploy **falla limpio** nombrando
+  el puerto, en vez de dejar que pm2 entre en un crash-loop `EADDRINUSE`.
+  Motivado por el incidente 2026-07-22: un cutover con el legacy aún escuchando produjo 254
+  reinicios `EADDRINUSE` en `:3020` (~1h de fotos caídas para los consumidores del file server
+  servidos vía ese puerto). Con el guard, ese cutover habría fallado con un solo mensaje claro.
+  Aplica a los dos caminos de pm2 (config-as-code y arranque directo). Probe TCP portable
+  (`/dev/tcp`), sin dependencias nuevas. Test de contenedor nuevo.
+
 ## [5.6.0] - 2026-07-22
 
 ### Deprecated
