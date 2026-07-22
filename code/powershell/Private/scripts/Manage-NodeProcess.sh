@@ -28,6 +28,34 @@ ENV_FILE="__ENV_FILE__"
 PORT="__PORT__"
 OWNER="__USER__"
 
+# ─── Guard de handoff de puerto ──────────────────────────
+# Antes de arrancar, esperar (acotado) a que el PORT quede libre. Un restart de nuestra propia
+# app libera el puerto en <2s; pero si un proceso AJENO (p. ej. un git-clone/legacy en el mismo
+# host) sigue reteniendolo, arrancar aqui provocaria un crash-loop EADDRINUSE hasta que se
+# libere. En ese caso fallamos LIMPIO nombrando el puerto, en vez de reintentar en silencio.
+# (Incidente 2026-07-22: cutover de micro -> 254 EADDRINUSE en :3020 -> ~1h de fotos caidas para
+# los consumidores del file server servidos via ese puerto.)
+# Timeout configurable con PORT_FREE_TIMEOUT (segundos, default 15).
+wait_port_free() {
+    local port="$1"
+    case "$port" in ''|*[!0-9]*) return 0 ;; esac   # sin puerto numerico conocido, nada que verificar
+    local tries=0 max="${PORT_FREE_TIMEOUT:-15}"
+    # Probe TCP portable (bash /dev/tcp): subshell que conecta y cierra sin fugar fd. Exito =
+    # puerto ocupado (alguien escucha); fallo = libre (connection refused).
+    while (: < "/dev/tcp/127.0.0.1/$port") 2>/dev/null; do
+        tries=$((tries + 1))
+        if [ "$tries" -ge "$max" ]; then
+            echo "ERROR: el puerto :$port sigue ocupado tras ${max}s." >&2
+            echo "  Un proceso ajeno retiene :$port (un legacy/git-clone sin detener?)." >&2
+            echo "  Detenlo antes de desplegar para evitar un crash-loop EADDRINUSE en el arranque." >&2
+            if command -v ss >/dev/null 2>&1; then ss -ltnp "sport = :$port" >&2 2>/dev/null || true; fi
+            return 1
+        fi
+        sleep 1
+    done
+    return 0
+}
+
 echo "Configurando process manager: $PROCESS_MANAGER"
 
 # ═══════════════════════════════════════════════════════
@@ -120,6 +148,7 @@ elif [ "$PROCESS_MANAGER" = "pm2" ]; then
         # symlink so the new release actually runs. (Brief restart; a zero-downtime
         # reload would need cluster mode + a stable non-symlinked script path.)
         pm2 delete "$ECOSYSTEM_FILE" >/dev/null 2>&1 || true
+        wait_port_free "$PORT" || exit 1
         pm2 start "$ECOSYSTEM_FILE" --update-env
 
         # Persist the process list so 'pm2 startup' can resurrect it after a reboot.
@@ -150,6 +179,8 @@ elif [ "$PROCESS_MANAGER" = "pm2" ]; then
             . "$ENV_FILE"
             set +a
         fi
+
+        wait_port_free "$PORT" || exit 1
 
         pm2 start "$ENTRY_PATH" \
             --name "$NAME" \
