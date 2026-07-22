@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [5.6.0] - 2026-07-22
+
+### Deprecated
+- **`Publish-FlutterWebLegacy`**: queda deprecado y emite un `Write-Warning` al invocarse.
+  Reemplazado por `Publish-FlutterWeb` (releases inmutables versionadas + rollback vía symlink
+  `current`). Legacy ejecuta `sudo rm -rf /var/www/<name>/*` (borra sub-apps y releases previas),
+  no versiona y no permite rollback. Sigue disponible por retrocompatibilidad (aún lo usan
+  fintech_operaciones y pyme) y **se eliminará en la próxima versión major** una vez migrados
+  sus consumidores. La función gana `[CmdletBinding()]` (habilita common params, no-breaking).
+
+### Added
+- **ADR 0007**: `Publish-FlutterWeb` adopta el destino-desde-env-file (`-EnvFile` +
+  `MACSS_DEPLOY_SERVER`) por paridad con `Publish-NodeApi` (ADR 0004). Documenta la decisión y
+  sus particularidades de web estática (no sube `.env`; el env file es solo selector de destino).
+  Implementación trackeada aparte (issue).
+
 ## [5.5.0] - 2026-07-21
 
 ### Added
