@@ -36,6 +36,37 @@ Describe 'Step 1: Legacy renombrado y exports' {
         }
     }
 
+    Context 'Publish-FlutterWebLegacy — deprecación (5.6.0)' {
+
+        # Legacy queda deprecado a favor de Publish-FlutterWeb. Debe emitir un
+        # Write-Warning al invocarse para avisar a los consumidores restantes.
+        It 'emite un Write-Warning de deprecación al invocarse' {
+            $tmp = Join-Path $env:TEMP "psdevops_test_legacy_dep_$([guid]::NewGuid().ToString().Substring(0,8))"
+            New-Item -ItemType Directory -Path $tmp -Force | Out-Null
+            # pubspec.yaml mínimo para que el cmdlet parsee name/version y salga limpio
+            # al fallar el alias SSH inexistente (tras emitir el warning de deprecación).
+            Set-Content -Path (Join-Path $tmp 'pubspec.yaml') -Value "name: dep_test_app`nversion: 1.0.0" -Encoding UTF8
+            try {
+                Push-Location $tmp
+                $warn = @()
+                try {
+                    Publish-FlutterWebLegacy -server 'alias-inexistente-xyz' `
+                        -WarningVariable warn -WarningAction SilentlyContinue `
+                        -ErrorAction SilentlyContinue *> $null
+                } catch { }  # el warning ya quedó capturado en $warn aunque algo falle después
+                ($warn -join "`n") | Should -Match 'DEPRECAD|Publish-FlutterWeb\b'
+            } finally {
+                Pop-Location
+                Remove-Item -Path $tmp -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        # La función sigue exportada (retrocompat) — su removal es en el próximo major.
+        It 'sigue disponible como función (removal diferido al próximo major)' {
+            Get-Command Publish-FlutterWebLegacy -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
+        }
+    }
+
     Context 'Archivo legacy antiguo eliminado' {
 
         # El renombrado debe ser un rename, no una copia.
