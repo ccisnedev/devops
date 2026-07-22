@@ -83,6 +83,32 @@ Estas líneas avanzan en paralelo y afectan a más de un artefacto.
 - [ ] Formalizar convenciones de carpetas dentro de code/.
 - [ ] Registrar decisiones relevantes mediante ADR.
 
+### Estrategia de despliegue: contenedores y target de render (ADR 0006)
+
+Objetivo: migrar del modelo VM (sprawl de VM-por-API + VM-pm2-compartida) hacia
+contenedores — aislamiento sin una VM por app, muchos contenedores por host — y
+evolucionar `Publish-NodeApi` a un emisor multi-target sobre el `publish.yaml`
+declarativo de ADR 0005 (el invariante).
+
+Hoja de ruta escalonada (cada etapa aporta valor por sí sola):
+
+- [ ] **Etapa 0 — Contenerizar**: `Dockerfile` por API; la imagen hornea Node y las
+	dependencias nativas (p. ej. Oracle Instant Client) → elimina el dolor de
+	`LD_LIBRARY_PATH` y el drift de versiones. Imagen = release. Agnóstico al orquestador.
+- [ ] **Etapa 1 — Un host, muchos contenedores**: `docker compose` (intro) o
+	**Podman + Quadlet** (rootless, sin daemon, integrado a systemd — mejor encaje actual).
+	Resuelve el sprawl VM-por-API y los conflictos de puerto/cutover dentro de un host.
+- [ ] **Etapa 2 — k3s (+ GitOps)**: multi-nodo, auto-heal, rolling updates y despliegue
+	declarativo (ArgoCD/Flux). k3s = Kubernetes conforme y liviano, on-prem.
+- [ ] **Etapa 3 — k8s (condicional)**: solo si nube gestionada, escala grande o
+	compliance/CSI/CNI lo exigen; los manifiestos transfieren desde k3s.
+- [ ] **Emisor multi-target de `Publish-NodeApi`**: `-Target <pm2|systemd|compose|podman|k3s>`
+	renderiza el artefacto y hace build&push de la imagen; el núcleo (topología como datos) no
+	cambia.
+- [ ] **Aprovisionamiento vs deploy rootless**: formalizar que el bootstrap privilegiado
+	(base dir/usuario) es una fase aparte, de una sola vez; el deploy no requiere sudo. En el
+	mundo contenedor este problema se disuelve (ver ADR 0006).
+
 ## Hitos sugeridos
 
 ### Hito A
