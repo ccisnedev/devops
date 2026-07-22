@@ -1,11 +1,19 @@
 ﻿<#
 .SYNOPSIS
-Despliega la carpeta web generada al servidor remoto.
+[DEPRECADO] Despliega la carpeta web generada al servidor remoto.
 
 .DESCRIPTION
+DEPRECADO — se eliminará en la próxima versión major. Use `Publish-FlutterWeb`
+(-Init/-Plan/-Apply), que despliega con releases inmutables versionadas y rollback
+vía el symlink `current`, en lugar de este flujo destructivo.
+
 El cmdlet `Publish-FlutterWebLegacy` copia la carpeta web generada a un servidor remoto mediante SSH.
 Lee la configuración del host desde ~/.ssh/config y utiliza SSH y SCP directamente
 para transferir los archivos al servidor remoto.
+
+Nota de riesgo: este cmdlet ejecuta `sudo rm -rf /var/www/<name>/*` en el servidor,
+lo que borra por completo el contenido publicado (incluidas sub-apps y cualquier
+release previa) antes de copiar. `Publish-FlutterWeb` nunca hace esto.
 
 .PARAMETER server
 El nombre del servidor al que se desea desplegar la carpeta web. Este parámetro es obligatorio.
@@ -15,16 +23,24 @@ Publish-FlutterWebLegacy -server "demo-web"
 Copia la carpeta web generada al servidor "demo-web".
 
 .NOTES
-Versión: 1.0.2
+Versión: 1.1.0
 Autor: @ccisnedev
+Estado: DEPRECADO — reemplazado por `Publish-FlutterWeb`. Ver CHANGELOG (5.6.0).
 #>
 function Publish-FlutterWebLegacy {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)]
         [string]$server
     )
+
+    # ── Deprecación ──────────────────────────────────────────────────────────
+    # Reemplazado por Publish-FlutterWeb (releases inmutables + rollback). Este
+    # cmdlet sigue disponible por retrocompatibilidad y se elimina en el próximo major.
+    Write-Warning "Publish-FlutterWebLegacy está DEPRECADO y se eliminará en la próxima versión major. Migre a 'Publish-FlutterWeb' (-Init/-Plan/-Apply): releases inmutables con rollback vía symlink 'current'. Legacy ejecuta 'sudo rm -rf /var/www/<name>/*', borrando sub-apps y releases previas."
+
     #version
-    $version = "1.0.3"
+    $version = "1.1.0"
     Write-Host "[$version] Publicando la carpeta web en el servidor '$server'..." -ForegroundColor Cyan
 
     # Obtener la versión y el nombre de la aplicación del pubspec.yaml
