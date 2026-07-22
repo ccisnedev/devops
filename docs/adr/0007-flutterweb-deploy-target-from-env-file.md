@@ -10,7 +10,8 @@ desde el env file **gitignored** (`MACSS_DEPLOY_SERVER`) elegido con `-EnvFile <
 invocación. `Publish-NodeApi` e `Invoke-SqlPackage` ya lo adoptaron; ADR 0004 §5 dejó a
 `Publish-FlutterWeb` como pendiente. El issue #44 aún describe el enfoque anterior
 (`-Server` + allowlist `servers:`), **superado** por ADR 0004 el mismo día — de modo que la
-adopción de `-EnvFile` en `Publish-FlutterWeb` no está trackeada de forma vigente.
+adopción de `-EnvFile` en `Publish-FlutterWeb` no está trackeada de forma vigente
+(implementación en #54).
 
 Hoy `Publish-FlutterWeb` lee el destino de `publish.yaml`:
 

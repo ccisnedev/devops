@@ -18,7 +18,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - **ADR 0007**: `Publish-FlutterWeb` adopta el destino-desde-env-file (`-EnvFile` +
   `MACSS_DEPLOY_SERVER`) por paridad con `Publish-NodeApi` (ADR 0004). Documenta la decisión y
   sus particularidades de web estática (no sube `.env`; el env file es solo selector de destino).
-  Implementación trackeada aparte (issue).
+  Implementación trackeada en #54.
 
 ## [5.5.0] - 2026-07-21
 
