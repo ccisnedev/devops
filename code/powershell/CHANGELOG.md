@@ -14,6 +14,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   un `DEPLOYED:` doble. Eliminada la repetición; el script deja el mismo estado con una sola
   pasada. Detectado durante el despliegue limpio de `pyme` a prod (2026-07-23).
 
+### Added
+- **Test e2e de contenedor para Flutter Web** (`test/PublishFlutterWeb.e2e.container.test.sh`).
+  En un contenedor Linux limpio con nginx real (shim de `systemctl`), ejercita
+  `Install-FlutterWeb.sh` + `Configure-NginxSite.sh` juntos y prueba que el sitio **sirve** de
+  verdad: `/` → 200, `version.json`, y fallback SPA (deep-link → 200). Incluye el guard de
+  regresión del bloque duplicado (**`DEPLOYED` aparece exactamente una vez**) y la idempotencia de
+  nginx (segundo run → `NGINX:EXISTS`). Antes no había cobertura de contenedor para Flutter Web.
+
 ## [5.7.0] - 2026-07-22
 
 ### Fixed
