@@ -201,11 +201,13 @@ function Publish-FlutterWeb {
                 $remoteWebRoot = "/var/www"
 
                 # ─── Plan (ADR 0009): -Apply renders the SAME plan as -Plan before confirming
-                #     (ADR 0002 §"Confirmation flow" step 1). No report file is written on -Apply. ───
-                $plan = Get-FlutterWebPlan -AppName $appName -Release $release `
+                #     (ADR 0002 §"Confirmation flow" step 1). No report file is written on -Apply.
+                #     NB: the local is $deployPlan, not $plan — $plan would alias the [switch]$Plan
+                #     parameter (variables are case-insensitive) and fail the type coercion. ───
+                $deployPlan = Get-FlutterWebPlan -AppName $appName -Release $release `
                     -Server $server -User $user -IP $ip -SshPort $sshPort `
                     -PrivateKeyPath $privateKeyPath -Port $port -RemoteWebRoot $remoteWebRoot
-                Show-DeployPlan -Plan $plan
+                Show-DeployPlan -Plan $deployPlan
 
                 # ─── Confirmation (ADR 0002) ─────────────────
                 if (-not (Confirm-MacssChange -Action "Deploy $appName $release to '$server' (port $port)" -AutoApprove:$AutoApprove)) {
@@ -385,13 +387,15 @@ fi
                 Write-Host "  Modo: SOLO REPORTE (no se realizarán cambios)" -ForegroundColor Yellow
 
                 # ─── 5. Construir y mostrar el plan (compartido con -Apply, ADR 0009) ───
-                $plan = Get-FlutterWebPlan -AppName $appName -Release $release `
+                #     NB: el local es $deployPlan, no $plan — $plan aliasea el parámetro
+                #     [switch]$Plan (variables case-insensitive) y rompe la coerción de tipo.
+                $deployPlan = Get-FlutterWebPlan -AppName $appName -Release $release `
                     -Server $server -User $user -IP $ip -SshPort $sshPort `
                     -PrivateKeyPath $privateKeyPath -Port $port -RemoteWebRoot $remoteWebRoot
-                Show-DeployPlan -Plan $plan
+                Show-DeployPlan -Plan $deployPlan
 
                 # ─── 6. Persistir el reporte de cambios (ADR 0009) — solo en -Plan ───
-                $reportPath = Save-DeployPlan -Plan $plan -ProjectRoot $cwd
+                $reportPath = Save-DeployPlan -Plan $deployPlan -ProjectRoot $cwd
                 Write-Host "  Reporte del plan: $reportPath" -ForegroundColor DarkGray
                 Write-Host ""
             }
