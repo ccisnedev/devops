@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [5.7.1] - 2026-07-23
+
+### Fixed
+- **`Install-FlutterWeb.sh`: bloque de symlink duplicado**. El paso «6. Actualizar symlink
+  current» (más un `chmod -R 755` colgante) estaba repetido literalmente al final del script,
+  ejecutando `ln -sfn` y los `echo DEPLOYED:` dos veces por deploy. Inofensivo (idempotente)
+  pero ruidoso: la salida mostraba «Release anterior» apuntando a la release recién creada y
+  un `DEPLOYED:` doble. Eliminada la repetición; el script deja el mismo estado con una sola
+  pasada. Detectado durante el despliegue limpio de `pyme` a prod (2026-07-23).
+
 ## [5.7.0] - 2026-07-22
 
 ### Fixed
