@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [5.8.0] - 2026-07-31
+
+### Added
+- **Artefacto de plan + paridad `-Plan`/`-Apply` (ADR 0009)**. Nuevo helper compartido
+  `Private/DeployPlan.ps1`: un objeto de plan común (`New-DeployPlan`/`New-DeployPlanRow`),
+  **un solo renderer** (`Show-DeployPlan`) usado por `-Plan` **y** `-Apply`, y un escritor de
+  reporte markdown (`Save-DeployPlan`/`Format-DeployPlanMarkdown`).
+  - `-Plan` ahora **persiste** un reporte de cambios en `.macss/plans/<cmdlet>-<target>-<ts>.md`
+    (gitignored; override con el modelo `-OutFile`, estilo `terraform plan -out`).
+  - `-Apply` ahora **muestra el mismo plan que `-Plan`** (mismo sondeo del servidor) antes de
+    confirmar, cumpliendo por fin el ADR 0002 §"Confirmation flow" paso 1 ("reuse the -Plan
+    rendering"). `-Apply` **no** escribe reporte.
+  - Recompute en vivo (no plan bloqueado): el reporte es un snapshot; un `-PlanFile` bloqueado
+    queda diferido.
+
+### Changed
+- **`Publish-FlutterWeb` migrado como referencia** al nuevo modelo. Su `-Apply` deja de confirmar
+  a ciegas: enseña versión `current`, si la release existe y el estado de nginx, igual que `-Plan`.
+  Builder `Private/FlutterWebPlan.ps1` (`Get-FlutterWebPlan`, sondeo read-only) compartido por
+  ambas ramas. Tests unitarios nuevos (`test/DeployPlan.Tests.ps1`, 19 casos).
+
+### Notes
+- Rollout pendiente a `Publish-NodeApi`, `Publish-DockerStack`, `Invoke-SqlPackage`,
+  `Invoke-PgSchema` (mismo patrón; requieren validación con tests de contenedor).
+
 ## [5.7.1] - 2026-07-23
 
 ### Fixed
