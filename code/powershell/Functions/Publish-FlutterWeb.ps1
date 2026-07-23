@@ -149,6 +149,8 @@ function Publish-FlutterWeb {
                 # ─── 1. Cargar helpers ───────────────────────
                 . "$PSScriptRoot/../Private/PublishHelpers.ps1"
                 . "$PSScriptRoot/../Private/Read-SSHConfig.ps1"
+                . "$PSScriptRoot/../Private/DeployPlan.ps1"
+                . "$PSScriptRoot/../Private/FlutterWebPlan.ps1"
 
                 # ─── 0. Validaciones ─────────────────────────
                 $pubspecPath = Join-Path $cwd "pubspec.yaml"
@@ -188,18 +190,6 @@ function Publish-FlutterWeb {
                     throw "No se encontró 'port:' en publish.yaml."
                 }
 
-                Write-Host "  Proyecto:   $appName" -ForegroundColor Cyan
-                Write-Host "  Versión:    $release" -ForegroundColor Cyan
-                Write-Host "  Servidor:   $server" -ForegroundColor Cyan
-                Write-Host "  Puerto:     $port" -ForegroundColor Cyan
-                Write-Host ""
-
-                # ─── Confirmation (ADR 0002): the summary above is the plan; confirm before applying. ───
-                if (-not (Confirm-MacssChange -Action "Deploy $appName $release to '$server' (port $port)" -AutoApprove:$AutoApprove)) {
-                    Write-Host "  Apply cancelled." -ForegroundColor Yellow
-                    return
-                }
-
                 # ─── 4. SSH Config ───────────────────────────
                 $sshConfig = Read-SSHConfig -HostAlias $server
                 $user = $sshConfig.User
@@ -209,6 +199,19 @@ function Publish-FlutterWeb {
 
                 # ─── Constantes remotas ──────────────────────
                 $remoteWebRoot = "/var/www"
+
+                # ─── Plan (ADR 0009): -Apply renders the SAME plan as -Plan before confirming
+                #     (ADR 0002 §"Confirmation flow" step 1). No report file is written on -Apply. ───
+                $plan = Get-FlutterWebPlan -AppName $appName -Release $release `
+                    -Server $server -User $user -IP $ip -SshPort $sshPort `
+                    -PrivateKeyPath $privateKeyPath -Port $port -RemoteWebRoot $remoteWebRoot
+                Show-DeployPlan -Plan $plan
+
+                # ─── Confirmation (ADR 0002) ─────────────────
+                if (-not (Confirm-MacssChange -Action "Deploy $appName $release to '$server' (port $port)" -AutoApprove:$AutoApprove)) {
+                    Write-Host "  Apply cancelled." -ForegroundColor Yellow
+                    return
+                }
                 $zipFileName = "${appName}_web_${release}.zip"
                 $remoteZipPath = "/tmp/$zipFileName"
 
@@ -331,6 +334,8 @@ fi
                 # ─── 1. Cargar helpers ───────────────────────
                 . "$PSScriptRoot/../Private/PublishHelpers.ps1"
                 . "$PSScriptRoot/../Private/Read-SSHConfig.ps1"
+                . "$PSScriptRoot/../Private/DeployPlan.ps1"
+                . "$PSScriptRoot/../Private/FlutterWebPlan.ps1"
 
                 # ─── 0. Validaciones ─────────────────────────
                 $pubspecPath = Join-Path $cwd "pubspec.yaml"
@@ -378,106 +383,16 @@ fi
                 $remoteWebRoot = "/var/www"
 
                 Write-Host "  Modo: SOLO REPORTE (no se realizarán cambios)" -ForegroundColor Yellow
-                Write-Host ""
-                Write-Host "  ─── Configuración local ───" -ForegroundColor Cyan
-                Write-Host "  Proyecto:   $appName" -ForegroundColor White
-                Write-Host "  Versión:    $release" -ForegroundColor White
-                Write-Host "  Servidor:   $server ($ip)" -ForegroundColor White
-                Write-Host "  Puerto:     $port" -ForegroundColor White
-                Write-Host ""
 
-                # ─── 5. Consultar estado del servidor ────────
-                Write-Host "  ─── Estado del servidor ───" -ForegroundColor Cyan
+                # ─── 5. Construir y mostrar el plan (compartido con -Apply, ADR 0009) ───
+                $plan = Get-FlutterWebPlan -AppName $appName -Release $release `
+                    -Server $server -User $user -IP $ip -SshPort $sshPort `
+                    -PrivateKeyPath $privateKeyPath -Port $port -RemoteWebRoot $remoteWebRoot
+                Show-DeployPlan -Plan $plan
 
-                $reportScript = @"
-#!/bin/bash
-# Versión actual (symlink current)
-if [ -L "$remoteWebRoot/$appName/current" ]; then
-    CURRENT=`$(readlink "$remoteWebRoot/$appName/current" | xargs basename)
-    echo "CURRENT:`$CURRENT"
-else
-    echo "CURRENT:none"
-fi
-
-# Release destino ya existe?
-if [ -d "$remoteWebRoot/$appName/releases/$release" ]; then
-    echo "RELEASE:exists"
-else
-    echo "RELEASE:new"
-fi
-
-# Nginx config
-if [ -f "/etc/nginx/sites-available/$appName" ]; then
-    echo "NGINX:exists"
-else
-    # Verificar puerto libre
-    if ss -tlnH sport = :$port | grep -q .; then
-        echo "NGINX:port-in-use"
-    else
-        echo "NGINX:will-create"
-    fi
-fi
-"@
-
-                # Ejecutar script remoto y capturar salida (sin Invoke-RemoteScript,
-                # necesitamos parsear stdout)
-                $tmpLocal = New-UnixTempFile -Content $reportScript -Prefix "psdevops_report_flutterweb_"
-                try {
-                    $remoteName = [IO.Path]::GetFileName($tmpLocal)
-                    $remotePath = "/tmp/$remoteName"
-
-                    & scp -i $privateKeyPath -P $sshPort $tmpLocal "$($user)@$($ip):$remotePath" 2>&1 | Out-Null
-                    if ($LASTEXITCODE -ne 0) { throw "Error al conectar con el servidor (scp exit: $LASTEXITCODE)" }
-
-                    $remoteCmd = "bash $remotePath ; rc=`$?; rm -f $remotePath; exit `$rc"
-                    $output = & ssh -i $privateKeyPath -p $sshPort "$($user)@$($ip)" $remoteCmd 2>&1
-                } finally {
-                    Remove-Item -LiteralPath $tmpLocal -ErrorAction SilentlyContinue
-                }
-
-                # Parsear salida
-                $currentVersion = 'desconocido'
-                $releaseStatus = 'desconocido'
-                $nginxStatus = 'desconocido'
-
-                foreach ($line in $output) {
-                    if ($line -match '^CURRENT:(.+)$') { $currentVersion = $Matches[1] }
-                    if ($line -match '^RELEASE:(.+)$') { $releaseStatus = $Matches[1] }
-                    if ($line -match '^NGINX:(.+)$') { $nginxStatus = $Matches[1] }
-                }
-
-                # Mostrar estado
-                if ($currentVersion -eq 'none') {
-                    Write-Host "  Current:    (primer deploy)" -ForegroundColor Yellow
-                } else {
-                    Write-Host "  Current:    $currentVersion" -ForegroundColor White
-                }
-
-                if ($releaseStatus -eq 'exists') {
-                    Write-Host "  Release:    $release ya existe (se sobreescribirá)" -ForegroundColor Yellow
-                } else {
-                    Write-Host "  Release:    $release (nueva)" -ForegroundColor Green
-                }
-
-                if ($nginxStatus -eq 'exists') {
-                    Write-Host "  Nginx:      config existe (no se modifica)" -ForegroundColor White
-                } elseif ($nginxStatus -eq 'port-in-use') {
-                    Write-Host "  Nginx:      PUERTO $port EN USO — el deploy fallará" -ForegroundColor Red
-                } else {
-                    Write-Host "  Nginx:      se creará config en puerto $port" -ForegroundColor Green
-                }
-
-                # ─── 6. Acciones que realizará -Publish ──────
-                Write-Host ""
-                Write-Host "  ─── Acciones que realizará -Publish ───" -ForegroundColor Cyan
-                Write-Host "  1. Compilar Flutter Web (Invoke-FlutterBuild -Web)" -ForegroundColor White
-                Write-Host "  2. Comprimir artefactos en zip" -ForegroundColor White
-                Write-Host "  3. Subir zip a ${ip}:/tmp/" -ForegroundColor White
-                Write-Host "  4. Instalar en ${remoteWebRoot}/${appName}/releases/${release}/" -ForegroundColor White
-                Write-Host "  5. Actualizar symlink current → $release" -ForegroundColor White
-                if ($nginxStatus -ne 'exists') {
-                    Write-Host "  6. Crear configuración nginx en puerto $port" -ForegroundColor White
-                }
+                # ─── 6. Persistir el reporte de cambios (ADR 0009) — solo en -Plan ───
+                $reportPath = Save-DeployPlan -Plan $plan -ProjectRoot $cwd
+                Write-Host "  Reporte del plan: $reportPath" -ForegroundColor DarkGray
                 Write-Host ""
             }
         }
