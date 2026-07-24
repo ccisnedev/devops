@@ -2,3 +2,6 @@
 .dev/
 
 cleanrooms/
+# Inquiry — local workspace & cycle state
+.inquiry/
+docs/requisitions/

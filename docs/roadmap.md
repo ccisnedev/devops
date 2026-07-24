@@ -109,6 +109,33 @@ Hoja de ruta escalonada (cada etapa aporta valor por sí sola):
 	(base dir/usuario) es una fase aparte, de una sola vez; el deploy no requiere sudo. En el
 	mundo contenedor este problema se disuelve (ver ADR 0006).
 
+### Ambiente `demo` como primer disparador de contenedores (ADR 0008)
+
+El nuevo ambiente `demo` (capacitación) es el **caso de negocio concreto** que ejecuta la
+Etapa 2 (k3s) y fija el engine de la Etapa 1 en **Podman** — ver ADR 0008 de este repositorio
+(«Podman como engine y k3s como render target») y ADR 0008 del handbook («Ambiente demo:
+réplica autocontenida…»). `demo` es una réplica autocontenida del release de producción, con
+datos sintéticos, aislada de prod y reseteable por cohorte. Su elegancia operativa: la misma
+imagen se despliega con `Publish-NodeApi -Apply -Target k3s -EnvFile .env.demo`, y cuando
+producción migre a contenedores el cambio es solo `-EnvFile .env.production` — mismo `-Target`,
+mismo artefacto.
+
+- [ ] Adoptar **Podman** como engine (build / local / CI), cerrando el o-inclusivo de la Etapa 1.
+- [ ] Provisionar la VM de `demo` (Ubuntu 24.04 LTS, k3s single-node, CPU en `host-passthrough`)
+	y un **registry** de imágenes on-prem.
+- [ ] Implementar el emisor **`-Target k3s` mínimo**: build&push + render desde `publish.yaml`
+	+ `kubectl apply`, para una sola API (impulsa) como "hola mundo" del clúster.
+- [ ] Cerrar la convergencia a env-file (**issue #44**): `Publish-DockerStack` e `Invoke-PgSchema`
+	adoptan `-EnvFile` + `MACSS_DEPLOY_SERVER` → un solo mecanismo de destino en todo el toolkit.
+- [ ] Extender a los cuatro productos (micro, impulsa, pyme, tigre) + complementarias
+	imprescindibles; bases (SQL Server / Oracle) como `StatefulSet` con `PVC`.
+- [ ] **Stubs / sandbox** para las APIs con efectos reales (Sentinel → buró, LIGO → banca)
+	dentro de `demo`: contenerizarlas no las aísla; deben apuntar aguas abajo a un simulador.
+
+> Dependencia externa (no vive en este repo): el refactor de configuración por ambiente en cada
+> app/API — mover endpoints y credenciales a `.env` / `--dart-define` — es prerrequisito para que
+> "seleccionar `demo`" sea config y no edición de código.
+
 ## Hitos sugeridos
 
 ### Hito A
