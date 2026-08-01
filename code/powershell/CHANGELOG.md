@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [5.7.1] - 2026-07-23
+
+### Fixed
+- **`Install-FlutterWeb.sh`: bloque de symlink duplicado**. El paso «6. Actualizar symlink
+  current» (más un `chmod -R 755` colgante) estaba repetido literalmente al final del script,
+  ejecutando `ln -sfn` y los `echo DEPLOYED:` dos veces por deploy. Inofensivo (idempotente)
+  pero ruidoso: la salida mostraba «Release anterior» apuntando a la release recién creada y
+  un `DEPLOYED:` doble. Eliminada la repetición; el script deja el mismo estado con una sola
+  pasada. Detectado durante el despliegue limpio de `pyme` a prod (2026-07-23).
+
+### Added
+- **Test e2e de contenedor para Flutter Web** (`test/PublishFlutterWeb.e2e.container.test.sh`).
+  En un contenedor Linux limpio con nginx real (shim de `systemctl`), ejercita
+  `Install-FlutterWeb.sh` + `Configure-NginxSite.sh` juntos y prueba que el sitio **sirve** de
+  verdad: `/` → 200, `version.json`, y fallback SPA (deep-link → 200). Incluye el guard de
+  regresión del bloque duplicado (**`DEPLOYED` aparece exactamente una vez**) y la idempotencia de
+  nginx (segundo run → `NGINX:EXISTS`). Antes no había cobertura de contenedor para Flutter Web.
+
 ## [5.7.0] - 2026-07-22
 
 ### Fixed

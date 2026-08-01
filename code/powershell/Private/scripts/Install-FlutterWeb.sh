@@ -63,15 +63,3 @@ sudo ln -sfn "$RELEASE_DIR" "$CURRENT_LINK"
 
 echo "Symlink 'current' -> releases/v$VERSION"
 echo "DEPLOYED:v$VERSION"
-sudo chmod -R 755 "$RELEASE_DIR"
-
-# ─── 6. Actualizar symlink current ──────────────────────
-if [ -L "$CURRENT_LINK" ]; then
-    PREV=$(readlink -f "$CURRENT_LINK")
-    echo "Release anterior: $PREV"
-fi
-
-sudo ln -sfn "$RELEASE_DIR" "$CURRENT_LINK"
-
-echo "Symlink 'current' -> releases/v$VERSION"
-echo "DEPLOYED:v$VERSION"
