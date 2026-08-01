@@ -129,6 +129,93 @@ Describe "Save-DeployPlan" {
         # No debe empezar con el BOM EF BB BF
         ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) | Should -BeFalse
     }
+
+    # El nombre de archivo se deriva de -Timestamp, no de un Get-Date propio: si no, una llamada
+    # "determinista" seguía generando un nombre distinto en cada ejecución.
+    It "-Timestamp también fija el nombre del archivo (determinismo completo)" {
+        $a = Save-DeployPlan -Plan (New-SamplePlan) -ProjectRoot $script:root -Timestamp '2026-07-23T09:00:00Z'
+        $b = Save-DeployPlan -Plan (New-SamplePlan) -ProjectRoot $script:root -Timestamp '2026-07-23T09:00:00Z'
+        (Split-Path -Leaf $a) | Should -Be (Split-Path -Leaf $b)
+        (Split-Path -Leaf $a) | Should -Match '20260723090000\.md$'
+    }
+
+    It "un -Timestamp no parseable no rompe la escritura" {
+        { Save-DeployPlan -Plan (New-SamplePlan) -ProjectRoot $script:root -Timestamp 'no-es-fecha' } |
+            Should -Not -Throw
+    }
+
+    # El reporte lleva alias e IP del servidor: '.macss/' debe auto-ignorarse para que un
+    # proyecto consumidor no lo publique por olvidar la entrada en su .gitignore.
+    It "crea .macss/.gitignore que ignora todo el directorio" {
+        $root = Join-Path $script:root ("gi_" + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        Save-DeployPlan -Plan (New-SamplePlan) -ProjectRoot $root | Out-Null
+        $ignore = Join-Path $root '.macss/.gitignore'
+        Test-Path $ignore | Should -BeTrue
+        (Get-Content $ignore -Raw).Trim() | Should -Be '*'
+    }
+
+    It "no crea .macss cuando se usa -OutFile" {
+        $root = Join-Path $script:root ("of_" + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        Save-DeployPlan -Plan (New-SamplePlan) -ProjectRoot $root -OutFile (Join-Path $root 'p.md') | Out-Null
+        Test-Path (Join-Path $root '.macss') | Should -BeFalse
+    }
+}
+
+Describe "ConvertTo-DeployPlanCell" {
+    It "escapa el pipe para que no rompa la columna" {
+        ConvertTo-DeployPlanCell -Text 'a | b' | Should -Be 'a \| b'
+    }
+    It "colapsa saltos de línea a espacio" {
+        ConvertTo-DeployPlanCell -Text "a`nb" | Should -Be 'a b'
+        ConvertTo-DeployPlanCell -Text "a`r`nb" | Should -Be 'a b'
+    }
+    It "deja intacto un texto normal" {
+        ConvertTo-DeployPlanCell -Text 'v1.2.3 (nueva)' | Should -Be 'v1.2.3 (nueva)'
+    }
+}
+
+Describe "Format-DeployPlanMarkdown — robustez de la tabla" {
+    It "una fila con '|' sigue teniendo exactamente 2 columnas" {
+        $sections = [ordered]@{ 'S' = [ordered]@{ 'Cmd' = (New-DeployPlanRow -Text 'a | b' -Level 'info') } }
+        $plan = New-DeployPlan -Cmdlet 'X' -Target 't' -Sections $sections
+        $row = (Format-DeployPlanMarkdown -Plan $plan) -split "`n" | Where-Object { $_ -like '| Cmd *' }
+        # 2 columnas => 3 separadores sin escapar (inicio, medio, fin)
+        ([regex]::Matches($row, '(?<!\\)\|')).Count | Should -Be 3
+    }
+}
+
+Describe "Get-DeployPlanBlocker" {
+    It "devuelve las filas de nivel 'error' con su etiqueta" {
+        $blockers = @(Get-DeployPlanBlocker -Plan (New-SamplePlan))
+        $blockers.Count | Should -Be 1
+        $blockers[0] | Should -Be 'Nginx: PUERTO 4020 EN USO'
+    }
+
+    # Contrato: emite 0..N strings al stream de salida, así que el llamador envuelve en @().
+    # (Un `return ,$array` rompería justo esto: @(cmd) volvería a envolver y contaría 1.)
+    It "envuelto en @() cuenta 0 cuando no hay bloqueantes" {
+        $sections = [ordered]@{
+            'S' = [ordered]@{
+                'a' = (New-DeployPlanRow -Text 'ok' -Level 'ok')
+                'b' = (New-DeployPlanRow -Text 'cuidado' -Level 'warn')
+                'c' = 'texto plano'
+            }
+        }
+        $plan = New-DeployPlan -Cmdlet 'X' -Target 't' -Sections $sections
+        $blockers = @(Get-DeployPlanBlocker -Plan $plan)
+        $blockers.Count | Should -Be 0
+    }
+
+    It "recorre todas las secciones, no solo la primera" {
+        $sections = [ordered]@{
+            'S1' = [ordered]@{ 'a' = (New-DeployPlanRow -Text 'bien' -Level 'ok') }
+            'S2' = [ordered]@{ 'b' = (New-DeployPlanRow -Text 'mal' -Level 'error') }
+        }
+        $plan = New-DeployPlan -Cmdlet 'X' -Target 't' -Sections $sections
+        @(Get-DeployPlanBlocker -Plan $plan).Count | Should -Be 1
+    }
 }
 
 Describe "Show-DeployPlan" {

@@ -26,6 +26,11 @@ Lee publish.yaml para el servidor destino y el puerto nginx.
 Muestra las acciones que realizará -Publish sin ejecutarlas.
 Consulta el servidor para mostrar: versión actual, si la release existe, estado de nginx.
 
+.PARAMETER Force
+Despliega aunque el plan detecte problemas bloqueantes (ADR 0009). Sin este switch, -Apply
+aborta antes de compilar cuando el plan ya sabe que el deploy fallará — p. ej. el puerto de
+nginx está ocupado por otro proceso.
+
 .EXAMPLE
 Publish-FlutterWeb -Init
 
@@ -70,7 +75,11 @@ function Publish-FlutterWeb {
 
         [Parameter(ParameterSetName = 'Apply',
             HelpMessage = "Skip the confirmation prompt for unattended/CI use (ADR 0002)")]
-        [switch]$AutoApprove
+        [switch]$AutoApprove,
+
+        [Parameter(ParameterSetName = 'Apply',
+            HelpMessage = "Deploy even if the plan reports blocking problems (ADR 0009)")]
+        [switch]$Force
     )
 
     begin {
@@ -209,11 +218,26 @@ function Publish-FlutterWeb {
                     -PrivateKeyPath $privateKeyPath -Port $port -RemoteWebRoot $remoteWebRoot
                 Show-DeployPlan -Plan $deployPlan
 
+                # ─── Blockers (ADR 0009) ─────────────────────
+                #     The plan already knows this apply will fail (e.g. the nginx port is taken).
+                #     Stop before building and uploading toward a late failure — under
+                #     -AutoApprove nobody is reading the red row. -Force overrides.
+                $blockers = @(Get-DeployPlanBlocker -Plan $deployPlan)
+                if ($blockers.Count -gt 0) {
+                    if (-not $Force) {
+                        throw ("El plan reporta $($blockers.Count) problema(s) que harán fallar el deploy:`n" +
+                            "  - " + ($blockers -join "`n  - ") + "`n" +
+                            "Corrija el problema o repita con -Force para desplegar de todos modos.")
+                    }
+                    Write-Warning "Continuando pese a $($blockers.Count) problema(s) del plan (-Force)."
+                }
+
                 # ─── Confirmation (ADR 0002) ─────────────────
                 if (-not (Confirm-MacssChange -Action "Deploy $appName $release to '$server' (port $port)" -AutoApprove:$AutoApprove)) {
                     Write-Host "  Apply cancelled." -ForegroundColor Yellow
                     return
                 }
+
                 $zipFileName = "${appName}_web_${release}.zip"
                 $remoteZipPath = "/tmp/$zipFileName"
 
