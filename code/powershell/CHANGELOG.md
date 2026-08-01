@@ -18,16 +18,35 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
     rendering"). `-Apply` **no** escribe reporte.
   - Recompute en vivo (no plan bloqueado): el reporte es un snapshot; un `-PlanFile` bloqueado
     queda diferido.
+- **`-Apply` aborta ante bloqueantes del plan**. Una fila de severidad `error` significa que el
+  deploy ya se sabe fallido (hoy: el puerto de nginx ocupado por otro proceso). Antes solo se
+  pintaba en rojo y el deploy seguía: bajo `-AutoApprove` nadie lee la pantalla, así que se
+  compilaba y subía el artefacto para fallar al final. Ahora `Get-DeployPlanBlocker` los extrae y
+  `-Apply` falla limpio **antes** de confirmar y compilar, nombrando cada bloqueante; **`-Force`**
+  es el escape explícito. Misma lección que el guard de puerto de pm2 (5.7.0).
+- **Test de contenedor del plan** (`test/PublishFlutterWebPlan.container.test.ps1`, ADR 0009
+  REQ-5). Contra un sshd real en contenedor, ejercita el sondeo en tres escenarios —greenfield,
+  release+nginx existentes, y puerto ocupado por un proceso real— y comprueba filas, severidades,
+  número de acciones, el reporte escrito y el bloqueante detectado de punta a punta.
 
 ### Changed
 - **`Publish-FlutterWeb` migrado como referencia** al nuevo modelo. Su `-Apply` deja de confirmar
   a ciegas: enseña versión `current`, si la release existe y el estado de nginx, igual que `-Plan`.
-  Builder `Private/FlutterWebPlan.ps1` (`Get-FlutterWebPlan`, sondeo read-only) compartido por
-  ambas ramas. Tests unitarios nuevos (`test/DeployPlan.Tests.ps1`, 19 casos).
+  Builder `Private/FlutterWebPlan.ps1` compartido por ambas ramas, partido en `Invoke-FlutterWebProbe`
+  (I/O por SSH) y `ConvertTo-FlutterWebPlan` (puro), de modo que la asignación de severidad —la que
+  decide si un deploy se bloquea— se testea sin servidor.
+- **`Save-DeployPlan` crea `.macss/.gitignore` con `*`** (patrón `.terraform/`). El reporte lleva
+  alias e IP del servidor; antes dependía de que cada proyecto consumidor recordara ignorarlo.
+- **`-Timestamp` fija también el nombre del archivo** del reporte, no solo su cuerpo: antes una
+  llamada "determinista" seguía generando un nombre distinto en cada ejecución.
+- **El reporte markdown escapa `|` y saltos de línea** en las celdas. Irrelevante para Flutter Web,
+  necesario antes del rollout a cmdlets cuyos valores son menos dóciles (nombres de objetos SQL).
 
 ### Notes
 - Rollout pendiente a `Publish-NodeApi`, `Publish-DockerStack`, `Invoke-SqlPackage`,
   `Invoke-PgSchema` (mismo patrón; requieren validación con tests de contenedor).
+- `-Apply` ahora abre una conexión SSH **antes** de pedir confirmación (el sondeo alimenta el plan
+  que se muestra). Es read-only, pero un `-Apply` cancelado ya habrá contactado al servidor.
 
 ## [5.7.1] - 2026-07-23
 

@@ -2,20 +2,27 @@
 # Builds the Publish-FlutterWeb deploy plan (local config + live server state + actions) as a
 # common plan object (DeployPlan.ps1). Shared by -Plan and -Apply so both render the same plan
 # (ADR 0002 §"Confirmation flow" step 1, ADR 0009). The remote probe is read-only.
+#
+# Split in three so the decision logic is testable without a server:
+#   Invoke-FlutterWebProbe   — I/O only: SSH to the server, return the three raw states.
+#   ConvertTo-FlutterWebPlan — pure: raw states + local config -> plan object (severities/actions).
+#   Get-FlutterWebPlan       — composition of the two; what the cmdlet calls.
 
-function Get-FlutterWebPlan {
+function Invoke-FlutterWebProbe {
     <#
     .SYNOPSIS
-        Probes the server and returns the Publish-FlutterWeb plan object.
+        Read-only remote probe. Returns the raw server states as an object.
     .DESCRIPTION
-        Read-only: queries the `current` symlink, whether the target release already exists,
-        and the nginx site status (exists / port-in-use / will-create). Never mutates.
+        Queries the `current` symlink, whether the target release directory already exists, and
+        the nginx site status (exists / port-in-use / will-create). Never mutates the server.
+        Unparseable output leaves a field as 'desconocido' rather than guessing.
+    .OUTPUTS
+        [pscustomobject] with Current, Release and Nginx (all strings).
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$AppName,
         [Parameter(Mandatory)][string]$Release,
-        [Parameter(Mandatory)][string]$Server,
         [Parameter(Mandatory)][string]$User,
         [Parameter(Mandatory)][string]$IP,
         [Parameter(Mandatory)][int]$SshPort,
@@ -24,7 +31,6 @@ function Get-FlutterWebPlan {
         [Parameter(Mandatory)][string]$RemoteWebRoot
     )
 
-    # ─── Remote probe (read-only) ────────────────────────
     $reportScript = @"
 #!/bin/bash
 # Versión actual (symlink current)
@@ -54,10 +60,6 @@ else
 fi
 "@
 
-    $currentVersion = 'desconocido'
-    $releaseStatus = 'desconocido'
-    $nginxStatus = 'desconocido'
-
     $tmpLocal = New-UnixTempFile -Content $reportScript -Prefix "psdevops_report_flutterweb_"
     try {
         $remoteName = [IO.Path]::GetFileName($tmpLocal)
@@ -73,31 +75,60 @@ fi
         Remove-Item -LiteralPath $tmpLocal -ErrorAction SilentlyContinue
     }
 
-    foreach ($line in $output) {
-        if ($line -match '^CURRENT:(.+)$') { $currentVersion = $Matches[1] }
-        if ($line -match '^RELEASE:(.+)$') { $releaseStatus = $Matches[1] }
-        if ($line -match '^NGINX:(.+)$') { $nginxStatus = $Matches[1] }
+    $probe = [pscustomobject]@{
+        Current = 'desconocido'
+        Release = 'desconocido'
+        Nginx   = 'desconocido'
     }
+    foreach ($line in $output) {
+        if ($line -match '^CURRENT:(.+)$') { $probe.Current = $Matches[1] }
+        if ($line -match '^RELEASE:(.+)$') { $probe.Release = $Matches[1] }
+        if ($line -match '^NGINX:(.+)$') { $probe.Nginx = $Matches[1] }
+    }
+    return $probe
+}
+
+function ConvertTo-FlutterWebPlan {
+    <#
+    .SYNOPSIS
+        Pure: turns the raw probe states plus local config into the common plan object.
+    .DESCRIPTION
+        No I/O — this is where severity is decided, so it is unit-testable without a server.
+        'port-in-use' is the only 'error' level: it means the apply is known to fail, which
+        Get-DeployPlanBlocker turns into a hard stop in -Apply.
+    .PARAMETER Probe
+        Object from Invoke-FlutterWebProbe (Current/Release/Nginx).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Probe,
+        [Parameter(Mandatory)][string]$AppName,
+        [Parameter(Mandatory)][string]$Release,
+        [Parameter(Mandatory)][string]$Server,
+        [Parameter(Mandatory)][string]$IP,
+        [Parameter(Mandatory)]$Port,
+        [Parameter(Mandatory)][string]$RemoteWebRoot
+    )
 
     # ─── Server-state rows (with severity levels) ────────
-    if ($currentVersion -eq 'none') {
+    if ($Probe.Current -eq 'none') {
         $currentRow = New-DeployPlanRow -Text '(primer deploy)' -Level 'warn'
     }
     else {
-        $currentRow = New-DeployPlanRow -Text $currentVersion -Level 'info'
+        $currentRow = New-DeployPlanRow -Text $Probe.Current -Level 'info'
     }
 
-    if ($releaseStatus -eq 'exists') {
+    if ($Probe.Release -eq 'exists') {
         $releaseRow = New-DeployPlanRow -Text "$Release ya existe (se sobreescribirá)" -Level 'warn'
     }
     else {
         $releaseRow = New-DeployPlanRow -Text "$Release (nueva)" -Level 'ok'
     }
 
-    if ($nginxStatus -eq 'exists') {
+    if ($Probe.Nginx -eq 'exists') {
         $nginxRow = New-DeployPlanRow -Text 'config existe (no se modifica)' -Level 'info'
     }
-    elseif ($nginxStatus -eq 'port-in-use') {
+    elseif ($Probe.Nginx -eq 'port-in-use') {
         $nginxRow = New-DeployPlanRow -Text "PUERTO $Port EN USO — el deploy fallará" -Level 'error'
     }
     else {
@@ -112,7 +143,7 @@ fi
         "Instalar en ${RemoteWebRoot}/${AppName}/releases/${Release}/",
         "Actualizar symlink current → $Release"
     )
-    if ($nginxStatus -ne 'exists') {
+    if ($Probe.Nginx -ne 'exists') {
         $actions += "Crear configuración nginx en puerto $Port"
     }
 
@@ -132,4 +163,32 @@ fi
 
     return New-DeployPlan -Cmdlet 'Publish-FlutterWeb' -Target "$Server ($IP)" `
         -Sections $sections -Actions $actions
+}
+
+function Get-FlutterWebPlan {
+    <#
+    .SYNOPSIS
+        Probes the server and returns the Publish-FlutterWeb plan object.
+    .DESCRIPTION
+        Composition of Invoke-FlutterWebProbe (I/O) and ConvertTo-FlutterWebPlan (pure).
+        Called by BOTH -Plan and -Apply so the two render the same plan by construction.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$AppName,
+        [Parameter(Mandatory)][string]$Release,
+        [Parameter(Mandatory)][string]$Server,
+        [Parameter(Mandatory)][string]$User,
+        [Parameter(Mandatory)][string]$IP,
+        [Parameter(Mandatory)][int]$SshPort,
+        [Parameter(Mandatory)][string]$PrivateKeyPath,
+        [Parameter(Mandatory)]$Port,
+        [Parameter(Mandatory)][string]$RemoteWebRoot
+    )
+
+    $probe = Invoke-FlutterWebProbe -AppName $AppName -Release $Release -User $User -IP $IP `
+        -SshPort $SshPort -PrivateKeyPath $PrivateKeyPath -Port $Port -RemoteWebRoot $RemoteWebRoot
+
+    return ConvertTo-FlutterWebPlan -Probe $probe -AppName $AppName -Release $Release `
+        -Server $Server -IP $IP -Port $Port -RemoteWebRoot $RemoteWebRoot
 }

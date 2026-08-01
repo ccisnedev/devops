@@ -121,6 +121,49 @@ function Show-DeployPlan {
     Write-Host ""
 }
 
+function Get-DeployPlanBlocker {
+    <#
+    .SYNOPSIS
+        Returns the 'error'-level rows of a plan as "Label: Text" strings; empty array if none.
+    .DESCRIPTION
+        An 'error' row means the plan already knows the apply will fail (e.g. the nginx port is
+        taken). -Apply uses this to stop BEFORE doing expensive work instead of building and
+        uploading toward a late failure — with -AutoApprove nobody is reading the red line.
+
+        Emits the blockers to the output stream (0..N strings), so callers MUST wrap the call
+        in @() to count them: a single blocker arrives as a scalar and none as $null.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param([Parameter(Mandatory)]$Plan)
+
+    $blockers = New-Object System.Collections.Generic.List[string]
+    foreach ($sectionName in $Plan.Sections.Keys) {
+        $rows = $Plan.Sections[$sectionName]
+        foreach ($label in $rows.Keys) {
+            $row = ConvertTo-DeployPlanRow $rows[$label]
+            if ($row.Level -eq 'error') { $blockers.Add("$($label): $($row.Text)") }
+        }
+    }
+    return $blockers.ToArray()
+}
+
+function ConvertTo-DeployPlanCell {
+    <#
+    .SYNOPSIS
+        Escapes a value so it cannot break out of a markdown table cell.
+    .DESCRIPTION
+        A raw '|' would be read as a column separator (turning a 2-column row into 3+), and a
+        newline would end the row. Matters for cmdlets whose plan values are less tame than
+        Flutter Web's (SQL object names, connection strings) as ADR 0009 rolls out.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Text)
+
+    return (($Text -replace '\|', '\|') -replace '\r?\n', ' ')
+}
+
 function Format-DeployPlanMarkdown {
     <#
     .SYNOPSIS
@@ -151,7 +194,8 @@ function Format-DeployPlanMarkdown {
         foreach ($label in $rows.Keys) {
             $row = ConvertTo-DeployPlanRow $rows[$label]
             $marker = $script:DeployPlanMarkers[$row.Level]
-            $lines.Add("| $label | $marker$($row.Text) |")
+            $cell = ConvertTo-DeployPlanCell -Text "$marker$($row.Text)"
+            $lines.Add("| $(ConvertTo-DeployPlanCell -Text $label) | $cell |")
         }
         $lines.Add('')
     }
@@ -181,7 +225,8 @@ function Save-DeployPlan {
     .PARAMETER OutFile
         Full path override for the report file.
     .PARAMETER Timestamp
-        Optional ISO-8601 stamp injected into the report body (tests pass a fixed value).
+        Optional ISO-8601 stamp injected into the report body (tests pass a fixed value). It also
+        drives the generated file name, so injecting it makes the whole call deterministic.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -192,8 +237,24 @@ function Save-DeployPlan {
         [string]$Timestamp = ''
     )
 
-    if (-not $Timestamp) { $Timestamp = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ssK') }
-    $stamp = (Get-Date).ToString('yyyyMMddHHmmss')
+    # The file name stamp is derived from $Timestamp (not a second Get-Date) so that an injected
+    # timestamp pins the name too; otherwise a "deterministic" call still produced a random name.
+    if ($Timestamp) {
+        try {
+            $stampSource = [datetime]::Parse(
+                $Timestamp,
+                [Globalization.CultureInfo]::InvariantCulture,
+                [Globalization.DateTimeStyles]::RoundtripKind)
+        }
+        catch { $stampSource = Get-Date }
+    }
+    else {
+        $stampSource = Get-Date
+        $Timestamp = $stampSource.ToString('yyyy-MM-ddTHH:mm:ssK')
+    }
+    $stamp = $stampSource.ToString('yyyyMMddHHmmss')
+
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
     if ($OutFile) {
         $path = $OutFile
@@ -203,6 +264,16 @@ function Save-DeployPlan {
         $safeTarget = ($Plan.Target -replace '[^\w.-]', '_')
         $fileName = "$safeCmdlet-$safeTarget-$stamp.md"
         $path = Join-Path (Join-Path $ProjectRoot '.macss/plans') $fileName
+
+        # The report embeds the target alias and IP. Make '.macss/' self-ignoring (the
+        # '.terraform/' pattern) so a consumer project cannot leak it by forgetting a
+        # .gitignore entry — ADR 0009 asked consumers to add one by hand.
+        $macssRoot = Join-Path $ProjectRoot '.macss'
+        $macssIgnore = Join-Path $macssRoot '.gitignore'
+        if (-not (Test-Path $macssIgnore)) {
+            New-Item -ItemType Directory -Path $macssRoot -Force | Out-Null
+            [System.IO.File]::WriteAllText($macssIgnore, "*`n", $utf8NoBom)
+        }
     }
 
     $dir = Split-Path -Parent $path
@@ -211,7 +282,6 @@ function Save-DeployPlan {
     }
 
     $markdown = Format-DeployPlanMarkdown -Plan $Plan -Timestamp $Timestamp
-    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($path, $markdown, $utf8NoBom)
     return $path
 }
