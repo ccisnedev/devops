@@ -733,3 +733,97 @@ Describe 'Step 9: Publish-FlutterWeb -DeployReport' {
         }
     }
 }
+
+# ═══════════════════════════════════════════════════════════════
+# STEP 10: Paridad -Plan / -Apply (ADR 0009)
+# ═══════════════════════════════════════════════════════════════
+# El ADR 0002 §"Confirmation flow" paso 1 ya mandaba reutilizar el render de -Plan en -Apply,
+# y se incumplió en silencio durante versiones. Estos guards son estructurales: fallan si
+# alguien vuelve a darle a -Apply un render propio, sin necesidad de un servidor.
+Describe 'Step 10: paridad -Plan/-Apply (ADR 0009)' {
+
+    BeforeAll {
+        $src = Get-Content "$PSScriptRoot/../Functions/Publish-FlutterWeb.ps1" -Raw
+        # Trocea el switch en sus ramas para poder afirmar sobre cada una por separado.
+        $applyStart = $src.IndexOf("'Apply' {")
+        $planStart = $src.IndexOf("'Plan' {")
+        $applyStart | Should -BeGreaterThan 0
+        $planStart | Should -BeGreaterThan $applyStart
+        $script:applyBranch = $src.Substring($applyStart, $planStart - $applyStart)
+        $script:planBranch = $src.Substring($planStart)
+    }
+
+    Context 'Ambas ramas construyen y muestran el MISMO plan' {
+
+        It '-Apply usa el builder compartido Get-FlutterWebPlan' {
+            $script:applyBranch | Should -Match 'Get-FlutterWebPlan'
+        }
+
+        It '-Plan usa el builder compartido Get-FlutterWebPlan' {
+            $script:planBranch | Should -Match 'Get-FlutterWebPlan'
+        }
+
+        It '-Apply renderiza con Show-DeployPlan (no con Write-Host propio)' {
+            $script:applyBranch | Should -Match 'Show-DeployPlan'
+        }
+
+        It '-Plan renderiza con Show-DeployPlan' {
+            $script:planBranch | Should -Match 'Show-DeployPlan'
+        }
+
+        # El sondeo del servidor vive en el builder: si una rama volviera a incrustar el
+        # script bash de reporte, sería una copia divergente del estado que muestra la otra.
+        It 'ninguna rama reimplementa el sondeo remoto (CURRENT:/RELEASE:/NGINX:)' {
+            $script:applyBranch | Should -Not -Match 'CURRENT:'
+            $script:planBranch | Should -Not -Match 'CURRENT:'
+        }
+    }
+
+    Context 'Solo -Plan persiste el artefacto' {
+
+        It '-Plan escribe el reporte con Save-DeployPlan' {
+            $script:planBranch | Should -Match 'Save-DeployPlan'
+        }
+
+        It '-Apply NO escribe reporte (es una acción, no un dry-run archivable)' {
+            $script:applyBranch | Should -Not -Match 'Save-DeployPlan'
+        }
+    }
+
+    Context 'Guard de bloqueantes en -Apply' {
+
+        It '-Apply consulta Get-DeployPlanBlocker' {
+            $script:applyBranch | Should -Match 'Get-DeployPlanBlocker'
+        }
+
+        # Debe abortar ANTES de confirmar y compilar: con -AutoApprove nadie lee la fila roja.
+        It 'evalúa los bloqueantes antes de Confirm-MacssChange' {
+            $iBlocker = $script:applyBranch.IndexOf('Get-DeployPlanBlocker')
+            $iConfirm = $script:applyBranch.IndexOf('Confirm-MacssChange')
+            $iBlocker | Should -BeGreaterThan 0
+            $iConfirm | Should -BeGreaterThan $iBlocker
+        }
+
+        It '-Force es la única vía para continuar pese a un bloqueante' {
+            $script:applyBranch | Should -Match '-not \$Force'
+        }
+
+        It '-Plan no aborta por bloqueantes (solo informa)' {
+            $script:planBranch | Should -Not -Match 'Get-DeployPlanBlocker'
+        }
+    }
+
+    Context 'Parámetro -Force' {
+
+        BeforeAll { $script:cmd = Get-Command Publish-FlutterWeb }
+
+        It 'existe y pertenece al set Apply' {
+            $script:cmd.Parameters.ContainsKey('Force') | Should -BeTrue
+            $script:cmd.Parameters['Force'].ParameterSets.Keys | Should -Contain 'Apply'
+        }
+
+        It 'no está disponible en el set Plan (un dry-run no fuerza nada)' {
+            $script:cmd.Parameters['Force'].ParameterSets.Keys | Should -Not -Contain 'Plan'
+        }
+    }
+}
