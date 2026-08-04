@@ -591,6 +591,166 @@ function Resolve-DeployTarget {
 
 <#
 .SYNOPSIS
+Lanza un error de deprecación con la información necesaria para migrar (ADR 0012).
+
+.DESCRIPTION
+Una deprecación falla; no avisa y continúa. Un aviso que sigue funcionando perpetúa la deuda,
+porque nadie migra lo que no le impide trabajar, y acaba leyéndose como ruido de fondo.
+
+Este helper es la única vía de producir ese error, para que ningún mensaje quede a criterio de
+quien escribe el `throw`. El mensaje debe bastar para migrar sin abrir la documentación: qué se
+usó, desde cuándo está retirado, qué usar en su lugar y dónde corregirlo.
+
+.PARAMETER Cmdlet
+Nombre del cmdlet que rechaza el uso. Va primero para que el error diga de dónde salió.
+
+.PARAMETER What
+El elemento deprecado, tal como el usuario lo escribió ('-Publish', 'MACSS_DEPLOY_SERVER').
+
+.PARAMETER UseInstead
+El reemplazo exacto.
+
+.PARAMETER Since
+Versión en la que se retiró.
+
+.PARAMETER Where
+Archivo donde hay que hacer la corrección. Opcional.
+
+.PARAMETER Detail
+Una línea extra de contexto. Opcional.
+
+.PARAMETER Reference
+ADR u origen de la decisión. Opcional.
+
+.EXAMPLE
+Deny-DeprecatedUsage -Cmdlet 'Publish-NodeApi' -What 'MACSS_DEPLOY_SERVER' `
+    -UseInstead 'MACSS_DEPLOY_SSH_ALIAS' -Since '6.0.0' -Where '.env.production' -Reference 'ADR 0010'
+#>
+function Deny-DeprecatedUsage {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Cmdlet,
+
+        [Parameter(Mandatory = $true)]
+        [string]$What,
+
+        [Parameter(Mandatory = $true)]
+        [string]$UseInstead,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Since,
+
+        [Parameter()]
+        [string]$Where,
+
+        [Parameter()]
+        [string]$Detail,
+
+        [Parameter()]
+        [string]$Reference
+    )
+
+    $lines = @("${Cmdlet}: '$What' se retiró en $Since.")
+    if ($Where) {
+        $lines += "  Use '$UseInstead' en su lugar, en '$Where'."
+    } else {
+        $lines += "  Use '$UseInstead' en su lugar."
+    }
+    if ($Detail)    { $lines += "  $Detail" }
+    if ($Reference) { $lines += "  Ver $Reference." }
+
+    throw ($lines -join [Environment]::NewLine)
+}
+
+<#
+.SYNOPSIS
+Resuelve el alias SSH de destino desde el env file (ADR 0004, ADR 0010).
+
+.DESCRIPTION
+Concentra el patrón que ADR 0004 fijó y que hasta 6.0.0 cada cmdlet resolvía por su cuenta: el
+destino sale de `MACSS_DEPLOY_SSH_ALIAS` en el env file gitignored elegido con `-EnvFile`, nunca
+de un archivo versionado. Un alias SSH es machine-local; versionarlo hace que el repo no sea
+portable y obliga a editar un archivo del repo para cambiar de entorno.
+
+Lo consumen los tres cmdlets cuyo destino es una máquina a la que se salta: `Publish-NodeApi`,
+`Publish-FlutterWeb` y `Publish-DockerStack`. Los de base de datos no lo usan: su destino es un
+endpoint de red, no un host al que saltar (ADR 0011).
+
+Los mecanismos deprecados **fallan**, no se aceptan (ADR 0012). Y fallan también cuando coexisten
+con la clave nueva: tener las dos es justo el estado ambiguo que hay que eliminar.
+
+.PARAMETER ProjectRoot
+Raíz del proyecto donde se busca el env file.
+
+.PARAMETER EnvFile
+Env file que selecciona el entorno. Por defecto '.env': producción siempre es explícita.
+
+.PARAMETER LegacyServer
+Valor de 'server:' leído del archivo versionado, si lo hubiera. Su sola presencia es un error;
+se recibe para poder nombrarlo en el mensaje de migración.
+
+.PARAMETER Cmdlet
+Nombre del cmdlet que llama, para que el error diga de dónde salió.
+#>
+function Resolve-DeployTargetFromEnv {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectRoot,
+
+        [Parameter()]
+        [string]$EnvFile = '.env',
+
+        [Parameter()]
+        [string]$LegacyServer,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Cmdlet
+    )
+
+    $envPath = if ([System.IO.Path]::IsPathRooted($EnvFile)) {
+        $EnvFile
+    } else {
+        Join-Path $ProjectRoot $EnvFile
+    }
+
+    $vars = @{}
+    if (Test-Path -LiteralPath $envPath) {
+        $vars = (Read-DotEnv -Path $envPath).Env
+    }
+
+    $alias  = if ($vars['MACSS_DEPLOY_SSH_ALIAS']) { "$($vars['MACSS_DEPLOY_SSH_ALIAS'])".Trim() } else { '' }
+    $legacy = if ($vars['MACSS_DEPLOY_SERVER'])    { "$($vars['MACSS_DEPLOY_SERVER'])".Trim() }    else { '' }
+
+    # Los deprecados se comprueban ANTES de resolver: si el env trae la clave nueva y ademas
+    # arrastra la vieja, el estado es ambiguo y resolverlo en silencio dejaria archivos a medio
+    # migrar sin que nadie se entere.
+    if ($legacy) {
+        Deny-DeprecatedUsage -Cmdlet $Cmdlet -What 'MACSS_DEPLOY_SERVER' `
+            -UseInstead 'MACSS_DEPLOY_SSH_ALIAS' -Since '6.0.0' -Where $EnvFile `
+            -Detail 'El valor no cambia: sigue siendo el alias de ~/.ssh/config.' `
+            -Reference 'ADR 0010'
+    }
+
+    if ($LegacyServer) {
+        Deny-DeprecatedUsage -Cmdlet $Cmdlet -What "server: en el archivo versionado" `
+            -UseInstead 'MACSS_DEPLOY_SSH_ALIAS' -Since '6.0.0' -Where $EnvFile `
+            -Detail "Mueva el valor '$LegacyServer' al env file y borre la clave 'server' del archivo versionado." `
+            -Reference 'ADR 0010'
+    }
+
+    if (-not $alias) {
+        throw "${Cmdlet}: no hay destino de despliegue. Falta 'MACSS_DEPLOY_SSH_ALIAS' en '$EnvFile'. " +
+              "Agregue 'MACSS_DEPLOY_SSH_ALIAS=<alias de ~/.ssh/config>' a ese archivo."
+    }
+
+    return $alias
+}
+
+<#
+.SYNOPSIS
 Quita del contenido del env las claves deploy-time (MACSS_DEPLOY_*) antes de subirlo (ADR 0004).
 
 .DESCRIPTION
