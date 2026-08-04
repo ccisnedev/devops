@@ -6,10 +6,11 @@
 # ADR 0002, se imprimía decenas de veces al correr los tests. Un mensaje que aparece siempre deja
 # de leerse.
 #
-# Detalle contraintuitivo que estos tests fijan: los alias de parámetro `-Publish`/`-DeployReport`
-# **se conservan** en 6.0.0. Borrarlos haría que PowerShell responda "A parameter cannot be found",
-# que no dice qué usar en su lugar. Se conservan precisamente para poder fallar bien, y se retiran
-# en 6.1.0.
+# La regla es por evidencia, no por calendario: se busca el uso real antes de decidir. Si quedan
+# llamadores, se falla con instrucciones y el borrado espera (`deploy.yaml`, `MACSS_DEPLOY_SERVER`).
+# Si no quedan, se borra: mantener andamiaje para explicarle algo a nadie es la misma deuda con otro
+# disfraz. Los alias `-Publish`/`-DeployReport` y `Publish-FlutterWebLegacy` cayeron del segundo
+# lado, tras migrar sus cuatro llamadores reales.
 #
 # Cubre REQ-1 a REQ-6 de ADR 0012.
 
@@ -53,45 +54,40 @@ Describe "REQ-1: el mensaje de deprecación lo produce un solo helper" {
     }
 }
 
-Describe "REQ-3: los alias se conservan en 6.0.0 para que el fallo sea instructivo" {
+Describe "REQ-2: los alias sin llamadores se borran" {
 
-    # Sin el alias, PowerShell responde "A parameter cannot be found that matches parameter name
-    # 'Publish'", que no dice que hay que usar -Apply. El alias sobrevive hasta 6.1.0.
-    It "<Cmdlet> conserva -DeployReport como alias de -Plan" -ForEach @(
+    # No se conservan "para poder fallar bien": no queda nadie a quien explicarle nada. Los cuatro
+    # llamadores reales --tres plantillas de organizacion y el workflow de retiro-- se migraron a
+    # -Apply -AutoApprove antes de tocar el modulo. Un quinto sitio aparente resulto ser un repo
+    # archivado, que no ejecuta workflows.
+    It "<Cmdlet> ya no declara -DeployReport" -ForEach @(
         @{ Cmdlet = 'Publish-NodeApi' }
         @{ Cmdlet = 'Publish-FlutterWeb' }
         @{ Cmdlet = 'Invoke-SqlPackage' }
     ) {
-        (Get-Command $Cmdlet).Parameters['Plan'].Aliases | Should -Contain 'DeployReport'
+        (Get-Command $Cmdlet).Parameters['Plan'].Aliases | Should -Not -Contain 'DeployReport'
     }
 
-    It "<Cmdlet> conserva -Publish como alias de -Apply" -ForEach @(
+    It "<Cmdlet> ya no declara -Publish" -ForEach @(
         @{ Cmdlet = 'Publish-NodeApi' }
         @{ Cmdlet = 'Publish-FlutterWeb' }
         @{ Cmdlet = 'Invoke-SqlPackage' }
     ) {
-        (Get-Command $Cmdlet).Parameters['Apply'].Aliases | Should -Contain 'Publish'
+        (Get-Command $Cmdlet).Parameters['Apply'].Aliases | Should -Not -Contain 'Publish'
     }
 }
 
-Describe "REQ-2: -Publish y -DeployReport lanzan en lugar de avisar" {
+Describe "REQ-3: borrar el alias no altera la taxonomia de ADR 0002" {
 
-    It "Publish-FlutterWeb -Publish falla nombrando -Apply" {
-        $root = New-FlutterProject
-        Push-Location $root
-        try {
-            $msg = Get-ThrownMessage { Publish-FlutterWeb -Publish -AutoApprove }
-            $msg | Should -Match '\-Apply'
-        } finally { Pop-Location }
-    }
-
-    It "Publish-FlutterWeb -DeployReport falla nombrando -Plan" {
-        $root = New-FlutterProject
-        Push-Location $root
-        try {
-            $msg = Get-ThrownMessage { Publish-FlutterWeb -DeployReport }
-            $msg | Should -Match '\-Plan'
-        } finally { Pop-Location }
+    It "<Cmdlet> conserva -Plan, -Apply y -AutoApprove" -ForEach @(
+        @{ Cmdlet = 'Publish-NodeApi' }
+        @{ Cmdlet = 'Publish-FlutterWeb' }
+        @{ Cmdlet = 'Invoke-SqlPackage' }
+    ) {
+        $keys = (Get-Command $Cmdlet).Parameters.Keys
+        $keys | Should -Contain 'Plan'
+        $keys | Should -Contain 'Apply'
+        $keys | Should -Contain 'AutoApprove'
     }
 }
 
@@ -116,12 +112,20 @@ Describe "REQ-4: deploy.yaml deja de ser un fallback y pasa a fallar" {
     }
 }
 
-Describe "REQ-5: Publish-FlutterWebLegacy lanza al invocarse" {
+Describe "REQ-5: Publish-FlutterWebLegacy ya no existe" {
 
-    # En 6.0.0 la función existe únicamente para fallar con instrucciones. Se borra en 6.1.0.
-    It "falla nombrando Publish-FlutterWeb" {
-        $msg = Get-ThrownMessage { Publish-FlutterWebLegacy -server 'alias-inexistente-xyz' }
-        $msg | Should -Match 'Publish-FlutterWeb'
+    # Cero usos en toda la organizacion, asi que se borra sin fase intermedia.
+    It "no esta disponible como comando" {
+        Get-Command Publish-FlutterWebLegacy -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
+    }
+
+    It "no figura en el manifiesto" {
+        $m = Import-PowerShellDataFile (Join-Path $PSScriptRoot '..\macss-devops.psd1')
+        $m.FunctionsToExport | Should -Not -Contain 'Publish-FlutterWebLegacy'
+    }
+
+    It "su archivo fuente fue eliminado" {
+        Join-Path $PSScriptRoot '..\Functions\Publish-FlutterWebLegacy.ps1' | Should -Not -Exist
     }
 }
 

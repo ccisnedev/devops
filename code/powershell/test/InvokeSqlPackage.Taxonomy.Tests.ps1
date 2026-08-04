@@ -13,14 +13,15 @@ Describe "Invoke-SqlPackage taxonomy (ADR 0002)" {
     It "exposes -Apply" { $script:cmd.Parameters.ContainsKey('Apply') | Should -BeTrue }
     It "exposes -AutoApprove" { $script:cmd.Parameters.ContainsKey('AutoApprove') | Should -BeTrue }
 
-    # ADR 0012: los alias se CONSERVAN en 6.0.0 aunque su uso ya lance. Sin el alias,
-    # PowerShell responde "A parameter cannot be found that matches parameter name 'Publish'",
-    # que no dice a que migrar. Se conservan para poder fallar bien; se retiran en 6.1.0.
-    It "keeps -DeployReport declared so the failure can name -Plan" {
-        $script:cmd.Parameters['Plan'].Aliases | Should -Contain 'DeployReport'
+    # ADR 0012: los alias se RETIRAN en 6.0.0. La busqueda de uso real encontro cuatro
+    # llamadores --tres plantillas de organizacion y el workflow de retiro-- y se migraron a
+    # -Apply -AutoApprove antes de tocar el modulo. Sin llamadores, conservarlos no explica
+    # nada a nadie.
+    It "no longer declares -DeployReport" {
+        $script:cmd.Parameters['Plan'].Aliases | Should -Not -Contain 'DeployReport'
     }
-    It "keeps -Publish declared so the failure can name -Apply" {
-        $script:cmd.Parameters['Apply'].Aliases | Should -Contain 'Publish'
+    It "no longer declares -Publish" {
+        $script:cmd.Parameters['Apply'].Aliases | Should -Not -Contain 'Publish'
     }
 
     It "defaults to the Apply parameter set" {
