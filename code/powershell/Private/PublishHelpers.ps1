@@ -751,6 +751,145 @@ function Resolve-DeployTargetFromEnv {
 
 <#
 .SYNOPSIS
+Resuelve el nombre de la base SQL Server desde el `.sqlproj` (ADR 0011).
+
+.DESCRIPTION
+El nombre de la base no es *dónde* despliegas: es *qué* despliegas. Por eso vive en el archivo de
+proyecto versionado y no en el env file, que existe para expresar diferencias entre entornos. La
+medición que motivó la decisión: `DB_NAME` era idéntico en `.env` y `.env.production` en todos los
+repos de la organización — identidad duplicada, no configuración.
+
+`DB_NAME` sobrevive como **override explícito**, por las DB Tier-1 desechables (`dev_<nombre>`),
+donde el mismo dacpac se publica a una base con otro nombre. Derivar a secas eliminaría ese flujo.
+
+Dos usos de `DB_NAME` se rechazan:
+
+- **Redundante** (repite el nombre del proyecto): duplicación muerta, se pide borrarla.
+- **Difiere solo en mayúsculas**: en una collation case-insensitive da igual; en una
+  case-sensitive, no. El cmdlet no elige — adivinar sería cambiar el objetivo de un despliegue de
+  producción en silencio.
+
+.OUTPUTS
+PSCustomObject con Name (el objetivo real), ProjectName (lo que declara el .sqlproj) e IsOverride.
+#>
+function Resolve-SqlDbIdentity {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectRoot,
+
+        [Parameter()]
+        [string]$EnvFile = '.env'
+    )
+
+    $proj = Get-ChildItem -LiteralPath $ProjectRoot -Filter '*.sqlproj' -File -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+    if (-not $proj) {
+        throw "No se encontró ningún archivo .sqlproj en '$ProjectRoot'. Ejecute este cmdlet desde el directorio del SQL Project."
+    }
+
+    $content = Get-Content -LiteralPath $proj.FullName -Raw -Encoding UTF8
+    $projectName = ''
+    if ($content -match '<Name>\s*([^<]+?)\s*</Name>') { $projectName = $Matches[1].Trim() }
+
+    if (-not $projectName) {
+        throw "'$($proj.Name)' no declara <Name>. La identidad de la base se lee de ahí (ADR 0011): " +
+              "agregue <Name>NombreDeLaBase</Name> dentro de su PropertyGroup."
+    }
+
+    $envPath = if ([System.IO.Path]::IsPathRooted($EnvFile)) { $EnvFile } else { Join-Path $ProjectRoot $EnvFile }
+    $override = ''
+    if (Test-Path -LiteralPath $envPath) {
+        $vars = (Read-DotEnv -Path $envPath).Env
+        if ($vars['DB_NAME']) { $override = "$($vars['DB_NAME'])".Trim() }
+    }
+
+    if ($override) {
+        if ($override -ceq $projectName) {
+            throw "'$($proj.Name)' ya declara la base como '$projectName'. Borre 'DB_NAME' de '$EnvFile': " +
+                  "el nombre se lee del .sqlproj y tenerlo en dos sitios los deja divergir (ADR 0011)."
+        }
+
+        if ($override -ieq $projectName) {
+            throw "Conflicto de mayúsculas entre el proyecto y el env, y la diferencia importa en una " +
+                  "collation case-sensitive. '$($proj.Name)' declara <Name>$projectName</Name>; '$EnvFile' " +
+                  "declara DB_NAME=$override. Si el nombre real de la base es '$override', corrija <Name> " +
+                  "en el .sqlproj; si es '$projectName', borre DB_NAME. No se elige por usted (ADR 0011)."
+        }
+
+        return [pscustomobject]@{
+            Name        = $override
+            ProjectName = $projectName
+            IsOverride  = $true
+        }
+    }
+
+    return [pscustomobject]@{
+        Name        = $projectName
+        ProjectName = $projectName
+        IsOverride  = $false
+    }
+}
+
+<#
+.SYNOPSIS
+Resuelve el nombre de la base PostgreSQL desde `pgschema.yaml` (ADR 0011).
+
+.DESCRIPTION
+Misma frontera que en SQL Server: identidad en el archivo de proyecto versionado, conexión en el
+env file gitignored. `pgschema` no produce un artefacto compilado que cargue identidad como el
+dacpac, pero la identidad no necesita un binario: necesita un lugar versionado, y `pgschema.yaml`
+ya lo es.
+
+`PGDATABASE` en el env **falla**. No hay override aquí: si aparece un caso Tier-1 en PostgreSQL se
+decidirá entonces, con el caso delante.
+
+.OUTPUTS
+PSCustomObject con Name.
+#>
+function Resolve-PgDbIdentity {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectRoot,
+
+        [Parameter()]
+        [string]$EnvFile = '.env'
+    )
+
+    $yamlPath = Join-Path $ProjectRoot 'pgschema.yaml'
+    if (-not (Test-Path -LiteralPath $yamlPath)) {
+        throw "No se encontró pgschema.yaml en '$ProjectRoot'. Ejecute 'Invoke-PgSchema -Init' primero."
+    }
+
+    # El deprecado se comprueba antes de leer el yaml: si estan los dos, el estado es ambiguo.
+    $envPath = if ([System.IO.Path]::IsPathRooted($EnvFile)) { $EnvFile } else { Join-Path $ProjectRoot $EnvFile }
+    if (Test-Path -LiteralPath $envPath) {
+        $vars = (Read-DotEnv -Path $envPath).Env
+        if ($vars['PGDATABASE']) {
+            Deny-DeprecatedUsage -Cmdlet 'Invoke-PgSchema' -What 'PGDATABASE' `
+                -UseInstead 'database:' -Since '6.0.0' -Where 'pgschema.yaml' `
+                -Detail "El nombre de la base es identidad del proyecto, no configuracion de entorno: mueva el valor a 'database:' en pgschema.yaml y borrelo de '$EnvFile'." `
+                -Reference 'ADR 0011'
+        }
+    }
+
+    $yaml = Get-Content -LiteralPath $yamlPath -Raw -Encoding UTF8
+    $name = ''
+    if ($yaml -match '(?m)^\s*database\s*:\s*(.+?)\s*$') {
+        $name = $Matches[1].Trim().Trim("'", '"')
+    }
+
+    if (-not $name) {
+        throw "pgschema.yaml no declara 'database:'. La identidad de la base se lee de ahí (ADR 0011): " +
+              "agregue 'database: <nombre>' al inicio del archivo."
+    }
+
+    return [pscustomobject]@{ Name = $name }
+}
+
+<#
+.SYNOPSIS
 Quita del contenido del env las claves deploy-time (MACSS_DEPLOY_*) antes de subirlo (ADR 0004).
 
 .DESCRIPTION

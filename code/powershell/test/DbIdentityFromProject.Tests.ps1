@@ -135,8 +135,9 @@ Describe "SQL Server — REQ-4: la diferencia de mayúsculas la resuelve una per
     It "el mensaje nombra las dos grafías para que se pueda decidir" {
         $root = New-SqlProject -Name 'contratos' -EnvContent "DB_NAME=CONTRATOS"
         $msg = Get-ThrownMessage { Resolve-SqlDbIdentity -ProjectRoot $root }
-        $msg | Should -Match 'contratos'
-        $msg | Should -Match 'CONTRATOS'
+        # -CMatch distingue mayusculas; -Match no, y dejaria pasar un mensaje con una sola grafia.
+        $msg | Should -CMatch 'contratos'
+        $msg | Should -CMatch 'CONTRATOS'
     }
 }
 
@@ -189,11 +190,11 @@ Describe "PostgreSQL — REQ-7: fail-fast si falta database:" {
 
 Describe "REQ-8: los templates y -Init siguen la nueva frontera" {
 
-    It "el template de pgschema.yaml declara database:" {
-        $t = Get-ChildItem -Path (Join-Path $PSScriptRoot '..\Resources') -Recurse -Filter 'pgschema.yaml' -ErrorAction SilentlyContinue |
-             Select-Object -First 1
-        $t | Should -Not -BeNullOrEmpty
-        (Get-Content $t.FullName -Raw -Encoding UTF8) -match '(?m)^\s*database\s*:' | Should -BeTrue
+    # La plantilla de pgschema.yaml vive inline en New-PgSchemaConfig, no como archivo en
+    # Resources. Se asserta donde esta, no donde convendria que estuviera.
+    It "el pgschema.yaml que genera -Init declara database:" {
+        $src = Get-Content (Join-Path $PSScriptRoot '..\Private\PgSchemaHelpers.ps1') -Raw -Encoding UTF8
+        [bool]($src -match '(?m)^database\s*:') | Should -BeTrue
     }
 
     # La aserción va contra PgSchemaHelpers.ps1 y no contra Invoke-PgSchema.ps1: `-Init` delega en
