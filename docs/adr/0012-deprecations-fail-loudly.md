@@ -46,17 +46,30 @@ Publish-NodeApi: '-Publish' se retiró en 6.0.0.
 La forma la produce un único helper, `Deny-DeprecatedUsage`, para que ningún mensaje quede a
 criterio de quien escribe el `throw`.
 
-### 2. El alias se conserva para poder fallar bien
+### 2. Si quedan llamadores se falla; si no quedan, se borra
 
-Contraintuitivo pero necesario: `-Publish` y `-DeployReport` son **alias de parámetro**. Borrarlos
-haría que PowerShell responda *"A parameter cannot be found that matches parameter name 'Publish'"*
-— un error genérico que no dice qué usar en su lugar.
+El fallo instructivo existe para **quien todavía usa lo deprecado**. Si nadie lo usa, mantener el
+andamiaje solo para explicarle algo a nadie es la deuda que este ADR combate, con otro disfraz.
 
-Para que el fallo sea instructivo, **el alias se mantiene y el cmdlet lanza al detectarlo**. El
-alias no se retira hasta `6.1.0`, cuando ya nadie lo usa y el error genérico es respuesta suficiente.
+La regla es por evidencia, no por calendario: **se busca el uso real antes de decidir.**
 
-Lo mismo vale para `Publish-FlutterWebLegacy`: la función sigue existiendo en `6.0.0` únicamente
-para lanzar con instrucciones. Se borra en `6.1.0`.
+| Mecanismo | Llamadores encontrados | Decisión en `6.0.0` |
+|---|---|---|
+| `Publish-FlutterWebLegacy` | ninguno | **borrar** |
+| `-Publish` / `-DeployReport` | 4, ya migrados | **borrar** |
+| `deploy.yaml` | fixtures de test y repos consumidores | fallar con instrucciones |
+| `MACSS_DEPLOY_SERVER`, `server:` | 16 env files en 8 repos | fallar con instrucciones |
+
+Para los dos primeros, la búsqueda encontró exactamente cuatro sitios —tres plantillas de
+organización y el workflow de `retiro`— y se migraron a `-Apply -AutoApprove` **antes** de tocar el
+módulo. Un quinto sitio aparente resultó ser un repositorio archivado, que no ejecuta workflows.
+
+Migrar primero y borrar después es lo que permite el borrado limpio: sin llamadores, el
+*"A parameter cannot be found that matches parameter name 'Publish'"* que produciría PowerShell no
+le llega a nadie.
+
+**Corolario para el futuro:** antes de retirar algo deprecado se busca su uso. Si aparece, se falla
+con instrucciones y se migra a los llamadores; el borrado espera. Si no aparece, se borra.
 
 ### 3. `deploy.yaml` deja de ser un fallback
 
@@ -68,8 +81,8 @@ que además se vuelve visible en CI.
 
 | Release | Qué hace |
 |---|---|
-| **6.0.0** | Toda deprecación existente pasa a fallar con instrucciones. |
-| **6.1.0** | Se borra el andamiaje: alias de parámetro, detección de `deploy.yaml`, `Publish-FlutterWebLegacy` completo, y sus tests. |
+| **6.0.0** | Se borra lo que no tiene llamadores (`Publish-FlutterWebLegacy`, alias `-Publish`/`-DeployReport`). Lo que sí los tiene pasa a fallar con instrucciones. |
+| **6.1.0** | Se borra el andamiaje restante: detección de `deploy.yaml`, de `MACSS_DEPLOY_SERVER` y de `server:`, con sus mensajes y sus tests. |
 
 Registrado en `docs/roadmap.md`. El riesgo de esta política es dejar el andamiaje puesto para
 siempre, que sería la misma deuda con otro disfraz.
@@ -85,13 +98,14 @@ la primera versión que lo declare, y se agenda su retiro en el roadmap en el mi
 
 - **REQ-1 (U)** `Deny-DeprecatedUsage` produce un mensaje que contiene: el cmdlet, el elemento
   deprecado, el reemplazo y la versión de retiro.
-- **REQ-2 (U)** `-Publish` y `-DeployReport` **lanzan** en `Publish-NodeApi`, `Publish-FlutterWeb` e
-  `Invoke-SqlPackage`; el mensaje nombra `-Apply` / `-Plan`.
-- **REQ-3 (U)** Los alias de parámetro **siguen declarados** en `6.0.0`, para que el fallo sea
-  instructivo y no un "parameter cannot be found".
+- **REQ-2 (U)** Los alias `-Publish` y `-DeployReport` **ya no están declarados** en
+  `Publish-NodeApi`, `Publish-FlutterWeb` ni `Invoke-SqlPackage`.
+- **REQ-3 (U)** `-Plan` y `-Apply` siguen siendo los modos vigentes, con `-AutoApprove` sobre
+  `-Apply`: el borrado del alias no altera la taxonomía de ADR 0002.
 - **REQ-4 (U)** Un proyecto con `deploy.yaml` y sin `publish.yaml` **falla**; el mensaje nombra
   ambos archivos.
-- **REQ-5 (U)** `Publish-FlutterWebLegacy` lanza al invocarse, nombrando `Publish-FlutterWeb`.
+- **REQ-5 (U)** `Publish-FlutterWebLegacy` no existe: ni como función exportada, ni en el manifiesto,
+  ni como archivo en `Functions/`.
 - **REQ-6 (U)** Ningún `Write-Warning` ni `Write-Host` de deprecación queda en `Functions/` ni en
   `Private/`: la única vía es la excepción.
 - **REQ-7 (S)** La salida de la suite deja de contener avisos de deprecación repetidos.
