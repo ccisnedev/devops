@@ -107,10 +107,27 @@ queda para siempre. De ahí las dos releases:
       `pyme` y `tigre` declaran la clave en su `.env.example` versionado; el resto son archivos
       gitignored, en cada estación y en cada servidor.
 
+**6.0.0 — identidad de la base fuera del env (ADR 0011)**
+
+Va en la misma release por costo de migración: ADR 0010 ya obliga a recorrer cada env file en cada
+estación y cada servidor. Hacer las dos cosas en una pasada evita repetir el recorrido.
+
+- [ ] `Invoke-SqlPackage` deriva el nombre de `<Name>` del `.sqlproj`; `DB_NAME` pasa a ser override
+      explícito y se muestra marcado como tal en el plan.
+- [ ] `Invoke-PgSchema` lee `database:` de `pgschema.yaml`; `PGDATABASE` en el env falla con la
+      instrucción de moverlo.
+- [ ] Retirar `DB_NAME` de los env files donde solo duplica el nombre del proyecto.
+- [ ] **Desambiguar `contrato/contratos_db`**: el `.sqlproj` declara `contratos` y se publica sobre
+      `CONTRATOS`. Requiere decisión humana — corregir `<Name>` o conservar el override — y bloquea
+      el despliegue de ese repo hasta resolverse.
+
 **6.1.0 — retirar el andamiaje**
 
 - [ ] Borrar la detección de `MACSS_DEPLOY_SERVER` y de `server:` en los archivos versionados, con
       sus mensajes de deprecación y sus tests.
+- [ ] Borrar la detección de `PGDATABASE` en el env y la de `DB_NAME` redundante (ADR 0011), con sus
+      mensajes y sus tests. El override legítimo de `DB_NAME` **se conserva**: no es deprecación,
+      es la vía para las DB Tier-1.
 - [ ] Retirar de los templates y de la documentación toda mención a las claves deprecadas.
 - [ ] Confirmar que ningún repo consumidor sigue declarándolas antes de borrar la detección: una
       vez retirada, una clave vieja pasa a ser una clave desconocida y el error deja de ser
