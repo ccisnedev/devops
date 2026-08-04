@@ -121,6 +121,27 @@ estación y cada servidor. Hacer las dos cosas en una pasada evita repetir el re
       `CONTRATOS`. Requiere decisión humana — corregir `<Name>` o conservar el override — y bloquea
       el despliegue de ese repo hasta resolverse.
 
+**6.0.0 — toda deprecación pasa a fallar (ADR 0012)**
+
+El aviso blando no retrasa la ruptura: la vuelve permanente. La prueba estaba en la propia suite —
+el warning de `-Publish`/`-DeployReport`, deprecados desde ADR 0002, se imprimía decenas de veces al
+correr los tests y nadie migró.
+
+- [ ] `Deny-DeprecatedUsage`: un solo helper produce el mensaje (cmdlet, elemento, reemplazo,
+      versión de retiro, referencia).
+- [ ] `-Publish` / `-DeployReport` lanzan en `Publish-NodeApi`, `Publish-FlutterWeb` e
+      `Invoke-SqlPackage`. **Los alias se conservan**: sin ellos el error sería "parameter cannot be
+      found", que no dice a qué migrar.
+- [ ] `deploy.yaml` deja de ser fallback y pasa a fallar nombrando `publish.yaml`.
+- [ ] `Publish-FlutterWebLegacy` lanza; la función sobrevive solo para poder fallar bien.
+- [ ] **Migrar los fixtures de test que usan `deploy.yaml` por inercia**, no por estar probando el
+      legacy: 15 ocurrencias en `Publish-FlutterWeb.Tests.ps1` y algunas más en `Get-RepoInfo`,
+      `New-DeployWorkflow` y `Test-RepoHealth`. Se renombran a `publish.yaml`; los casos que sí
+      prueban el legacy se conservan.
+- [ ] Decidir qué hacer con `test/Test-PublishNodeApi.ps1`: usa `-Publish`/`-DeployReport` y
+      `deploy.yaml` en todo el archivo, y **no lo descubre Pester** (no cumple `*.Tests.ps1`), así
+      que hoy no corre. O se migra a Pester, o se borra.
+
 **6.1.0 — retirar el andamiaje**
 
 - [ ] Borrar la detección de `MACSS_DEPLOY_SERVER` y de `server:` en los archivos versionados, con
@@ -128,6 +149,8 @@ estación y cada servidor. Hacer las dos cosas en una pasada evita repetir el re
 - [ ] Borrar la detección de `PGDATABASE` en el env y la de `DB_NAME` redundante (ADR 0011), con sus
       mensajes y sus tests. El override legítimo de `DB_NAME` **se conserva**: no es deprecación,
       es la vía para las DB Tier-1.
+- [ ] Borrar los alias `-Publish` / `-DeployReport`, la detección de `deploy.yaml` y la función
+      `Publish-FlutterWebLegacy` completa (ADR 0012), con sus mensajes y sus tests.
 - [ ] Retirar de los templates y de la documentación toda mención a las claves deprecadas.
 - [ ] Confirmar que ningún repo consumidor sigue declarándolas antes de borrar la detección: una
       vez retirada, una clave vieja pasa a ser una clave desconocida y el error deja de ser
