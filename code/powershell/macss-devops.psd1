@@ -20,7 +20,6 @@
         , 'Test-RepoHealth'
         , 'New-DeployWorkflow'
         , 'Install-PSDevOpsSkill'
-        , 'Publish-FlutterWebLegacy'
         , 'Get-SQLiteDB'
         , 'Merge-DevToMain'
         , 'Export-FileTree'
