@@ -10,7 +10,7 @@
 #   - `Publish-FlutterWeb` no sube ningún env file al servidor, porque la web es estática
 #     (ADR 0007 §2). `Publish-DockerStack` sí lo sube, y por eso debe filtrar `MACSS_DEPLOY_*`.
 #
-# Cubre REQ-5 a REQ-9 de ADR 0010.
+# Cubre REQ-6 a REQ-10 de ADR 0010.
 
 BeforeAll {
     Remove-Module 'macss-devops' -ErrorAction SilentlyContinue
@@ -41,7 +41,7 @@ BeforeAll {
     }
 }
 
-Describe "REQ-5: los cmdlets con destino SSH exponen -EnvFile" {
+Describe "REQ-6: los cmdlets con destino SSH exponen -EnvFile" {
 
     # Publish-NodeApi ya lo cumple desde ADR 0004: es la referencia contra la que se mide el resto.
     It "<Cmdlet> declara el parámetro -EnvFile" -ForEach @(
@@ -70,7 +70,7 @@ Describe "REQ-5: los cmdlets con destino SSH exponen -EnvFile" {
     }
 }
 
-Describe "REQ-5: el destino deja de salir del archivo versionado" {
+Describe "REQ-6: el destino deja de salir del archivo versionado" {
 
     It "Publish-FlutterWeb ya no resuelve el destino desde publish.yaml" {
         Test-FunctionSource -CmdletName 'Publish-FlutterWeb' -Pattern '\$server\s*=\s*\$deployConfig\.server' | Should -BeFalse
@@ -85,7 +85,7 @@ Describe "REQ-5: el destino deja de salir del archivo versionado" {
     }
 }
 
-Describe "REQ-6: Invoke-PgSchema gana -EnvFile y nada más" {
+Describe "REQ-7: Invoke-PgSchema gana -EnvFile y nada más" {
 
     It "declara el parámetro -EnvFile" {
         (Get-Command Invoke-PgSchema).Parameters.Keys | Should -Contain 'EnvFile'
@@ -104,8 +104,8 @@ Describe "REQ-6: Invoke-PgSchema gana -EnvFile y nada más" {
 
     # Su destino son las variables PG* del propio env. Un alias SSH sería inventar un salto
     # que no existe (ADR 0010 §2).
-    It "NO adopta MACSS_DEPLOY_SERVER en ninguna ruta de código" {
-        Test-FunctionSource -CmdletName 'Invoke-PgSchema' -Pattern 'MACSS_DEPLOY_SERVER' | Should -BeFalse
+    It "NO adopta ningún alias SSH en ninguna ruta de código" {
+        Test-FunctionSource -CmdletName 'Invoke-PgSchema' -Pattern 'MACSS_DEPLOY_SSH_ALIAS|MACSS_DEPLOY_SERVER' | Should -BeFalse
     }
 
     It "deja de leer '.env' de forma fija" {
@@ -113,7 +113,7 @@ Describe "REQ-6: Invoke-PgSchema gana -EnvFile y nada más" {
     }
 }
 
-Describe "REQ-7 y REQ-8: qué env viaja al servidor y qué no" {
+Describe "REQ-8 y REQ-9: qué env viaja al servidor y qué no" {
 
     # Publish-DockerStack sube el .env como env-file del stack: las claves de despliegue no
     # son config de runtime y no deben viajar (ADR 0004 §2).
@@ -127,7 +127,7 @@ Describe "REQ-7 y REQ-8: qué env viaja al servidor y qué no" {
     }
 }
 
-Describe "REQ-9: -Init siembra el destino en el env, no en el archivo versionado" {
+Describe "REQ-10: -Init siembra el destino en el env, no en el archivo versionado" {
 
     It "el template de stack.yaml ya no trae 'server'" {
         $template = Join-Path $PSScriptRoot '..\Resources\Publish-DockerStack\templates\stack.yaml'
@@ -136,6 +136,37 @@ Describe "REQ-9: -Init siembra el destino en el env, no en el archivo versionado
     }
 
     It "Publish-DockerStack -Init siembra MACSS_DEPLOY_SERVER en el .env que genera" {
-        Test-FunctionSource -CmdletName 'Publish-DockerStack' -Pattern 'MACSS_DEPLOY_SERVER=' | Should -BeTrue
+        Test-FunctionSource -CmdletName 'Publish-DockerStack' -Pattern 'MACSS_DEPLOY_SSH_ALIAS=' | Should -BeTrue
+    }
+}
+
+Describe "REQ-6: la clave nueva reemplaza a la vieja en toda la familia SSH" {
+
+    # Publish-NodeApi es el que ya tenia el patron: tambien migra al nombre nuevo.
+    It "<Cmdlet> referencia MACSS_DEPLOY_SSH_ALIAS" -ForEach @(
+        @{ Cmdlet = 'Publish-NodeApi' }
+        @{ Cmdlet = 'Publish-FlutterWeb' }
+        @{ Cmdlet = 'Publish-DockerStack' }
+    ) {
+        Test-FunctionSource -CmdletName $Cmdlet -Pattern 'MACSS_DEPLOY_SSH_ALIAS' | Should -BeTrue
+    }
+
+    # La clave vieja solo puede sobrevivir dentro del helper compartido, que la detecta para
+    # fallar con instrucciones. En los cmdlets no debe quedar ninguna ruta que la lea como destino.
+    It "<Cmdlet> ya no lee MACSS_DEPLOY_SERVER como destino" -ForEach @(
+        @{ Cmdlet = 'Publish-NodeApi' }
+        @{ Cmdlet = 'Publish-FlutterWeb' }
+        @{ Cmdlet = 'Publish-DockerStack' }
+    ) {
+        Test-FunctionSource -CmdletName $Cmdlet -Pattern 'MACSS_DEPLOY_SERVER' | Should -BeFalse
+    }
+}
+
+Describe "REQ-10: el template de publish.yaml tampoco trae 'server'" {
+
+    It "el template de Publish-FlutterWeb no declara 'server:'" {
+        $template = Join-Path $PSScriptRoot '..\Resources\Publish-FlutterWeb	emplates\publish.yaml'
+        $template | Should -Exist
+        Test-FileContent -Path $template -Pattern '(?m)^\s*server\s*:' | Should -BeFalse
     }
 }
