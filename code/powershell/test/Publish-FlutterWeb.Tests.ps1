@@ -95,8 +95,8 @@ Describe 'Step 2: Template publish.yaml' {
 
         # El template debe tener la clave 'server' con un valor placeholder.
         # Es la única forma de saber a qué servidor desplegar (alias en ~/.ssh/config).
-        It 'contiene la clave server con un valor placeholder' {
-            $content.server | Should -Not -BeNullOrEmpty
+        It 'ya no declara server: — el destino vive en el env file (ADR 0010)' {
+            $content.server | Should -BeNullOrEmpty
         }
 
         # El template debe tener la clave 'port' con un valor numérico.
@@ -199,9 +199,9 @@ environment:
         }
 
         # El publish.yaml creado debe tener las claves server y port (copiado del template).
-        It 'publish.yaml generado contiene server y port' {
+        It 'publish.yaml generado contiene port y ya no server' {
             $content = Get-Content (Join-Path $testDir 'publish.yaml') -Raw | ConvertFrom-Yaml
-            $content.server | Should -Not -BeNullOrEmpty
+            $content.server | Should -BeNullOrEmpty
             $content.port | Should -BeOfType [int]
         }
     }
@@ -446,9 +446,9 @@ Describe 'Step 5: Configure-NginxSite.sh' {
 }
 
 # ═══════════════════════════════════════════════════════════════
-# STEP 6: Publish-FlutterWeb -Publish (flujo completo)
+# STEP 6: Publish-FlutterWeb -Apply (flujo completo)
 # ═══════════════════════════════════════════════════════════════
-Describe 'Step 6: Publish-FlutterWeb -Publish' {
+Describe 'Step 6: Publish-FlutterWeb -Apply' {
 
     Context 'Validaciones de entrada' {
 
@@ -459,7 +459,7 @@ Describe 'Step 6: Publish-FlutterWeb -Publish' {
             Set-Content -Path (Join-Path $emptyDir 'deploy.yaml') -Value "server: test`nport: 4000" -Encoding UTF8
             try {
                 Push-Location $emptyDir
-                { Publish-FlutterWeb -Publish -ErrorAction Stop } | Should -Throw '*pubspec.yaml*'
+                { Publish-FlutterWeb -Apply -AutoApprove -ErrorAction Stop } | Should -Throw '*pubspec.yaml*'
             } finally {
                 Pop-Location
                 Remove-Item -Path $emptyDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -473,7 +473,7 @@ Describe 'Step 6: Publish-FlutterWeb -Publish' {
             Set-Content -Path (Join-Path $noDeployDir 'pubspec.yaml') -Value "name: x`nversion: 1.0.0" -Encoding UTF8
             try {
                 Push-Location $noDeployDir
-                { Publish-FlutterWeb -Publish -ErrorAction Stop } | Should -Throw '*publish.yaml*'
+                { Publish-FlutterWeb -Apply -AutoApprove -ErrorAction Stop } | Should -Throw '*publish.yaml*'
             } finally {
                 Pop-Location
                 Remove-Item -Path $noDeployDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -488,7 +488,7 @@ Describe 'Step 6: Publish-FlutterWeb -Publish' {
             Set-Content -Path (Join-Path $placeholderDir 'deploy.yaml') -Value "server: your-ssh-alias`nport: 4000" -Encoding UTF8
             try {
                 Push-Location $placeholderDir
-                { Publish-FlutterWeb -Publish -ErrorAction Stop } | Should -Throw '*your-ssh-alias*'
+                { Publish-FlutterWeb -Apply -AutoApprove -ErrorAction Stop } | Should -Throw '*MACSS_DEPLOY_SSH_ALIAS*'
             } finally {
                 Pop-Location
                 Remove-Item -Path $placeholderDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -532,7 +532,7 @@ port: 4036
             try {
                 $threwSSH = $false
                 try {
-                    Publish-FlutterWeb -Publish -ErrorAction Stop *>&1 | Out-Null
+                    Publish-FlutterWeb -Apply -AutoApprove -ErrorAction Stop *>&1 | Out-Null
                 } catch {
                     # Esperamos fallo en Read-SSHConfig o posterior — no en validación de archivos
                     $threwSSH = $_.Exception.Message -notmatch 'pubspec\.yaml|deploy\.yaml|app-server'
@@ -561,7 +561,7 @@ Describe 'Step 7: Eliminar Publish-Web' {
     Context 'Archivo fuente eliminado' {
 
         # Publish-Web.ps1 modificaba /etc/nginx/sites-available/default (mala práctica).
-        # Fue reemplazado por Publish-FlutterWeb -Publish con config nginx por puerto.
+        # Fue reemplazado por Publish-FlutterWeb -Apply -AutoApprove con config nginx por puerto.
         It 'Publish-Web.ps1 ya no existe en code/powershell/Functions/' {
             $webFile = Join-Path $PSScriptRoot '..\Functions\Publish-Web.ps1'
             $webFile | Should -Not -Exist
@@ -599,9 +599,9 @@ Describe 'Step 7: Eliminar Publish-Web' {
 }
 
 # ═══════════════════════════════════════════════════════════════
-# STEP 9: Publish-FlutterWeb -DeployReport (reporte pre-deploy)
+# STEP 9: Publish-FlutterWeb -Plan (reporte pre-deploy)
 # ═══════════════════════════════════════════════════════════════
-Describe 'Step 9: Publish-FlutterWeb -DeployReport' {
+Describe 'Step 9: Publish-FlutterWeb -Plan (reporte pre-deploy)' {
 
     Context 'ParameterSet existe' {
 
@@ -628,7 +628,7 @@ Describe 'Step 9: Publish-FlutterWeb -DeployReport' {
             Set-Content -Path (Join-Path $emptyDir 'deploy.yaml') -Value "server: test`nport: 4000" -Encoding UTF8
             try {
                 Push-Location $emptyDir
-                { Publish-FlutterWeb -DeployReport -ErrorAction Stop } | Should -Throw '*pubspec.yaml*'
+                { Publish-FlutterWeb -Plan -ErrorAction Stop } | Should -Throw '*pubspec.yaml*'
             } finally {
                 Pop-Location
                 Remove-Item -Path $emptyDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -642,7 +642,7 @@ Describe 'Step 9: Publish-FlutterWeb -DeployReport' {
             Set-Content -Path (Join-Path $noDeployDir 'pubspec.yaml') -Value "name: x`nversion: 1.0.0" -Encoding UTF8
             try {
                 Push-Location $noDeployDir
-                { Publish-FlutterWeb -DeployReport -ErrorAction Stop } | Should -Throw '*publish.yaml*'
+                { Publish-FlutterWeb -Plan -ErrorAction Stop } | Should -Throw '*publish.yaml*'
             } finally {
                 Pop-Location
                 Remove-Item -Path $noDeployDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -657,7 +657,7 @@ Describe 'Step 9: Publish-FlutterWeb -DeployReport' {
             Set-Content -Path (Join-Path $placeholderDir 'deploy.yaml') -Value "server: your-ssh-alias`nport: 4000" -Encoding UTF8
             try {
                 Push-Location $placeholderDir
-                { Publish-FlutterWeb -DeployReport -ErrorAction Stop } | Should -Throw '*your-ssh-alias*'
+                { Publish-FlutterWeb -Plan -ErrorAction Stop } | Should -Throw '*MACSS_DEPLOY_SSH_ALIAS*'
             } finally {
                 Pop-Location
                 Remove-Item -Path $placeholderDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -680,7 +680,7 @@ Describe 'Step 9: Publish-FlutterWeb -DeployReport' {
                 Push-Location $reportDir
                 $threwSSH = $false
                 try {
-                    Publish-FlutterWeb -DeployReport -ErrorAction Stop *>&1 | Out-Null
+                    Publish-FlutterWeb -Plan -ErrorAction Stop *>&1 | Out-Null
                 } catch {
                     # Debe fallar en SSH, NO en "flutter build" o similar
                     $threwSSH = $_.Exception.Message -notmatch 'pubspec\.yaml|deploy\.yaml|your-ssh-alias|flutter|build'

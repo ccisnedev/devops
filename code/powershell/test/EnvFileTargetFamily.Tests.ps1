@@ -165,7 +165,7 @@ Describe "REQ-6: la clave nueva reemplaza a la vieja en toda la familia SSH" {
 Describe "REQ-10: el template de publish.yaml tampoco trae 'server'" {
 
     It "el template de Publish-FlutterWeb no declara 'server:'" {
-        $template = Join-Path $PSScriptRoot '..\Resources\Publish-FlutterWeb	emplates\publish.yaml'
+        $template = Join-Path $PSScriptRoot '..\Resources\Publish-FlutterWeb\templates\publish.yaml'
         $template | Should -Exist
         Test-FileContent -Path $template -Pattern '(?m)^\s*server\s*:' | Should -BeFalse
     }

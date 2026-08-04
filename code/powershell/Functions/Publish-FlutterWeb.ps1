@@ -65,12 +65,10 @@ function Publish-FlutterWeb {
 
         [Parameter(Mandatory, ParameterSetName = 'Plan',
             HelpMessage = "Dry-run: show what -Apply would do, without making changes")]
-        [Alias('DeployReport')]
         [switch]$Plan,
 
         [Parameter(Mandatory, ParameterSetName = 'Apply',
             HelpMessage = "Execute the deployment to the remote server")]
-        [Alias('Publish')]
         [switch]$Apply,
 
         [Parameter(ParameterSetName = 'Apply',
@@ -79,7 +77,13 @@ function Publish-FlutterWeb {
 
         [Parameter(ParameterSetName = 'Apply',
             HelpMessage = "Deploy even if the plan reports blocking problems (ADR 0009)")]
-        [switch]$Force
+        [switch]$Force,
+
+        [Parameter(ParameterSetName = 'Apply',
+            HelpMessage = "Env file selecting the environment (default .env). Its MACSS_DEPLOY_SSH_ALIAS names the target; prod is explicit: -EnvFile .env.production")]
+        [Parameter(ParameterSetName = 'Plan',
+            HelpMessage = "Env file selecting the environment (default .env). Its MACSS_DEPLOY_SSH_ALIAS names the target.")]
+        [string]$EnvFile = '.env'
     )
 
     begin {
@@ -173,7 +177,9 @@ function Publish-FlutterWeb {
                     throw "No se encontró publish.yaml. Ejecute 'Publish-FlutterWeb -Init' primero."
                 }
                 if ($configResolution.IsLegacy) {
-                    Write-Host "  Aviso: 'deploy.yaml' está deprecado; renómbrelo a 'publish.yaml'." -ForegroundColor Yellow
+                    Deny-DeprecatedUsage -Cmdlet 'Publish-FlutterWeb' -What 'deploy.yaml' `
+                        -UseInstead 'publish.yaml' -Since '6.0.0' `
+                        -Detail "Renombre el archivo: el contenido no cambia." -Reference 'ADR 0012'
                 }
 
                 # ─── 2. Leer configuración ───────────────────
@@ -183,18 +189,17 @@ function Publish-FlutterWeb {
                 $appVersion = ($pubspec.version -split '\+')[0]  # sin build metadata
                 $release = "v$appVersion"
 
-                # publish.yaml (server, port)
+                # publish.yaml (port). El destino NO sale de aqui: un alias SSH es machine-local
+                # y versionarlo obliga a editar un archivo del repo para cambiar de entorno.
                 $deployConfig = Get-Content $publishYamlPath -Raw | ConvertFrom-Yaml
-                $server = $deployConfig.server
                 $port = $deployConfig.port
 
+                # El destino sale del env file elegido con -EnvFile (ADR 0010). Un 'server:'
+                # sobreviviente en publish.yaml hace fallar con la instruccion de migrarlo.
+                $server = Resolve-DeployTargetFromEnv -ProjectRoot $cwd -EnvFile $EnvFile `
+                              -LegacyServer $deployConfig.server -Cmdlet 'Publish-FlutterWeb'
+
                 # ─── 3. Validaciones de config ───────────────
-                if (-not $server) {
-                    throw "No se encontró 'server:' en publish.yaml."
-                }
-                if ($server -eq 'your-ssh-alias') {
-                    throw "publish.yaml contiene el valor de ejemplo 'your-ssh-alias'. Cambie 'server' por el alias SSH real de su servidor."
-                }
                 if (-not $port) {
                     throw "No se encontró 'port:' en publish.yaml."
                 }
@@ -375,7 +380,9 @@ fi
                     throw "No se encontró publish.yaml. Ejecute 'Publish-FlutterWeb -Init' primero."
                 }
                 if ($configResolution.IsLegacy) {
-                    Write-Host "  Aviso: 'deploy.yaml' está deprecado; renómbrelo a 'publish.yaml'." -ForegroundColor Yellow
+                    Deny-DeprecatedUsage -Cmdlet 'Publish-FlutterWeb' -What 'deploy.yaml' `
+                        -UseInstead 'publish.yaml' -Since '6.0.0' `
+                        -Detail "Renombre el archivo: el contenido no cambia." -Reference 'ADR 0012'
                 }
 
                 # ─── 2. Leer configuración ───────────────────
@@ -384,17 +391,17 @@ fi
                 $appVersion = ($pubspec.version -split '\+')[0]
                 $release = "v$appVersion"
 
+                # publish.yaml (port). El destino NO sale de aqui: un alias SSH es machine-local
+                # y versionarlo obliga a editar un archivo del repo para cambiar de entorno.
                 $deployConfig = Get-Content $publishYamlPath -Raw | ConvertFrom-Yaml
-                $server = $deployConfig.server
                 $port = $deployConfig.port
 
+                # El destino sale del env file elegido con -EnvFile (ADR 0010). Un 'server:'
+                # sobreviviente en publish.yaml hace fallar con la instruccion de migrarlo.
+                $server = Resolve-DeployTargetFromEnv -ProjectRoot $cwd -EnvFile $EnvFile `
+                              -LegacyServer $deployConfig.server -Cmdlet 'Publish-FlutterWeb'
+
                 # ─── 3. Validaciones de config ───────────────
-                if (-not $server) {
-                    throw "No se encontró 'server:' en publish.yaml."
-                }
-                if ($server -eq 'your-ssh-alias') {
-                    throw "publish.yaml contiene el valor de ejemplo 'your-ssh-alias'. Cambie 'server' por el alias SSH real de su servidor."
-                }
                 if (-not $port) {
                     throw "No se encontró 'port:' en publish.yaml."
                 }
