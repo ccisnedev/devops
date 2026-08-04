@@ -137,6 +137,7 @@
                 $config   = $resolved.Config
                 $schemas  = $resolved.Schemas
                 $envVars  = $resolved.EnvVars
+                $database = $resolved.Database
 
                 try {
                     Write-Host "  Host:     $($envVars['PGHOST']):$($envVars['PGPORT'])" -ForegroundColor Cyan
@@ -159,7 +160,7 @@
                         # JSON plan siempre va al archivo del schema
                         $extraArgs += '--output-json', $s.plan
 
-                        $pgArgs = Build-PgSchemaArgs -Action 'plan' -SchemaEntry $s -EnvVars $envVars -ExtraArgs $extraArgs
+                        $pgArgs = Build-PgSchemaArgs -Action 'plan' -SchemaEntry $s -EnvVars $envVars -Database $database -ExtraArgs $extraArgs
 
                         Invoke-PgSchemaWSL -Arguments $pgArgs -Password $envVars['PGPASSWORD']
 
@@ -182,6 +183,7 @@
                 $config   = $resolved.Config
                 $schemas  = $resolved.Schemas
                 $envVars  = $resolved.EnvVars
+                $database = $resolved.Database
 
                 try {
                     Write-Host "  Host:     $($envVars['PGHOST']):$($envVars['PGPORT'])" -ForegroundColor Cyan
@@ -218,7 +220,7 @@
                             $extraArgs += '--lock-timeout', $config.apply_options.lock_timeout
                         }
 
-                        $pgArgs = Build-PgSchemaArgs -Action 'apply' -SchemaEntry $s -EnvVars $envVars -ExtraArgs $extraArgs
+                        $pgArgs = Build-PgSchemaArgs -Action 'apply' -SchemaEntry $s -EnvVars $envVars -Database $database -ExtraArgs $extraArgs
 
                         Invoke-PgSchemaWSL -Arguments $pgArgs -Password $envVars['PGPASSWORD']
 
@@ -239,6 +241,7 @@
                 $config   = $resolved.Config
                 $schemas  = $resolved.Schemas
                 $envVars  = $resolved.EnvVars
+                $database = $resolved.Database
 
                 try {
                     Write-Host "  Host:     $($envVars['PGHOST']):$($envVars['PGPORT'])" -ForegroundColor Cyan
@@ -262,7 +265,7 @@
                             }
                         }
 
-                        $pgArgs = Build-PgSchemaArgs -Action 'dump' -SchemaEntry $s -EnvVars $envVars -ExtraArgs $extraArgs
+                        $pgArgs = Build-PgSchemaArgs -Action 'dump' -SchemaEntry $s -EnvVars $envVars -Database $database -ExtraArgs $extraArgs
 
                         Invoke-PgSchemaWSL -Arguments $pgArgs -Password $envVars['PGPASSWORD']
 
@@ -283,6 +286,7 @@
                 $config   = $resolved.Config
                 $schemas  = $resolved.Schemas
                 $envVars  = $resolved.EnvVars
+                $database = $resolved.Database
 
                 try {
                     Write-Host "  Host:     $($envVars['PGHOST']):$($envVars['PGPORT'])" -ForegroundColor Cyan
@@ -298,7 +302,7 @@
 
                         $extraArgs = @('--output-sql', $scriptPath)
 
-                        $pgArgs = Build-PgSchemaArgs -Action 'plan' -SchemaEntry $s -EnvVars $envVars -ExtraArgs $extraArgs
+                        $pgArgs = Build-PgSchemaArgs -Action 'plan' -SchemaEntry $s -EnvVars $envVars -Database $database -ExtraArgs $extraArgs
 
                         Invoke-PgSchemaWSL -Arguments $pgArgs -Password $envVars['PGPASSWORD']
 
@@ -354,8 +358,9 @@ function Resolve-PgSchemaTargets {
     }
 
     return @{
-        Config  = $config
-        Schemas = $schemas
-        EnvVars = $envVars
+        Config   = $config
+        Schemas  = $schemas
+        EnvVars  = $envVars
+        Database = (Resolve-PgDbIdentity -ProjectRoot (Get-Location).Path).Name
     }
 }
