@@ -36,33 +36,33 @@ Describe 'Step 1: Legacy renombrado y exports' {
         }
     }
 
-    Context 'Publish-FlutterWebLegacy — deprecación (5.6.0)' {
+    Context 'Publish-FlutterWebLegacy — deprecación dura (6.0.0, ADR 0012)' {
 
-        # Legacy queda deprecado a favor de Publish-FlutterWeb. Debe emitir un
-        # Write-Warning al invocarse para avisar a los consumidores restantes.
-        It 'emite un Write-Warning de deprecación al invocarse' {
+        # Hasta 5.x emitía un Write-Warning y seguía funcionando. ADR 0012 retiró ese modelo:
+        # nadie migra lo que no le impide trabajar, y el aviso se volvió ruido de fondo. Ahora
+        # lanza con instrucciones. La función sigue existiendo SOLO para poder fallar bien;
+        # se borra en 6.1.0.
+        It 'lanza al invocarse, en lugar de avisar y continuar' {
             $tmp = Join-Path $env:TEMP "psdevops_test_legacy_dep_$([guid]::NewGuid().ToString().Substring(0,8))"
             New-Item -ItemType Directory -Path $tmp -Force | Out-Null
-            # pubspec.yaml mínimo para que el cmdlet parsee name/version y salga limpio
-            # al fallar el alias SSH inexistente (tras emitir el warning de deprecación).
             Set-Content -Path (Join-Path $tmp 'pubspec.yaml') -Value "name: dep_test_app`nversion: 1.0.0" -Encoding UTF8
             try {
                 Push-Location $tmp
-                $warn = @()
+                $msg = $null
                 try {
-                    Publish-FlutterWebLegacy -server 'alias-inexistente-xyz' `
-                        -WarningVariable warn -WarningAction SilentlyContinue `
-                        -ErrorAction SilentlyContinue *> $null
-                } catch { }  # el warning ya quedó capturado en $warn aunque algo falle después
-                ($warn -join "`n") | Should -Match 'DEPRECAD|Publish-FlutterWeb\b'
+                    Publish-FlutterWebLegacy -server 'alias-inexistente-xyz' *> $null
+                } catch { $msg = $_.Exception.Message }
+                $msg | Should -Not -BeNullOrEmpty
+                $msg | Should -Match 'Publish-FlutterWeb\b'
             } finally {
                 Pop-Location
                 Remove-Item -Path $tmp -Recurse -Force -ErrorAction SilentlyContinue
             }
         }
 
-        # La función sigue exportada (retrocompat) — su removal es en el próximo major.
-        It 'sigue disponible como función (removal diferido al próximo major)' {
+        # Sigue exportada en 6.0.0 para que el error sea instructivo. Si se borrara ahora,
+        # el consumidor recibiría "term is not recognized", que no dice a qué migrar.
+        It 'sigue disponible como función (su borrado es en 6.1.0)' {
             Get-Command Publish-FlutterWebLegacy -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
         }
     }
