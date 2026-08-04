@@ -83,6 +83,45 @@ Estas líneas avanzan en paralelo y afectan a más de un artefacto.
 - [ ] Formalizar convenciones de carpetas dentro de code/.
 - [ ] Registrar decisiones relevantes mediante ADR.
 
+### Migración de claves de despliegue (ADR 0010)
+
+El destino de despliegue pasa a nombrarse por lo que es: `MACSS_DEPLOY_SSH_ALIAS` para los cmdlets
+que saltan a una máquina (app, api, stack), y las variables de conexión propias para los que hablan
+con un endpoint (`DB_SERVER` en SQL Server, `PG*` en PostgreSQL).
+
+La compatibilidad **no** consiste en seguir aceptando la clave vieja: eso perpetúa la deuda, porque
+nadie migra lo que no le impide trabajar. Consiste en **fallar con el nombre correcto a colocar**.
+Obliga a migrar y entrega la información para hacerlo.
+
+Eso deja andamiaje de deprecación en el código, y el andamiaje que no tiene fecha de retiro se
+queda para siempre. De ahí las dos releases:
+
+**6.0.0 — corte con instrucciones**
+
+- [ ] `MACSS_DEPLOY_SSH_ALIAS` y `-EnvFile` en `Publish-NodeApi`, `Publish-FlutterWeb` y `Publish-DockerStack`.
+- [ ] `-EnvFile` en `Invoke-PgSchema` (paridad con `Invoke-SqlPackage`; sin alias SSH).
+- [ ] Fallo detectivo ante `MACSS_DEPLOY_SERVER`, ante `server:` en `publish.yaml`/`stack.yaml`, y
+      ante la coexistencia de clave nueva y vieja.
+- [ ] CHANGELOG con la sección de ruptura y el procedimiento de migración.
+- [ ] Migrar los env files de los repos consumidores. **Parte es un commit y parte no:** `micro`,
+      `pyme` y `tigre` declaran la clave en su `.env.example` versionado; el resto son archivos
+      gitignored, en cada estación y en cada servidor.
+
+**6.1.0 — retirar el andamiaje**
+
+- [ ] Borrar la detección de `MACSS_DEPLOY_SERVER` y de `server:` en los archivos versionados, con
+      sus mensajes de deprecación y sus tests.
+- [ ] Retirar de los templates y de la documentación toda mención a las claves deprecadas.
+- [ ] Confirmar que ningún repo consumidor sigue declarándolas antes de borrar la detección: una
+      vez retirada, una clave vieja pasa a ser una clave desconocida y el error deja de ser
+      explicativo.
+
+> **No cerrar 6.0.0 sin haber abierto el issue de 6.1.0.** El fallo instructivo solo es una buena
+> decisión si la instrucción se retira cuando ya nadie la necesita.
+
+`MACSS_DEPLOY_KUBE_CONTEXT` queda reservado para el render a k3s (ADR 0006, ADR 0008). No se
+implementa en esta línea.
+
 ### Estrategia de despliegue: contenedores y target de render (ADR 0006)
 
 Objetivo: migrar del modelo VM (sprawl de VM-por-API + VM-pm2-compartida) hacia
