@@ -17,11 +17,31 @@ properties:
   # Convierte tu código en la fuente de verdad (gestión declarativa)
   DropObjectsNotInSource: true
 
-  # Eliminar permisos del servidor que no existen en el código fuente
-  DropPermissionsNotInSource: true
-
-  # Eliminar membresías de roles que no existen en el código fuente
-  DropRoleMembersNotInSource: true
+  # ─── Frontera con el DBA: el despliegue NO administra cuentas ────────
+  # Ver ADR 0013. El proyecto versiona el ESQUEMA de la aplicación; los usuarios de BD, sus
+  # membresías de rol y sus permisos los administra el DBA y viven fuera del modelo.
+  #
+  # Sin estas tres líneas, DropObjectsNotInSource elimina toda cuenta que no esté declarada.
+  # Medido en un repo real: un despliegue que sólo agregaba tres columnas habría borrado 7
+  # usuarios de producción —dos de ellos cuentas de servicio en uso—, 12 membresías de rol y
+  # 8 permisos. El plan lo declaraba, mezclado entre los cambios esperados.
+  #
+  # Las tres van juntas o no sirven: sin DropPermissionsNotInSource=false se revocan los permisos
+  # de esas cuentas (quedan sin acceso aunque el usuario sobreviva), y sin
+  # DropRoleMembersNotInSource=false se las saca de sus roles.
+  #
+  # Sólo bloquean el DROP: el proyecto sigue creando y actualizando las cuentas de servicio que
+  # SÍ declara en su modelo.
+  #
+  # Si su proyecto SÍ modela las cuentas y quiere que el despliegue las administre, quite estas
+  # tres líneas de forma deliberada y deje constancia de por qué.
+  DropPermissionsNotInSource: false
+  DropRoleMembersNotInSource: false
+  DoNotDropObjectTypes: "Logins;Users"
+  # Nota: DoNotDropObjectTypes SÓLO es válida con DropObjectsNotInSource: true; con false,
+  # sqlpackage falla con "may only be set when DropObjectsNotInSource is set to true".
+  # Y RoleMembership NO puede ir en esta lista mientras DropRoleMembersNotInSource sea true
+  # ("conflicts with the selected DoNotDropObjectType"): son dos formas de decir lo mismo.
 
 # ─── Configuración por acción ────────────────────────────────────────
 
