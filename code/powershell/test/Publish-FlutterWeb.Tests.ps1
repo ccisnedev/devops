@@ -3,7 +3,10 @@
 # Ejecutar: Invoke-Pester ./test/Publish-FlutterWeb.Tests.ps1
 
 BeforeAll {
-    Remove-Module 'macss-devops' -ErrorAction SilentlyContinue
+    # Remove-Module por nombre quita UNA version. Si el modulo publicado esta instalado en
+    # PSModulePath, puede quedar cargado junto al del repo y ganar la resolucion de nombres: la
+    # suite pasaria a medir el modulo instalado en vez del codigo bajo prueba. -All las quita todas.
+    Get-Module 'macss-devops' -All | Remove-Module -Force -ErrorAction SilentlyContinue
     Import-Module "$PSScriptRoot\..\macss-devops.psd1" -Force
 }
 
@@ -19,7 +22,9 @@ Describe 'Step 1: Legacy retirado y exports' {
         # intermedia. Conservar la funcion "para poder fallar bien" no tendria a quien explicarle
         # nada, y seria la misma deuda con otro disfraz.
         It 'ya no esta disponible como comando' {
-            Get-Command Publish-FlutterWebLegacy -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
+            # Get-Command autocargaria el modulo publicado desde PSModulePath y lo encontraria ahi.
+        # La pregunta es si lo exporta el modulo bajo prueba.
+        (Get-Module 'macss-devops').ExportedCommands.Keys | Should -Not -Contain 'Publish-FlutterWebLegacy'
         }
 
         It 'su archivo fuente fue eliminado' {
@@ -226,7 +231,8 @@ environment:
             $dupDir = Join-Path $env:TEMP "psdevops_test_dup_$([guid]::NewGuid().ToString().Substring(0,8))"
             New-Item -ItemType Directory -Path $dupDir -Force | Out-Null
             Set-Content -Path (Join-Path $dupDir 'pubspec.yaml') -Value "name: dup_app`nversion: 1.0.0" -Encoding UTF8
-            Set-Content -Path (Join-Path $dupDir 'deploy.yaml') -Value "server: x" -Encoding UTF8
+            Set-Content -Path (Join-Path $dupDir 'publish.yaml') -Value "port: 4000" -Encoding UTF8
+            Set-Content -Path (Join-Path $dupDir '.env') -Value 'MACSS_DEPLOY_SSH_ALIAS=alias-inexistente-xyz' -Encoding UTF8
             try {
                 Push-Location $dupDir
                 { Publish-FlutterWeb -Init -ErrorAction Stop } | Should -Throw '*publish.yaml*'
@@ -456,7 +462,8 @@ Describe 'Step 6: Publish-FlutterWeb -Apply' {
         It 'falla si no existe pubspec.yaml' {
             $emptyDir = Join-Path $env:TEMP "psdevops_test_deploy_nopub_$([guid]::NewGuid().ToString().Substring(0,8))"
             New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
-            Set-Content -Path (Join-Path $emptyDir 'deploy.yaml') -Value "server: test`nport: 4000" -Encoding UTF8
+            Set-Content -Path (Join-Path $emptyDir 'publish.yaml') -Value "port: 4000" -Encoding UTF8
+            Set-Content -Path (Join-Path $emptyDir '.env') -Value 'MACSS_DEPLOY_SSH_ALIAS=alias-inexistente-xyz' -Encoding UTF8
             try {
                 Push-Location $emptyDir
                 { Publish-FlutterWeb -Apply -AutoApprove -ErrorAction Stop } | Should -Throw '*pubspec.yaml*'
@@ -481,11 +488,14 @@ Describe 'Step 6: Publish-FlutterWeb -Apply' {
         }
 
         # deploy.yaml con el valor placeholder por defecto debe rechazarse.
-        It 'falla si deploy.yaml tiene valor placeholder (app-server)' {
+        It 'falla si el env no declara el alias de destino' {
             $placeholderDir = Join-Path $env:TEMP "psdevops_test_deploy_placeholder_$([guid]::NewGuid().ToString().Substring(0,8))"
             New-Item -ItemType Directory -Path $placeholderDir -Force | Out-Null
             Set-Content -Path (Join-Path $placeholderDir 'pubspec.yaml') -Value "name: x`nversion: 1.0.0" -Encoding UTF8
-            Set-Content -Path (Join-Path $placeholderDir 'deploy.yaml') -Value "server: your-ssh-alias`nport: 4000" -Encoding UTF8
+            Set-Content -Path (Join-Path $placeholderDir 'publish.yaml') -Value "port: 4000" -Encoding UTF8
+            # Alias vacio: es lo que deja '-Init' antes de que alguien lo complete. Sustituye al
+            # antiguo centinela 'your-ssh-alias' de publish.yaml.
+            Set-Content -Path (Join-Path $placeholderDir '.env') -Value 'MACSS_DEPLOY_SSH_ALIAS=' -Encoding UTF8
             try {
                 Push-Location $placeholderDir
                 { Publish-FlutterWeb -Apply -AutoApprove -ErrorAction Stop } | Should -Throw '*MACSS_DEPLOY_SSH_ALIAS*'
@@ -516,7 +526,8 @@ environment:
 server: real-server
 port: 4036
 "@
-            Set-Content -Path (Join-Path $configDir 'deploy.yaml') -Value $deploy -Encoding UTF8
+            Set-Content -Path (Join-Path $configDir 'publish.yaml') -Value $deploy -Encoding UTF8
+            Set-Content -Path (Join-Path $configDir '.env') -Value 'MACSS_DEPLOY_SSH_ALIAS=alias-inexistente-xyz' -Encoding UTF8
         }
 
         AfterAll {
@@ -527,7 +538,7 @@ port: 4036
         # intenta leer SSH config con Read-SSHConfig (que falla porque
         # 'real-server' no existe en ~/.ssh/config) — lo que demuestra
         # que la lectura de pubspec+deploy pasó correctamente.
-        It 'lee name de pubspec.yaml y server de deploy.yaml antes de fallar en SSH' {
+        It 'lee name de pubspec.yaml y el alias del env antes de fallar en SSH' {
             Push-Location $configDir
             try {
                 $threwSSH = $false
@@ -625,7 +636,8 @@ Describe 'Step 9: Publish-FlutterWeb -Plan (reporte pre-deploy)' {
         It 'falla si no existe pubspec.yaml' {
             $emptyDir = Join-Path $env:TEMP "psdevops_test_dr_nopub_$([guid]::NewGuid().ToString().Substring(0,8))"
             New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
-            Set-Content -Path (Join-Path $emptyDir 'deploy.yaml') -Value "server: test`nport: 4000" -Encoding UTF8
+            Set-Content -Path (Join-Path $emptyDir 'publish.yaml') -Value "port: 4000" -Encoding UTF8
+            Set-Content -Path (Join-Path $emptyDir '.env') -Value 'MACSS_DEPLOY_SSH_ALIAS=alias-inexistente-xyz' -Encoding UTF8
             try {
                 Push-Location $emptyDir
                 { Publish-FlutterWeb -Plan -ErrorAction Stop } | Should -Throw '*pubspec.yaml*'
@@ -650,11 +662,14 @@ Describe 'Step 9: Publish-FlutterWeb -Plan (reporte pre-deploy)' {
         }
 
         # Placeholder server debe rechazarse.
-        It 'falla si deploy.yaml tiene valor placeholder' {
+        It 'falla si el env no declara el alias de destino' {
             $placeholderDir = Join-Path $env:TEMP "psdevops_test_dr_ph_$([guid]::NewGuid().ToString().Substring(0,8))"
             New-Item -ItemType Directory -Path $placeholderDir -Force | Out-Null
             Set-Content -Path (Join-Path $placeholderDir 'pubspec.yaml') -Value "name: x`nversion: 1.0.0" -Encoding UTF8
-            Set-Content -Path (Join-Path $placeholderDir 'deploy.yaml') -Value "server: your-ssh-alias`nport: 4000" -Encoding UTF8
+            Set-Content -Path (Join-Path $placeholderDir 'publish.yaml') -Value "port: 4000" -Encoding UTF8
+            # Alias vacio: es lo que deja '-Init' antes de que alguien lo complete. Sustituye al
+            # antiguo centinela 'your-ssh-alias' de publish.yaml.
+            Set-Content -Path (Join-Path $placeholderDir '.env') -Value 'MACSS_DEPLOY_SSH_ALIAS=' -Encoding UTF8
             try {
                 Push-Location $placeholderDir
                 { Publish-FlutterWeb -Plan -ErrorAction Stop } | Should -Throw '*MACSS_DEPLOY_SSH_ALIAS*'
@@ -675,7 +690,8 @@ Describe 'Step 9: Publish-FlutterWeb -Plan (reporte pre-deploy)' {
             $reportDir = Join-Path $env:TEMP "psdevops_test_dr_nobuild_$([guid]::NewGuid().ToString().Substring(0,8))"
             New-Item -ItemType Directory -Path $reportDir -Force | Out-Null
             Set-Content -Path (Join-Path $reportDir 'pubspec.yaml') -Value "name: testapp`nversion: 2.0.0" -Encoding UTF8
-            Set-Content -Path (Join-Path $reportDir 'deploy.yaml') -Value "server: real-server`nport: 4050" -Encoding UTF8
+            Set-Content -Path (Join-Path $reportDir 'publish.yaml') -Value "port: 4050" -Encoding UTF8
+            Set-Content -Path (Join-Path $reportDir '.env') -Value 'MACSS_DEPLOY_SSH_ALIAS=alias-inexistente-xyz' -Encoding UTF8
             try {
                 Push-Location $reportDir
                 $threwSSH = $false

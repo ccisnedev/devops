@@ -2,9 +2,14 @@
 # Generado por: Publish-DockerStack -Init
 # NO incluya secretos en este archivo — este archivo SÍ se versiona.
 # Los secretos van en .env (gitignored), que se copia al servidor y consume docker compose.
-
-# ─── Servidor ─────────────────────────────────────────
-server: your-ssh-alias          # alias en ~/.ssh/config (Host, HostName, User, IdentityFile[, Port])
+#
+# El SERVIDOR DESTINO no vive aquí: un alias SSH es específico de cada máquina, y versionarlo
+# obliga a editar un archivo del repo para cambiar de entorno. Vive en el .env, en
+# 'MACSS_DEPLOY_SSH_ALIAS'. El entorno se elige con -EnvFile (default .env; producción es
+# explícita: -EnvFile .env.production). Ver ADR 0004 y ADR 0010.
+#
+# Esa clave se filtra antes de subir el .env al servidor: es metadato de despliegue, no
+# configuración de runtime del stack.
 
 # ─── Stack ────────────────────────────────────────────
 stack:

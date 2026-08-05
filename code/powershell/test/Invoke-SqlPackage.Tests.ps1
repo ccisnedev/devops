@@ -4,7 +4,10 @@
 
 BeforeAll {
     # Recargar módulo
-    Remove-Module 'macss-devops' -ErrorAction SilentlyContinue
+    # Remove-Module por nombre quita UNA version. Si el modulo publicado esta instalado en
+    # PSModulePath, puede quedar cargado junto al del repo y ganar la resolucion de nombres: la
+    # suite pasaria a medir el modulo instalado en vez del codigo bajo prueba. -All las quita todas.
+    Get-Module 'macss-devops' -All | Remove-Module -Force -ErrorAction SilentlyContinue
     Import-Module "$PSScriptRoot\..\macss-devops.psd1" -Force
 }
 
@@ -354,28 +357,28 @@ Describe 'Etapa 4: Validaciones de prerequisitos' {
         Remove-Item $script:noYamlDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    It '-DeployReport falla sin .env' {
+    It '-Plan falla sin .env' {
         Push-Location $script:noEnvDir
         try {
-            { Invoke-SqlPackage -DeployReport } | Should -Throw "*.env*"
+            { Invoke-SqlPackage -Plan } | Should -Throw "*.env*"
         }
         finally { Pop-Location }
     }
 
-    It '-DeployReport falla sin sqlpackage.yaml' {
+    It '-Plan falla sin sqlpackage.yaml' {
         Push-Location $script:noYamlDir
         try {
-            { Invoke-SqlPackage -DeployReport } | Should -Throw "*sqlpackage.yaml*"
+            { Invoke-SqlPackage -Plan } | Should -Throw "*sqlpackage.yaml*"
         }
         finally { Pop-Location }
     }
 
-    It '-Publish falla sin .sqlproj' {
+    It '-Apply falla sin .sqlproj' {
         $emptyDir = Join-Path $env:TEMP "PSDevOps_NoPrj2_$(Get-Random)"
         New-Item -Path $emptyDir -ItemType Directory -Force | Out-Null
         Push-Location $emptyDir
         try {
-            { Invoke-SqlPackage -Publish } | Should -Throw "*sqlproj*"
+            { Invoke-SqlPackage -Apply -AutoApprove } | Should -Throw "*sqlproj*"
         }
         finally {
             Pop-Location
@@ -399,7 +402,7 @@ Describe 'Etapa 4: Validaciones de prerequisitos' {
         finally { Pop-Location }
     }
 
-    It '-DeployReport crea outputDir automáticamente si no existe' {
+    It '-Plan crea outputDir automáticamente si no existe' {
         $baseDir = Join-Path $env:TEMP "PSDevOps_DRDir_$(Get-Random)"
         New-Item -Path $baseDir -ItemType Directory -Force | Out-Null
         $outputDir = Join-Path $baseDir "deploy_reports"
@@ -416,7 +419,7 @@ deployReport:
             # El directorio no debe existir aún
             Test-Path $outputDir | Should -BeFalse
             # La llamada fallará por sqlpackage.exe no disponible, pero el dir debe crearse antes
-            try { Invoke-SqlPackage -DeployReport } catch {}
+            try { Invoke-SqlPackage -Plan } catch {}
             Test-Path $outputDir | Should -BeTrue
         }
         finally {

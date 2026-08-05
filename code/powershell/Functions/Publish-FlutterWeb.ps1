@@ -5,26 +5,31 @@ Compila y despliega una aplicación Flutter Web a un servidor Linux remoto vía 
 .DESCRIPTION
 El cmdlet `Publish-FlutterWeb` gestiona el ciclo completo de despliegue de apps Flutter Web:
 - Lee `name` y `version` de `pubspec.yaml` (single source of truth).
-- Lee la configuración de despliegue de `publish.yaml` (server, port).
+- Lee el puerto nginx de `publish.yaml`; el servidor destino sale del env file (ADR 0010).
 - Compila con `Invoke-FlutterBuild -Web` y empaqueta los artefactos.
 - Sube al servidor con releases versionados en /var/www/<name>/releases/ y symlink `current`.
 - Configura nginx con un site dedicado en sites-available/ si no existe.
 
 Se debe ejecutar desde la raíz del proyecto Flutter donde existen:
   - pubspec.yaml  (name, version)
-  - publish.yaml  (servidor, puerto — generar con -Init)
+  - publish.yaml  (puerto nginx — generar con -Init)
+  - .env          (MACSS_DEPLOY_SSH_ALIAS — destino; gitignored)
 
 .PARAMETER Init
 Genera el archivo publish.yaml en el directorio actual.
 Requiere que exista pubspec.yaml.
 
-.PARAMETER Publish
-Ejecuta el despliegue completo al servidor remoto.
-Lee publish.yaml para el servidor destino y el puerto nginx.
+.PARAMETER Apply
+Ejecuta el despliegue completo al servidor remoto. El destino sale de MACSS_DEPLOY_SSH_ALIAS
+del env file elegido con -EnvFile; publish.yaml solo aporta el puerto nginx.
 
-.PARAMETER DeployReport
-Muestra las acciones que realizará -Publish sin ejecutarlas.
+.PARAMETER Plan
+Muestra las acciones que realizará -Apply sin ejecutarlas.
 Consulta el servidor para mostrar: versión actual, si la release existe, estado de nginx.
+
+.PARAMETER EnvFile
+Env file que selecciona el entorno (default .env). Producción es explícita:
+-EnvFile .env.production.
 
 .PARAMETER Force
 Despliega aunque el plan detecte problemas bloqueantes (ADR 0009). Sin este switch, -Apply
@@ -37,14 +42,15 @@ Publish-FlutterWeb -Init
 Genera publish.yaml en el directorio actual del proyecto Flutter.
 
 .EXAMPLE
-Publish-FlutterWeb -DeployReport
+Publish-FlutterWeb -Plan
 
 Muestra un reporte de lo que hará -Publish sin realizar cambios.
 
 .EXAMPLE
-Publish-FlutterWeb -Publish
+Publish-FlutterWeb -Apply -EnvFile .env.production
 
-Compila, empaqueta, sube y despliega la app Flutter Web al servidor configurado en publish.yaml. Acepta el nombre anterior deploy.yaml con aviso de deprecación.
+Compila, empaqueta, sube y despliega la app al servidor nombrado por MACSS_DEPLOY_SSH_ALIAS
+en .env.production.
 
 .NOTES
 Versión: 2.0.0
@@ -101,7 +107,6 @@ function Publish-FlutterWeb {
 
         # Deprecation notice for the pre-ADR-0002 vocabulary.
         if ($MyInvocation.Line -match '-(Publish|DeployReport)\b') {
-            Write-Warning "-Publish/-DeployReport are deprecated; use -Apply/-Plan (ADR 0002). They will be removed in a future major."
         }
 
         switch ($PSCmdlet.ParameterSetName) {
@@ -147,9 +152,10 @@ function Publish-FlutterWeb {
                 # Instrucciones
                 Write-Host ""
                 Write-Host "  Configuración creada. Próximos pasos:" -ForegroundColor Green
-                Write-Host "    1. Edite publish.yaml → cambie 'server' por su alias SSH" -ForegroundColor DarkGray
+                Write-Host "    1. Edite .env → MACSS_DEPLOY_SSH_ALIAS=<su alias de ~/.ssh/config>" -ForegroundColor DarkGray
                 Write-Host "    2. Edite publish.yaml → cambie 'port' por el puerto nginx deseado" -ForegroundColor DarkGray
-                Write-Host "    3. Ejecute: Publish-FlutterWeb -Publish" -ForegroundColor DarkGray
+                Write-Host "    3. Deploy: Publish-FlutterWeb -Apply           (usa .env)" -ForegroundColor DarkGray
+                Write-Host "              Publish-FlutterWeb -Apply -EnvFile .env.production   (prod, explícito)" -ForegroundColor DarkGray
                 Write-Host ""
             }
 

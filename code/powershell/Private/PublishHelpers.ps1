@@ -123,7 +123,7 @@ Directorio raiz del proyecto.
 .EXAMPLE
 $cfg = Resolve-PublishConfigPath -ProjectRoot (Get-Location).Path
 if (-not $cfg.Path) { throw "..." }
-if ($cfg.IsLegacy) { Write-Host "deploy.yaml esta deprecado..." }
+if ($cfg.IsLegacy) { Deny-DeprecatedUsage -Cmdlet $c -What 'deploy.yaml' -UseInstead 'publish.yaml' -Since '6.0.0' }
 #>
 function Resolve-PublishConfigPath {
     [CmdletBinding()]
@@ -546,48 +546,6 @@ function Resolve-NodeRuntime {
     }
 }
 
-<#
-.SYNOPSIS
-Resuelve el servidor destino del despliegue desde el env file elegido (ADR 0004).
-
-.DESCRIPTION
-El destino no es una propiedad del codigo sino config per-entorno/per-maquina: vive en el
-env file gitignored (`.env`, `.env.production`, ...) bajo la clave namespaced
-`MACSS_DEPLOY_SERVER` (un alias de ~/.ssh/config). El env file se elige con -EnvFile
-(default `.env`), asi "que entorno" = "que archivo" y prod nunca es el default.
-Falla claro si la clave no esta, en vez de desplegar a un destino silencioso/equivocado.
-
-.PARAMETER EnvVars
-Hashtable de variables ya parseadas del env file (Read-DotEnv .Env). Case-insensitive.
-
-.PARAMETER EnvFilePath
-Ruta del env file, solo para el mensaje de error (default '.env').
-
-.EXAMPLE
-$target = Resolve-DeployTarget -EnvVars $envConfig.Env -EnvFilePath $envFile
-#>
-function Resolve-DeployTarget {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        $EnvVars,
-
-        [Parameter(Mandatory = $false)]
-        [string]$EnvFilePath = '.env'
-    )
-
-    $target = ''
-    if ($EnvVars -and $EnvVars['MACSS_DEPLOY_SERVER']) {
-        $target = "$($EnvVars['MACSS_DEPLOY_SERVER'])".Trim()
-    }
-
-    if (-not $target) {
-        throw "No hay destino de despliegue: falta 'MACSS_DEPLOY_SERVER' en '$EnvFilePath'. " +
-              "Ejecute 'Publish-NodeApi -Init' o agregue 'MACSS_DEPLOY_SERVER=<alias de ~/.ssh/config>' al env file."
-    }
-
-    return $target
-}
 
 <#
 .SYNOPSIS
@@ -918,11 +876,11 @@ function Remove-DeployOnlyEnvKeys {
 
 <#
 .SYNOPSIS
-Asegura que un env file declare MACSS_DEPLOY_SERVER (ADR 0004), idempotente.
+Asegura que un env file declare MACSS_DEPLOY_SSH_ALIAS (ADR 0004), idempotente.
 
 .DESCRIPTION
 Usado por -Init. Si el archivo no existe lo crea con una plantilla mínima (incluye
-MACSS_DEPLOY_SERVER=, PORT, NODE_ENV). Si existe pero no tiene la clave, la agrega al final.
+MACSS_DEPLOY_SSH_ALIAS=, PORT, NODE_ENV). Si existe pero no tiene la clave, la agrega al final.
 Si ya la tiene, no toca nada. Retorna 'created' | 'appended' | 'exists'.
 
 .PARAMETER Path
@@ -953,7 +911,7 @@ $header Se copia al servidor como .env del release
 # (sin las claves MACSS_DEPLOY_*). NO versionar (está en .gitignore).
 
 $keyComment
-MACSS_DEPLOY_SERVER=
+MACSS_DEPLOY_SSH_ALIAS=
 
 PORT=8080
 NODE_ENV=production
@@ -963,12 +921,12 @@ NODE_ENV=production
     }
 
     $content = Get-Content $Path -Raw
-    if ($content -match '(?m)^\s*MACSS_DEPLOY_SERVER\s*=') {
+    if ($content -match '(?m)^\s*MACSS_DEPLOY_SSH_ALIAS\s*=') {
         return 'exists'
     }
 
     $sep = if ($content -and -not $content.EndsWith("`n")) { "`n" } else { '' }
-    Add-Content -Path $Path -Value "$sep`n$keyComment`nMACSS_DEPLOY_SERVER="
+    Add-Content -Path $Path -Value "$sep`n$keyComment`nMACSS_DEPLOY_SSH_ALIAS="
     return 'appended'
 }
 

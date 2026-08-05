@@ -64,34 +64,15 @@ Describe "Resolve-NodeRuntime (REQ-1..3)" {
     }
 }
 
-Describe "Resolve-DeployTarget (ADR 0004, REQ-11/REQ-12)" {
-
-    It "REQ-11: returns MACSS_DEPLOY_SERVER from the parsed env" {
-        Resolve-DeployTarget -EnvVars @{ 'MACSS_DEPLOY_SERVER' = 'pre-prod'; 'PORT' = '3042' } | Should -Be 'pre-prod'
-    }
-
-    It "REQ-11: trims surrounding whitespace" {
-        Resolve-DeployTarget -EnvVars @{ 'MACSS_DEPLOY_SERVER' = '  prod  ' } | Should -Be 'prod'
-    }
-
-    It "REQ-11: key lookup is case-insensitive (PowerShell hashtable)" {
-        Resolve-DeployTarget -EnvVars @{ 'macss_deploy_server' = 'staging' } | Should -Be 'staging'
-    }
-
-    It "REQ-12: throws (actionable, names the file) when MACSS_DEPLOY_SERVER is absent" {
-        { Resolve-DeployTarget -EnvVars @{ 'PORT' = '3042' } -EnvFilePath '.env' } |
-            Should -Throw -ExpectedMessage '*MACSS_DEPLOY_SERVER*'
-    }
-
-    It "REQ-12: throws when MACSS_DEPLOY_SERVER is empty" {
-        { Resolve-DeployTarget -EnvVars @{ 'MACSS_DEPLOY_SERVER' = '' } } | Should -Throw
-    }
-}
+# REQ-11/REQ-12 vivian aqui, sobre Resolve-DeployTarget. Ese helper se retiro con ADR 0010: su
+# reemplazo, Resolve-DeployTargetFromEnv, ademas lee el env file y detecta los mecanismos
+# deprecados, asi que no se puede probar solo con una hashtable. La cobertura equivalente esta
+# en ResolveDeployTargetFromEnv.Tests.ps1.
 
 Describe "Remove-DeployOnlyEnvKeys (ADR 0004, REQ-13)" {
 
     It "REQ-13: strips every MACSS_DEPLOY_* line, preserves the rest verbatim" {
-        $lines = @('# comentario', 'PORT=3042', 'MACSS_DEPLOY_SERVER=pre-prod', 'DB_HOST=10.0.0.1', 'MACSS_DEPLOY_FOO=bar', '')
+        $lines = @('# comentario', 'PORT=3042', 'MACSS_DEPLOY_SSH_ALIAS=pre-prod', 'DB_HOST=10.0.0.1', 'MACSS_DEPLOY_FOO=bar', '')
         $out = Remove-DeployOnlyEnvKeys -Lines $lines
         ($out -join "`n") | Should -Be (@('# comentario', 'PORT=3042', 'DB_HOST=10.0.0.1', '') -join "`n")
     }
@@ -102,12 +83,12 @@ Describe "Remove-DeployOnlyEnvKeys (ADR 0004, REQ-13)" {
     }
 
     It "REQ-13: only strips keys that START with the prefix (not mid-name matches)" {
-        $lines = @('APP_MACSS_DEPLOY_SERVER=keep')
+        $lines = @('APP_MACSS_DEPLOY_SSH_ALIAS=keep')
         (Remove-DeployOnlyEnvKeys -Lines $lines) -join "`n" | Should -Be ($lines -join "`n")
     }
 
     It "REQ-13: tolerates leading whitespace before the key" {
-        $lines = @('  MACSS_DEPLOY_SERVER=x', 'PORT=1')
+        $lines = @('  MACSS_DEPLOY_SSH_ALIAS=x', 'PORT=1')
         (Remove-DeployOnlyEnvKeys -Lines $lines) -join "`n" | Should -Be 'PORT=1'
     }
 }
@@ -120,11 +101,11 @@ Describe "Add-EnvDeployKey (ADR 0004, REQ-15)" {
     }
     AfterEach { Remove-Item -Recurse -Force -Path $script:dir -ErrorAction SilentlyContinue }
 
-    It "REQ-15: creates a missing env file with MACSS_DEPLOY_SERVER=" {
+    It "REQ-15: creates a missing env file with MACSS_DEPLOY_SSH_ALIAS=" {
         $p = Join-Path $script:dir '.env'
         Add-EnvDeployKey -Path $p | Should -Be 'created'
         Test-Path $p | Should -BeTrue
-        (Get-Content $p -Raw) | Should -Match '(?m)^MACSS_DEPLOY_SERVER='
+        (Get-Content $p -Raw) | Should -Match '(?m)^MACSS_DEPLOY_SSH_ALIAS='
     }
 
     It "REQ-15: appends the key to an existing file that lacks it" {
@@ -132,15 +113,15 @@ Describe "Add-EnvDeployKey (ADR 0004, REQ-15)" {
         Set-Content -Path $p -Value "PORT=3042`nDB_HOST=x"
         Add-EnvDeployKey -Path $p | Should -Be 'appended'
         $c = Get-Content $p -Raw
-        $c | Should -Match '(?m)^MACSS_DEPLOY_SERVER='
+        $c | Should -Match '(?m)^MACSS_DEPLOY_SSH_ALIAS='
         $c | Should -Match 'PORT=3042'   # no pisa lo existente
     }
 
     It "REQ-15: is idempotent — returns 'exists' and does not duplicate the key" {
         $p = Join-Path $script:dir '.env'
-        Set-Content -Path $p -Value "MACSS_DEPLOY_SERVER=pre-prod`nPORT=1"
+        Set-Content -Path $p -Value "MACSS_DEPLOY_SSH_ALIAS=pre-prod`nPORT=1"
         Add-EnvDeployKey -Path $p | Should -Be 'exists'
-        ([regex]::Matches((Get-Content $p -Raw), 'MACSS_DEPLOY_SERVER=')).Count | Should -Be 1
+        ([regex]::Matches((Get-Content $p -Raw), 'MACSS_DEPLOY_SSH_ALIAS=')).Count | Should -Be 1
     }
 }
 
