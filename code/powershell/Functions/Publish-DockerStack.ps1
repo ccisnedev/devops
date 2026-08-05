@@ -90,11 +90,7 @@ function Publish-DockerStack {
 
     process {
         # Banner
-        Write-Host ""
-        Write-Host "╔══════════════════════════════════════════════════╗" -ForegroundColor Cyan
-        Write-Host "║      Publish-DockerStack — macss-devops          ║" -ForegroundColor Cyan
-        Write-Host "╚══════════════════════════════════════════════════╝" -ForegroundColor Cyan
-        Write-Host ""
+        Show-MacssBanner -Title 'Publish-DockerStack'
 
         # ─── helpers compartidos ─────────────────────────
         . "$PSScriptRoot/../Private/PublishHelpers.ps1"

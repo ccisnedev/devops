@@ -124,11 +124,7 @@
 
     process {
         # Banner
-        Write-Host ""
-        Write-Host "╔══════════════════════════════════════════════════╗" -ForegroundColor Cyan
-        Write-Host "║         pgschema — macss-devops                 ║" -ForegroundColor Cyan
-        Write-Host "╚══════════════════════════════════════════════════╝" -ForegroundColor Cyan
-        Write-Host ""
+        Show-MacssBanner -Title 'Invoke-PgSchema'
 
         switch ($PSCmdlet.ParameterSetName) {
             'Init' {

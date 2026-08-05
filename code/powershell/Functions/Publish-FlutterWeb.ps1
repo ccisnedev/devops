@@ -99,11 +99,7 @@ function Publish-FlutterWeb {
 
     process {
         # Banner
-        Write-Host ""
-        Write-Host "╔══════════════════════════════════════════════════╗" -ForegroundColor Cyan
-        Write-Host "║     Publish-FlutterWeb — macss-devops           ║" -ForegroundColor Cyan
-        Write-Host "╚══════════════════════════════════════════════════╝" -ForegroundColor Cyan
-        Write-Host ""
+        Show-MacssBanner -Title 'Publish-FlutterWeb'
 
         # Deprecation notice for the pre-ADR-0002 vocabulary.
         if ($MyInvocation.Line -match '-(Publish|DeployReport)\b') {
