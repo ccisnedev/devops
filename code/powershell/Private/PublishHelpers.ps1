@@ -1155,3 +1155,59 @@ function New-Pm2EcosystemJson {
 
     return ([ordered]@{ apps = @($apps) } | ConvertTo-Json -Depth 6)
 }
+
+<#
+.SYNOPSIS
+Imprime el banner de un cmdlet, con la versión del módulo que lo está ejecutando.
+
+.DESCRIPTION
+La versión no es decoración. PowerShell no recarga un módulo ya importado aunque haya una versión
+mayor instalada, así que una sesión puede estar corriendo código viejo sin que nada lo indique:
+el plan sale con el formato de una versión y el comportamiento de otra, y diagnosticarlo obliga a
+inspeccionar `Get-Module`. Con la versión en el banner se ve de entrada.
+
+El ancho del marco se calcula, en vez de estar escrito a mano, para que el texto no lo desalinee.
+
+.PARAMETER Title
+Nombre del cmdlet, tal como se invoca.
+
+.PARAMETER Version
+Version a mostrar. Por defecto la del modulo que ejecuta. Es parametro para poder probar la
+geometria con versiones de distinta longitud (prerelease, por ejemplo) sin publicar ninguna.
+
+.PARAMETER MinWidth
+Ancho interior minimo. No es un ancho fijo: si el texto no cabe, el marco crece. Existe para que
+los banners de uso normal se vean todos igual de anchos en vez de bailar segun el nombre.
+#>
+function Show-MacssBanner {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Title,
+
+        [Parameter()]
+        [string]$Version,
+
+        [Parameter()]
+        [int]$MinWidth = 50
+    )
+
+    if (-not $PSBoundParameters.ContainsKey('Version')) {
+        $Version = if ($ExecutionContext.SessionState.Module) {
+            "v$($ExecutionContext.SessionState.Module.Version)"
+        } else {
+            '(versión desconocida)'
+        }
+    }
+
+    $text  = "$Title — macss-devops $Version"
+    $inner = [Math]::Max($MinWidth, $text.Length + 4)
+    $pad   = $inner - $text.Length
+    $left  = [Math]::Floor($pad / 2)
+
+    Write-Host ""
+    Write-Host ("╔" + ("═" * $inner) + "╗") -ForegroundColor Cyan
+    Write-Host ("║" + (' ' * $left) + $text + (' ' * ($pad - $left)) + "║") -ForegroundColor Cyan
+    Write-Host ("╚" + ("═" * $inner) + "╝") -ForegroundColor Cyan
+    Write-Host ""
+}
