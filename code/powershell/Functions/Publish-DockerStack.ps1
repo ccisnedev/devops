@@ -75,7 +75,13 @@ function Publish-DockerStack {
 
         [Parameter(ParameterSetName = 'Apply',
             HelpMessage = "Allow deploying a dirty git worktree (release is tagged +dirty)")]
-        [switch]$AllowDirty
+        [switch]$AllowDirty,
+
+        [Parameter(ParameterSetName = 'Apply',
+            HelpMessage = "Env file selecting the environment (default .env). Its MACSS_DEPLOY_SSH_ALIAS names the target; prod is explicit: -EnvFile .env.production")]
+        [Parameter(ParameterSetName = 'Plan',
+            HelpMessage = "Env file selecting the environment (default .env). Its MACSS_DEPLOY_SSH_ALIAS names the target.")]
+        [string]$EnvFile = '.env'
     )
 
     begin {
@@ -119,6 +125,9 @@ function Publish-DockerStack {
                 if (-not (Test-Path $envPath)) {
                     $envContent = @"
 # .env — Variables/secretos para el stack (consumido por docker compose --env-file).
+# El destino del despliegue vive aqui, no en stack.yaml: un alias SSH es machine-local
+# y versionarlo obliga a editar un archivo del repo para cambiar de entorno (ADR 0010).
+MACSS_DEPLOY_SSH_ALIAS=
 # Este archivo se copia al servidor en cada despliegue. NO versionar (está en .gitignore).
 
 # EJEMPLO:
@@ -166,19 +175,21 @@ function Publish-DockerStack {
                 Write-Host "  Release:    $release" -ForegroundColor Cyan
                 Write-Host "  Compose:    $($cfg.ComposeFile)" -ForegroundColor Cyan
                 Write-Host "  Build:      $($cfg.Build)$(if ($cfg.Build -eq 'transfer') { " ($($cfg.Image))" })" -ForegroundColor Cyan
-                Write-Host "  Servidor:   $($cfg.Server)" -ForegroundColor Cyan
+                Write-Host "  Servidor:   $server" -ForegroundColor Cyan
                 if ($cfg.HealthMode) {
                     Write-Host "  Health:     $($cfg.HealthMode) → $($cfg.HealthTarget)" -ForegroundColor Cyan
                 }
                 Write-Host ""
 
-                if (-not (Confirm-MacssChange -Action "Deploy stack '$($cfg.Name)' $release to '$($cfg.Server)' (build:$($cfg.Build))" -AutoApprove:$AutoApprove)) {
+                if (-not (Confirm-MacssChange -Action "Deploy stack '$($cfg.Name)' $release to '$server' (build:$($cfg.Build))" -AutoApprove:$AutoApprove)) {
                     Write-Host "  Apply cancelado." -ForegroundColor Yellow
                     return
                 }
 
                 # ─── SSH ─────────────────────────────────────
-                $ssh = Read-SSHConfig -HostAlias $cfg.Server
+                $server = Resolve-DeployTargetFromEnv -ProjectRoot $cwd -EnvFile $EnvFile `
+                              -LegacyServer $cfg.Server -Cmdlet 'Publish-DockerStack'
+                $ssh = Read-SSHConfig -HostAlias $server
                 $user = $ssh.User
                 $ip = $ssh.HostName
                 $sshPort = $ssh.Port
@@ -229,7 +240,10 @@ function Publish-DockerStack {
                     & scp -i $keyPath -P $sshPort $localTar "$($user)@$($ip):$remoteTar" 2>&1 | Out-Null
                     if ($LASTEXITCODE -ne 0) { throw "Error al subir el tarball (scp exit: $LASTEXITCODE)" }
 
-                    $envRaw = Get-Content (Join-Path $cwd '.env') -Raw
+                    # Las claves MACSS_DEPLOY_* son metadato de despliegue, no config de runtime
+                    # del stack: se filtran antes de subir (ADR 0004 §2, ADR 0010).
+                    $envRaw = (Remove-DeployOnlyEnvKeys -Lines (Get-Content (Join-Path $cwd $EnvFile))) -join "`n"
+
                     $tmpEnv = New-UnixTempFile -Content $envRaw -Prefix "psdevops_dockenv_"
                     & scp -i $keyPath -P $sshPort $tmpEnv "$($user)@$($ip):$remoteEnv" 2>&1 | Out-Null
                     if ($LASTEXITCODE -ne 0) { throw "Error al subir .env (scp exit: $LASTEXITCODE)" }
@@ -323,7 +337,9 @@ function Publish-DockerStack {
                 $cfg = Get-DockerStackConfig -ProjectRoot $cwd
                 $release = Get-DockerStackRelease -ProjectRoot $cwd -Version $cfg.Version -AllowDirty
 
-                $ssh = Read-SSHConfig -HostAlias $cfg.Server
+                $server = Resolve-DeployTargetFromEnv -ProjectRoot $cwd -EnvFile $EnvFile `
+                              -LegacyServer $cfg.Server -Cmdlet 'Publish-DockerStack'
+                $ssh = Read-SSHConfig -HostAlias $server
                 $user = $ssh.User; $ip = $ssh.HostName; $sshPort = $ssh.Port; $keyPath = $ssh.IdentityFile
 
                 Write-Host "  Modo: SOLO REPORTE (no se realizarán cambios)" -ForegroundColor Yellow

@@ -35,6 +35,9 @@ Describe "Get-DockerStackConfig validation" {
         . "$PSScriptRoot/../Private/DockerStackHelpers.ps1"
         $script:root = Join-Path ([IO.Path]::GetTempPath()) ("dockstack_" + [guid]::NewGuid().ToString('N').Substring(0,8))
         New-Item -ItemType Directory -Path $script:root | Out-Null
+        # Get-DockerStackConfig exige .env (ahi viven los secretos del stack y, desde ADR 0010,
+        # el alias de destino). Es requisito del fixture, no lo que estos tests verifican.
+        Set-Content -Path (Join-Path $script:root '.env') -Value 'MACSS_DEPLOY_SSH_ALIAS=pre-prod'
     }
     AfterAll {
         Remove-Item -LiteralPath $script:root -Recurse -Force -ErrorAction SilentlyContinue
@@ -44,10 +47,12 @@ Describe "Get-DockerStackConfig validation" {
         { Get-DockerStackConfig -ProjectRoot $script:root } | Should -Throw "*stack.yaml*"
     }
 
-    It "throws when server is still the placeholder" {
-        Set-Content -Path (Join-Path $script:root 'stack.yaml') -Value "server: your-ssh-alias`nstack:`n  name: x`n"
-        Set-Content -Path (Join-Path $script:root '.env') -Value "X=1`n"
-        { Get-DockerStackConfig -ProjectRoot $script:root } | Should -Throw "*your-ssh-alias*"
+    It "no valida el placeholder de 'server': esa clave ya no existe (ADR 0010)" {
+        # La validacion contra 'your-ssh-alias' existia porque el destino vivia en un archivo
+        # versionado. Ahora el destino sale del env file, y un env recien sembrado trae la clave
+        # vacia: el helper compartido falla igual de explicito, sin necesitar un centinela.
+        $t = Get-Content (Join-Path $PSScriptRoot '..\Resources\Publish-DockerStack\templates\stack.yaml') -Raw
+        [bool]($t -match '(?m)^\s*server\s*:') | Should -BeFalse
     }
 
     It "parses a valid config and defaults build to server" {

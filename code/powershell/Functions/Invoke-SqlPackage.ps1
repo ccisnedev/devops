@@ -83,12 +83,10 @@
 
         [Parameter(Mandatory, ParameterSetName = 'Apply',
             HelpMessage = "Deploy the .dacpac to the server (build -> plan -> confirm -> apply)")]
-        [Alias('Publish')]
         [switch]$Apply,
 
         [Parameter(Mandatory, ParameterSetName = 'Plan',
             HelpMessage = "Dry-run: XML diff report of what -Apply would change")]
-        [Alias('DeployReport')]
         [switch]$Plan,
 
         [Parameter(Mandatory, ParameterSetName = 'Script',
@@ -138,7 +136,6 @@
 
         # Deprecation notice for the pre-ADR-0002 vocabulary.
         if ($MyInvocation.Line -match '-(Publish|DeployReport)\b') {
-            Write-Warning "-Publish/-DeployReport are deprecated; use -Apply/-Plan (ADR 0002). They will be removed in a future major."
         }
 
         switch ($PSCmdlet.ParameterSetName) {

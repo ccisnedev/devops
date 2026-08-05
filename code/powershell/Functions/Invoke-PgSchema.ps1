@@ -105,7 +105,17 @@
         [Parameter(ParameterSetName = 'Apply')]
         [Parameter(ParameterSetName = 'Dump')]
         [Parameter(ParameterSetName = 'Script')]
-        [string]$Schema
+        [string]$Schema,
+
+        [Parameter(ParameterSetName = 'Plan',
+            HelpMessage = "Env file with the PostgreSQL credentials (default .env). Production is explicit: -EnvFile .env.production")]
+        [Parameter(ParameterSetName = 'Apply',
+            HelpMessage = "Env file with the PostgreSQL credentials (default .env). Production is explicit: -EnvFile .env.production")]
+        [Parameter(ParameterSetName = 'Dump',
+            HelpMessage = "Env file with the PostgreSQL credentials (default .env).")]
+        [Parameter(ParameterSetName = 'Script',
+            HelpMessage = "Env file with the PostgreSQL credentials (default .env).")]
+        [string]$EnvFile = '.env'
     )
 
     begin {
@@ -133,10 +143,11 @@
             }
 
             'Plan' {
-                $resolved = Resolve-PgSchemaTargets -Schema $Schema
+                $resolved = Resolve-PgSchemaTargets -Schema $Schema -EnvFile $EnvFile
                 $config   = $resolved.Config
                 $schemas  = $resolved.Schemas
                 $envVars  = $resolved.EnvVars
+                $database = $resolved.Database
 
                 try {
                     Write-Host "  Host:     $($envVars['PGHOST']):$($envVars['PGPORT'])" -ForegroundColor Cyan
@@ -159,7 +170,7 @@
                         # JSON plan siempre va al archivo del schema
                         $extraArgs += '--output-json', $s.plan
 
-                        $pgArgs = Build-PgSchemaArgs -Action 'plan' -SchemaEntry $s -EnvVars $envVars -ExtraArgs $extraArgs
+                        $pgArgs = Build-PgSchemaArgs -Action 'plan' -SchemaEntry $s -EnvVars $envVars -Database $database -ExtraArgs $extraArgs
 
                         Invoke-PgSchemaWSL -Arguments $pgArgs -Password $envVars['PGPASSWORD']
 
@@ -178,10 +189,11 @@
             }
 
             'Apply' {
-                $resolved = Resolve-PgSchemaTargets -Schema $Schema
+                $resolved = Resolve-PgSchemaTargets -Schema $Schema -EnvFile $EnvFile
                 $config   = $resolved.Config
                 $schemas  = $resolved.Schemas
                 $envVars  = $resolved.EnvVars
+                $database = $resolved.Database
 
                 try {
                     Write-Host "  Host:     $($envVars['PGHOST']):$($envVars['PGPORT'])" -ForegroundColor Cyan
@@ -218,7 +230,7 @@
                             $extraArgs += '--lock-timeout', $config.apply_options.lock_timeout
                         }
 
-                        $pgArgs = Build-PgSchemaArgs -Action 'apply' -SchemaEntry $s -EnvVars $envVars -ExtraArgs $extraArgs
+                        $pgArgs = Build-PgSchemaArgs -Action 'apply' -SchemaEntry $s -EnvVars $envVars -Database $database -ExtraArgs $extraArgs
 
                         Invoke-PgSchemaWSL -Arguments $pgArgs -Password $envVars['PGPASSWORD']
 
@@ -235,10 +247,11 @@
             }
 
             'Dump' {
-                $resolved = Resolve-PgSchemaTargets -Schema $Schema
+                $resolved = Resolve-PgSchemaTargets -Schema $Schema -EnvFile $EnvFile
                 $config   = $resolved.Config
                 $schemas  = $resolved.Schemas
                 $envVars  = $resolved.EnvVars
+                $database = $resolved.Database
 
                 try {
                     Write-Host "  Host:     $($envVars['PGHOST']):$($envVars['PGPORT'])" -ForegroundColor Cyan
@@ -262,7 +275,7 @@
                             }
                         }
 
-                        $pgArgs = Build-PgSchemaArgs -Action 'dump' -SchemaEntry $s -EnvVars $envVars -ExtraArgs $extraArgs
+                        $pgArgs = Build-PgSchemaArgs -Action 'dump' -SchemaEntry $s -EnvVars $envVars -Database $database -ExtraArgs $extraArgs
 
                         Invoke-PgSchemaWSL -Arguments $pgArgs -Password $envVars['PGPASSWORD']
 
@@ -279,10 +292,11 @@
             }
 
             'Script' {
-                $resolved = Resolve-PgSchemaTargets -Schema $Schema
+                $resolved = Resolve-PgSchemaTargets -Schema $Schema -EnvFile $EnvFile
                 $config   = $resolved.Config
                 $schemas  = $resolved.Schemas
                 $envVars  = $resolved.EnvVars
+                $database = $resolved.Database
 
                 try {
                     Write-Host "  Host:     $($envVars['PGHOST']):$($envVars['PGPORT'])" -ForegroundColor Cyan
@@ -298,7 +312,7 @@
 
                         $extraArgs = @('--output-sql', $scriptPath)
 
-                        $pgArgs = Build-PgSchemaArgs -Action 'plan' -SchemaEntry $s -EnvVars $envVars -ExtraArgs $extraArgs
+                        $pgArgs = Build-PgSchemaArgs -Action 'plan' -SchemaEntry $s -EnvVars $envVars -Database $database -ExtraArgs $extraArgs
 
                         Invoke-PgSchemaWSL -Arguments $pgArgs -Password $envVars['PGPASSWORD']
 
@@ -331,7 +345,17 @@ function Resolve-PgSchemaTargets {
     [CmdletBinding()]
     param(
         [Parameter()]
-        [string]$Schema
+        [string]$Schema,
+
+        [Parameter(ParameterSetName = 'Plan',
+            HelpMessage = "Env file with the PostgreSQL credentials (default .env). Production is explicit: -EnvFile .env.production")]
+        [Parameter(ParameterSetName = 'Apply',
+            HelpMessage = "Env file with the PostgreSQL credentials (default .env). Production is explicit: -EnvFile .env.production")]
+        [Parameter(ParameterSetName = 'Dump',
+            HelpMessage = "Env file with the PostgreSQL credentials (default .env).")]
+        [Parameter(ParameterSetName = 'Script',
+            HelpMessage = "Env file with the PostgreSQL credentials (default .env).")]
+        [string]$EnvFile = '.env'
     )
 
     if (-not (Test-Path ".\pgschema.yaml")) { throw "No se encontró pgschema.yaml. Ejecute 'Invoke-PgSchema -Init'." }
@@ -354,8 +378,9 @@ function Resolve-PgSchemaTargets {
     }
 
     return @{
-        Config  = $config
-        Schemas = $schemas
-        EnvVars = $envVars
+        Config   = $config
+        Schemas  = $schemas
+        EnvVars  = $envVars
+        Database = (Resolve-PgDbIdentity -ProjectRoot (Get-Location).Path -EnvFile $EnvFile).Name
     }
 }

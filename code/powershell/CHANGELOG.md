@@ -4,6 +4,109 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [6.0.0] - 2026-08-05
+
+Release de ruptura. **Invocaciones y archivos de configuración que hoy funcionan dejarán de
+funcionar hasta migrarlos.** Todo lo que rompe falla con un mensaje que dice qué poner en su lugar
+y dónde; abajo está el procedimiento completo.
+
+Las tres rupturas van juntas a propósito: quien tenga que recorrer sus env files, que los recorra
+una sola vez.
+
+### Changed
+
+- **El destino de despliegue se llama por lo que es: `MACSS_DEPLOY_SSH_ALIAS`** (antes
+  `MACSS_DEPLOY_SERVER`). ADR 0010. `MACSS_DEPLOY_SERVER` y `DB_SERVER` se llamaban igual y
+  significaban cosas incompatibles —un alias que solo existe en el `~/.ssh/config` de quien
+  despliega, y una IP resoluble desde cualquier parte—. El nombre nuevo se autodocumenta: si
+  alguien pone una IP ahí, salta a la vista que está mal. Se conserva el prefijo `MACSS_DEPLOY_`
+  porque es el contrato del filtro que impide que el metadato de despliegue viaje al servidor.
+- **`Publish-FlutterWeb` y `Publish-DockerStack` adoptan `-EnvFile`.** El destino sale del env file
+  gitignored, no de `publish.yaml` ni de `stack.yaml`. Un alias SSH es *machine-local*: versionarlo
+  hace que el repo no sea portable y obliga a editar un archivo del repo para cambiar de entorno.
+  La clave `server:` desaparece de ambos templates.
+- **`Invoke-PgSchema` gana `-EnvFile`** en `-Plan`, `-Apply`, `-Dump` y `-Script`, en paridad con
+  `Invoke-SqlPackage`. **No** adopta alias SSH: su destino es un endpoint de red, no un host al que
+  saltar.
+- **La identidad de la base sale del archivo de proyecto** (ADR 0011). SQL Server la lee de `<Name>`
+  del `.sqlproj`; PostgreSQL, de `database:` en `pgschema.yaml`. `DB_NAME` era idéntico en `.env` y
+  `.env.production` en todos los repos medidos: identidad duplicada, no configuración. `DB_NAME`
+  sobrevive como **override explícito** para las DB Tier-1 desechables (`dev_<nombre>`), y el plan
+  lo muestra marcado como tal.
+- **Una deprecación falla; no avisa y continúa** (ADR 0012). El aviso blando no retrasa la ruptura:
+  la vuelve permanente. La prueba estaba en esta misma suite, donde el warning de
+  `-Publish`/`-DeployReport` se imprimía decenas de veces sin que nadie migrara.
+- **`deploy.yaml` deja de ser fallback de `publish.yaml`** y pasa a fallar. El aviso anterior era un
+  `Write-Host`: ni se capturaba con `-WarningVariable` ni aparecía en un log de CI.
+
+### Removed
+
+- **Alias `-Publish` y `-DeployReport`.** Use `-Apply` y `-Plan`. En contexto desatendido, `-Apply`
+  requiere `-AutoApprove` (ADR 0002 §4).
+- **`Publish-FlutterWebLegacy`.** Use `Publish-FlutterWeb`.
+- **`Resolve-DeployTarget`** (helper privado), reemplazado por `Resolve-DeployTargetFromEnv`.
+- **`PGDATABASE` del env** de `Invoke-PgSchema`, movido a `pgschema.yaml`.
+
+### Added
+
+- `Deny-DeprecatedUsage`: única vía de producir un error de deprecación, para que ningún mensaje
+  quede a criterio de quien escribe el `throw`.
+- `Resolve-DeployTargetFromEnv`, `Resolve-SqlDbIdentity`, `Resolve-PgDbIdentity`.
+- `database:` en el template de `pgschema.yaml`.
+
+### Fixed
+
+- **La suite no estaba aislada del módulo publicado.** `Remove-Module` por nombre quita *una*
+  versión, así que el módulo instalado en `PSModulePath` podía quedar cargado junto al del repo y
+  ganar la resolución de nombres: los tests pasaban a medir el módulo instalado en vez del código
+  bajo prueba.
+
+### Migración
+
+**1. Renombrar la clave de destino** en cada `.env` y `.env.production` de los repos con
+`Publish-NodeApi`, `Publish-FlutterWeb` o `Publish-DockerStack`:
+
+```diff
+- MACSS_DEPLOY_SERVER=prod
++ MACSS_DEPLOY_SSH_ALIAS=prod
+```
+
+El valor no cambia: sigue siendo el alias de `~/.ssh/config`. Son archivos **gitignored**: hay que
+tocarlos en cada estación de trabajo y en cada servidor. Los `.env.example` de `micro`, `pyme` y
+`tigre` sí están versionados y van por commit.
+
+**2. Sacar `server:` de los archivos versionados** y llevar su valor a la clave de arriba:
+
+```diff
+  # publish.yaml (Flutter Web) / stack.yaml (Docker)
+- server: prod
+```
+
+**3. Retirar `DB_NAME` del env** cuando solo repita el nombre del `.sqlproj`. Consérvelo únicamente
+si apunta a una base distinta (Tier-1).
+
+**4. Mover `PGDATABASE`** del `.env` a `pgschema.yaml`:
+
+```diff
+  # pgschema.yaml
++ database: mi_base
+```
+
+**5. Actualizar las invocaciones:**
+
+```diff
+- Publish-NodeApi -Publish
++ Publish-NodeApi -Apply -AutoApprove          # -AutoApprove en CI y scripts desatendidos
+- Publish-FlutterWeb -DeployReport
++ Publish-FlutterWeb -Plan
+```
+
+**6. Renombrar `deploy.yaml` a `publish.yaml`.** El contenido no cambia.
+
+> **Nota para CI:** el runner fija la versión del módulo en su `Dockerfile`
+> (`Install-Module macss-devops -RequiredVersion ...`). Suba ese pin a `6.0.0` y republique el
+> runner **después** de migrar los repos, no antes.
+
 ## [5.8.0] - 2026-07-31
 
 ### Added
