@@ -173,3 +173,38 @@ Describe "REQ-10: el template de publish.yaml tampoco trae 'server'" {
         Test-FileContent -Path $template -Pattern '(?m)^\s*server\s*:' | Should -BeFalse
     }
 }
+
+Describe "REQ-10: -Init de Publish-FlutterWeb siembra el env y lo gitignora" {
+
+    # Hueco detectado al migrar los repos reales: un proyecto Flutter no suele tener .env, asi que
+    # su .gitignore tampoco lo cubre. Sembrar el destino sin gitignorarlo deja el alias camino de
+    # quedar versionado, que es justo lo que ADR 0010 vino a evitar. ADR 0007 §4 ya lo exigia.
+    BeforeAll {
+        $script:initDir = Join-Path ([IO.Path]::GetTempPath()) ("fwinit_" + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:initDir -Force | Out-Null
+        Set-Content -Path (Join-Path $script:initDir 'pubspec.yaml') -Value "name: t`nversion: 1.0.0" -Encoding UTF8
+        Push-Location $script:initDir
+        try { Publish-FlutterWeb -Init *> $null } finally { Pop-Location }
+    }
+    AfterAll { Remove-Item -LiteralPath $script:initDir -Recurse -Force -ErrorAction SilentlyContinue }
+
+    It "crea <File> con la clave de destino" -ForEach @(
+        @{ File = '.env' }
+        @{ File = '.env.production' }
+    ) {
+        $p = Join-Path $script:initDir $File
+        $p | Should -Exist
+        [bool]((Get-Content $p -Raw) -match '(?m)^MACSS_DEPLOY_SSH_ALIAS=') | Should -BeTrue
+    }
+
+    It "deja la clave vacia: producir un destino por defecto seria adivinar" {
+        [bool]((Get-Content (Join-Path $script:initDir '.env') -Raw) -match '(?m)^MACSS_DEPLOY_SSH_ALIAS=\s*$') |
+            Should -BeTrue
+    }
+
+    It "agrega .env al .gitignore del proyecto" {
+        $gi = Join-Path $script:initDir '.gitignore'
+        $gi | Should -Exist
+        [bool]((Get-Content $gi -Raw) -match '(?m)^\.env$') | Should -BeTrue
+    }
+}

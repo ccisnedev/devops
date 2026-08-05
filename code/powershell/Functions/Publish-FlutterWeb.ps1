@@ -149,6 +149,38 @@ function Publish-FlutterWeb {
                 Copy-Item -Path $templatePath -Destination $publishYamlPath
                 Write-Host "  Creado: publish.yaml" -ForegroundColor Green
 
+                # Env files (ADR 0007 §4, ADR 0010 §7): el destino vive aqui, no en publish.yaml.
+                # Un proyecto Flutter no suele tener .env, asi que es una convencion nueva en el
+                # repo y su unico proposito es nombrar el destino del despliegue.
+                . "$PSScriptRoot/../Private/PublishHelpers.ps1"
+                foreach ($ef in @(
+                    @{ Name = '.env';            Label = 'default (dev/pre-prod)' },
+                    @{ Name = '.env.production'; Label = 'producción' }
+                )) {
+                    $status = Add-EnvDeployKey -Path (Join-Path $cwd $ef.Name) -EnvLabel $ef.Label
+                    switch ($status) {
+                        'created'  { Write-Host "  Creado: $($ef.Name) (con MACSS_DEPLOY_SSH_ALIAS=)" -ForegroundColor Green }
+                        'appended' { Write-Host "  Actualizado: $($ef.Name) (+MACSS_DEPLOY_SSH_ALIAS=)" -ForegroundColor Green }
+                        'exists'   { Write-Host "  Existe: $($ef.Name) (ya tiene MACSS_DEPLOY_SSH_ALIAS)" -ForegroundColor Yellow }
+                    }
+                }
+
+                # Gitignorar los env files. Sembrar el destino sin ignorarlo dejaria el alias camino
+                # de quedar versionado, que es justo lo que ADR 0010 vino a evitar.
+                $gitignorePath = Join-Path $cwd ".gitignore"
+                $ignoreRules = @('.env', '.env.production', '.env.*', '!.env.example')
+                if (Test-Path $gitignorePath) {
+                    $gitignoreContent = Get-Content $gitignorePath -Raw
+                    $toAdd = $ignoreRules | Where-Object { $gitignoreContent -notmatch ([regex]::Escape($_) + '(\r?\n|$)') }
+                    if ($toAdd) {
+                        Add-Content -Path $gitignorePath -Value ("`n" + ($toAdd -join "`n"))
+                        Write-Host "  Actualizado: .gitignore (+$($toAdd -join ', '))" -ForegroundColor Green
+                    }
+                } else {
+                    Set-Content -Path $gitignorePath -Value (($ignoreRules -join "`n") + "`n") -Encoding UTF8
+                    Write-Host "  Creado: .gitignore" -ForegroundColor Green
+                }
+
                 # Instrucciones
                 Write-Host ""
                 Write-Host "  Configuración creada. Próximos pasos:" -ForegroundColor Green
