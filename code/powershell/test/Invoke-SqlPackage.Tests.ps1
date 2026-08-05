@@ -121,8 +121,30 @@ Describe 'Etapa 2: Invoke-SqlPackage -Init' {
         $parsed = ConvertFrom-Yaml $raw
         $parsed.properties.BlockOnPossibleDataLoss | Should -BeTrue
         $parsed.properties.DropObjectsNotInSource | Should -BeTrue
-        $parsed.properties.DropPermissionsNotInSource | Should -BeTrue
-        $parsed.properties.DropRoleMembersNotInSource | Should -BeTrue
+    }
+
+    # ADR 0013: el despliegue no administra cuentas de la instancia. Las tres propiedades van
+    # juntas: proteger al usuario sin proteger sus permisos y sus roles lo deja sin acceso igual.
+    It 'El sqlpackage.yaml protege las cuentas de la instancia por defecto' {
+        $yamlPath = Join-Path $script:testDir "sqlpackage.yaml"
+        $parsed = ConvertFrom-Yaml (Get-Content $yamlPath -Raw)
+        $parsed.properties.DropPermissionsNotInSource | Should -BeFalse
+        $parsed.properties.DropRoleMembersNotInSource | Should -BeFalse
+        $parsed.properties.DoNotDropObjectTypes | Should -Be 'Logins;Users'
+    }
+
+    # sqlpackage rechaza DoNotDropObjectTypes si DropObjectsNotInSource es false, y rechaza
+    # RoleMembership dentro de la lista mientras DropRoleMembersNotInSource sea true. La
+    # plantilla no puede generar ninguna de esas dos combinaciones.
+    It 'La plantilla no genera una combinacion que sqlpackage rechaza' {
+        $yamlPath = Join-Path $script:testDir "sqlpackage.yaml"
+        $parsed = ConvertFrom-Yaml (Get-Content $yamlPath -Raw)
+        if ($parsed.properties.ContainsKey('DoNotDropObjectTypes')) {
+            $parsed.properties.DropObjectsNotInSource | Should -BeTrue
+            if ($parsed.properties.DoNotDropObjectTypes -match 'RoleMembership') {
+                $parsed.properties.DropRoleMembersNotInSource | Should -BeFalse
+            }
+        }
     }
 
     It '-Init NO sobrescribe archivos existentes' {
