@@ -56,6 +56,9 @@ if [ -f "/etc/nginx/sites-available/$AppName" ]; then
     else
         echo "NGINX:root-mismatch"
     fi
+    # Puertos que declara el site, para contrastarlos con el de publish.yaml.
+    PORTS=`$(grep -Eho "^[^#]*listen[[:space:]]+[0-9]+" "/etc/nginx/sites-available/$AppName" | grep -Eo "[0-9]+`$" | sort -un | paste -sd, -)
+    [ -n "`$PORTS" ] && echo "NGINXPORTS:`$PORTS"
 else
     if ss -tlnH sport = :$Port | grep -q .; then
         echo "NGINX:port-in-use"
@@ -83,12 +86,14 @@ fi
     $probe = [pscustomobject]@{
         Current = 'desconocido'
         Release = 'desconocido'
-        Nginx   = 'desconocido'
+        Nginx      = 'desconocido'
+        NginxPorts = @()
     }
     foreach ($line in $output) {
         if ($line -match '^CURRENT:(.+)$') { $probe.Current = $Matches[1] }
         if ($line -match '^RELEASE:(.+)$') { $probe.Release = $Matches[1] }
-        if ($line -match '^NGINX:(.+)$') { $probe.Nginx = $Matches[1] }
+        if ($line -match '^NGINX:(.+)$')      { $probe.Nginx = $Matches[1] }
+        if ($line -match '^NGINXPORTS:(.+)$') { $probe.NginxPorts = @($Matches[1] -split ',' | ForEach-Object { [int]$_ }) }
     }
     return $probe
 }
@@ -144,6 +149,21 @@ function ConvertTo-FlutterWebPlan {
         $nginxRow = New-DeployPlanRow -Text "se creará config en puerto $Port" -Level 'ok'
     }
 
+    # El puerto declarado en publish.yaml no modifica un site existente, pero sigue usandose para
+    # la verificacion final por HTTP: si no coincide, el reporte comprueba algo que no es el sitio.
+    $probePorts = @()
+    if ($Probe.PSObject.Properties['NginxPorts']) { $probePorts = @($Probe.NginxPorts) }
+
+    $portRow = $null
+    if ($probePorts.Count -gt 0) {
+        if ($probePorts -contains [int]$Port) {
+            $portRow = New-DeployPlanRow -Level 'info' -Text "$Port (coincide con el site)"
+        } else {
+            $portRow = New-DeployPlanRow -Level 'warn' `
+                -Text "publish.yaml declara $Port, pero el site escucha en $($probePorts -join ', ')"
+        }
+    }
+
     # ─── Actions -Apply will perform ─────────────────────
     $actions = @(
         'Compilar Flutter Web (Invoke-FlutterBuild -Web)',
@@ -169,6 +189,7 @@ function ConvertTo-FlutterWebPlan {
             'Current' = $currentRow
             'Release' = $releaseRow
             'Nginx'   = $nginxRow
+            'Puerto'  = $portRow
         }
     }
 

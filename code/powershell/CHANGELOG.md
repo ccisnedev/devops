@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [6.0.3] - 2026-08-05
+
+### Changed
+
+- **El template de `publish.yaml` ya no trae `port: 4000`, sino `port: <PORT>`.** Un numero
+  plausible por defecto se queda tal cual y acaba desplegando contra un puerto que nadie sirve.
+  El placeholder obliga a una decision.
+
+### Added
+
+- **`-Plan` valida el puerto declarado.** Si `publish.yaml` no trae un entero entre 1 y 65535
+  --el placeholder incluido-- falla antes de tocar el servidor, con un mensaje que dice que
+  poner. Sin esto el placeholder solo habria cambiado un error silencioso por otro.
+- **`-Plan` contrasta el puerto declarado con el que el site escucha de verdad.** Si no coinciden
+  emite una advertencia que nombra ambos. No es bloqueante: con el `root` correcto el deploy
+  funciona igual. Pero el puerto declarado se usa en la verificacion final por HTTP, asi que un
+  valor equivocado hace que el reporte compruebe algo que no es el sitio, y deja el repo
+  documentando un puerto que nadie sirve.
+
 ## [6.0.2] - 2026-08-05
 
 ### Fixed

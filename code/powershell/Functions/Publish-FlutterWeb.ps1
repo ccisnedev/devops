@@ -241,6 +241,14 @@ function Publish-FlutterWeb {
                 if (-not $port) {
                     throw "No se encontró 'port:' en publish.yaml."
                 }
+                # El template siembra un placeholder a proposito: un numero por defecto se queda
+                # tal cual y acaba desplegando contra un puerto que nadie sirve.
+                $portNum = 0
+                if (-not [int]::TryParse([string]$port, [ref]$portNum) -or $portNum -lt 1 -or $portNum -gt 65535) {
+                    throw "publish.yaml declara 'port: $port', que no es un puerto valido. " +
+                          "Ponga el puerto en el que nginx sirve esta app (1-65535)."
+                }
+                $port = $portNum
 
                 # ─── 4. SSH Config ───────────────────────────
                 $sshConfig = Read-SSHConfig -HostAlias $server
@@ -443,6 +451,14 @@ fi
                 if (-not $port) {
                     throw "No se encontró 'port:' en publish.yaml."
                 }
+                # El template siembra un placeholder a proposito: un numero por defecto se queda
+                # tal cual y acaba desplegando contra un puerto que nadie sirve.
+                $portNum = 0
+                if (-not [int]::TryParse([string]$port, [ref]$portNum) -or $portNum -lt 1 -or $portNum -gt 65535) {
+                    throw "publish.yaml declara 'port: $port', que no es un puerto valido. " +
+                          "Ponga el puerto en el que nginx sirve esta app (1-65535)."
+                }
+                $port = $portNum
 
                 # ─── 4. SSH Config ───────────────────────────
                 $sshConfig = Read-SSHConfig -HostAlias $server

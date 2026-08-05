@@ -104,10 +104,12 @@ Describe 'Step 2: Template publish.yaml' {
             $content.server | Should -BeNullOrEmpty
         }
 
-        # El template debe tener la clave 'port' con un valor numérico.
-        # Es el puerto donde nginx escuchará para esta app.
-        It 'contiene la clave port con un valor numérico' {
-            $content.port | Should -BeOfType [int]
+        # El template trae 'port' como placeholder, no como número. Un default plausible como
+        # 4000 se queda tal cual y acaba desplegando contra un puerto que nadie sirve; el
+        # placeholder obliga a decidir, y el cmdlet lo rechaza si nadie lo cambió.
+        It 'contiene la clave port como placeholder, no como número plausible' {
+            $content.port | Should -Not -BeOfType [int]
+            "$($content.port)" | Should -Match 'PORT'
         }
 
         # No debe incluir name ni version — se leen de pubspec.yaml (source of truth).
@@ -204,10 +206,10 @@ environment:
         }
 
         # El publish.yaml creado debe tener las claves server y port (copiado del template).
-        It 'publish.yaml generado contiene port y ya no server' {
+        It 'publish.yaml generado contiene port (placeholder) y ya no server' {
             $content = Get-Content (Join-Path $testDir 'publish.yaml') -Raw | ConvertFrom-Yaml
             $content.server | Should -BeNullOrEmpty
-            $content.port | Should -BeOfType [int]
+            "$($content.port)" | Should -Match 'PORT'
         }
     }
 
