@@ -899,22 +899,26 @@ function Add-EnvDeployKey {
         [string]$Path,
 
         [Parameter(Mandatory = $false)]
-        [string]$EnvLabel = ''
+        [string]$EnvLabel = '',
+
+        # Siembra además PORT y NODE_ENV. Solo tiene sentido para una API Node: en una web
+        # estática nadie las lee, y PORT confunde porque el puerto de nginx vive en publish.yaml.
+        [Parameter(Mandatory = $false)]
+        [switch]$NodeDefaults
     )
 
     $keyComment = '# Destino del despliegue: alias de ~/.ssh/config (config local, per-máquina).'
 
     if (-not (Test-Path $Path)) {
         $header = if ($EnvLabel) { "# Env file — $EnvLabel." } else { '# Env file.' }
+        $runtimeKeys = if ($NodeDefaults) { "`nPORT=8080`nNODE_ENV=production" } else { '' }
         $tpl = @"
 $header Se copia al servidor como .env del release
 # (sin las claves MACSS_DEPLOY_*). NO versionar (está en .gitignore).
 
 $keyComment
 MACSS_DEPLOY_SSH_ALIAS=
-
-PORT=8080
-NODE_ENV=production
+$runtimeKeys
 "@
         Set-Content -Path $Path -Value $tpl -Encoding UTF8
         return 'created'
