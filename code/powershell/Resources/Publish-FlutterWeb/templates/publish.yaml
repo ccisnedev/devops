@@ -2,9 +2,11 @@
 # Generado por: Publish-FlutterWeb -Init
 # name y version se leen siempre de pubspec.yaml
 # NO incluya secretos en este archivo — este archivo SÍ se versiona.
-
-# ─── Servidor ─────────────────────────────────────────
-server: your-ssh-alias        # alias en ~/.ssh/config
+#
+# El SERVIDOR DESTINO no vive aquí: un alias SSH es específico de cada máquina, y versionarlo
+# obliga a editar un archivo del repo para cambiar de entorno. Vive en el env file gitignored,
+# en 'MACSS_DEPLOY_SSH_ALIAS'. El entorno se elige con -EnvFile (default .env; producción es
+# explícita: -EnvFile .env.production). Ver ADR 0004 y ADR 0010.
 
 # ─── Nginx ────────────────────────────────────────────
 port: 4000                    # puerto donde nginx escuchará para esta app

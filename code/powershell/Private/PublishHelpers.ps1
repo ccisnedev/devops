@@ -123,7 +123,7 @@ Directorio raiz del proyecto.
 .EXAMPLE
 $cfg = Resolve-PublishConfigPath -ProjectRoot (Get-Location).Path
 if (-not $cfg.Path) { throw "..." }
-if ($cfg.IsLegacy) { Write-Host "deploy.yaml esta deprecado..." }
+if ($cfg.IsLegacy) { Deny-DeprecatedUsage -Cmdlet $c -What 'deploy.yaml' -UseInstead 'publish.yaml' -Since '6.0.0' }
 #>
 function Resolve-PublishConfigPath {
     [CmdletBinding()]
@@ -546,47 +546,304 @@ function Resolve-NodeRuntime {
     }
 }
 
+
 <#
 .SYNOPSIS
-Resuelve el servidor destino del despliegue desde el env file elegido (ADR 0004).
+Lanza un error de deprecación con la información necesaria para migrar (ADR 0012).
 
 .DESCRIPTION
-El destino no es una propiedad del codigo sino config per-entorno/per-maquina: vive en el
-env file gitignored (`.env`, `.env.production`, ...) bajo la clave namespaced
-`MACSS_DEPLOY_SERVER` (un alias de ~/.ssh/config). El env file se elige con -EnvFile
-(default `.env`), asi "que entorno" = "que archivo" y prod nunca es el default.
-Falla claro si la clave no esta, en vez de desplegar a un destino silencioso/equivocado.
+Una deprecación falla; no avisa y continúa. Un aviso que sigue funcionando perpetúa la deuda,
+porque nadie migra lo que no le impide trabajar, y acaba leyéndose como ruido de fondo.
 
-.PARAMETER EnvVars
-Hashtable de variables ya parseadas del env file (Read-DotEnv .Env). Case-insensitive.
+Este helper es la única vía de producir ese error, para que ningún mensaje quede a criterio de
+quien escribe el `throw`. El mensaje debe bastar para migrar sin abrir la documentación: qué se
+usó, desde cuándo está retirado, qué usar en su lugar y dónde corregirlo.
 
-.PARAMETER EnvFilePath
-Ruta del env file, solo para el mensaje de error (default '.env').
+.PARAMETER Cmdlet
+Nombre del cmdlet que rechaza el uso. Va primero para que el error diga de dónde salió.
+
+.PARAMETER What
+El elemento deprecado, tal como el usuario lo escribió ('-Publish', 'MACSS_DEPLOY_SERVER').
+
+.PARAMETER UseInstead
+El reemplazo exacto.
+
+.PARAMETER Since
+Versión en la que se retiró.
+
+.PARAMETER Where
+Archivo donde hay que hacer la corrección. Opcional.
+
+.PARAMETER Detail
+Una línea extra de contexto. Opcional.
+
+.PARAMETER Reference
+ADR u origen de la decisión. Opcional.
 
 .EXAMPLE
-$target = Resolve-DeployTarget -EnvVars $envConfig.Env -EnvFilePath $envFile
+Deny-DeprecatedUsage -Cmdlet 'Publish-NodeApi' -What 'MACSS_DEPLOY_SERVER' `
+    -UseInstead 'MACSS_DEPLOY_SSH_ALIAS' -Since '6.0.0' -Where '.env.production' -Reference 'ADR 0010'
 #>
-function Resolve-DeployTarget {
+function Deny-DeprecatedUsage {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        $EnvVars,
+        [string]$Cmdlet,
 
-        [Parameter(Mandatory = $false)]
-        [string]$EnvFilePath = '.env'
+        [Parameter(Mandatory = $true)]
+        [string]$What,
+
+        [Parameter(Mandatory = $true)]
+        [string]$UseInstead,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Since,
+
+        [Parameter()]
+        [string]$Where,
+
+        [Parameter()]
+        [string]$Detail,
+
+        [Parameter()]
+        [string]$Reference
     )
 
-    $target = ''
-    if ($EnvVars -and $EnvVars['MACSS_DEPLOY_SERVER']) {
-        $target = "$($EnvVars['MACSS_DEPLOY_SERVER'])".Trim()
+    $lines = @("${Cmdlet}: '$What' se retiró en $Since.")
+    if ($Where) {
+        $lines += "  Use '$UseInstead' en su lugar, en '$Where'."
+    } else {
+        $lines += "  Use '$UseInstead' en su lugar."
+    }
+    if ($Detail)    { $lines += "  $Detail" }
+    if ($Reference) { $lines += "  Ver $Reference." }
+
+    throw ($lines -join [Environment]::NewLine)
+}
+
+<#
+.SYNOPSIS
+Resuelve el alias SSH de destino desde el env file (ADR 0004, ADR 0010).
+
+.DESCRIPTION
+Concentra el patrón que ADR 0004 fijó y que hasta 6.0.0 cada cmdlet resolvía por su cuenta: el
+destino sale de `MACSS_DEPLOY_SSH_ALIAS` en el env file gitignored elegido con `-EnvFile`, nunca
+de un archivo versionado. Un alias SSH es machine-local; versionarlo hace que el repo no sea
+portable y obliga a editar un archivo del repo para cambiar de entorno.
+
+Lo consumen los tres cmdlets cuyo destino es una máquina a la que se salta: `Publish-NodeApi`,
+`Publish-FlutterWeb` y `Publish-DockerStack`. Los de base de datos no lo usan: su destino es un
+endpoint de red, no un host al que saltar (ADR 0011).
+
+Los mecanismos deprecados **fallan**, no se aceptan (ADR 0012). Y fallan también cuando coexisten
+con la clave nueva: tener las dos es justo el estado ambiguo que hay que eliminar.
+
+.PARAMETER ProjectRoot
+Raíz del proyecto donde se busca el env file.
+
+.PARAMETER EnvFile
+Env file que selecciona el entorno. Por defecto '.env': producción siempre es explícita.
+
+.PARAMETER LegacyServer
+Valor de 'server:' leído del archivo versionado, si lo hubiera. Su sola presencia es un error;
+se recibe para poder nombrarlo en el mensaje de migración.
+
+.PARAMETER Cmdlet
+Nombre del cmdlet que llama, para que el error diga de dónde salió.
+#>
+function Resolve-DeployTargetFromEnv {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectRoot,
+
+        [Parameter()]
+        [string]$EnvFile = '.env',
+
+        [Parameter()]
+        [string]$LegacyServer,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Cmdlet
+    )
+
+    $envPath = if ([System.IO.Path]::IsPathRooted($EnvFile)) {
+        $EnvFile
+    } else {
+        Join-Path $ProjectRoot $EnvFile
     }
 
-    if (-not $target) {
-        throw "No hay destino de despliegue: falta 'MACSS_DEPLOY_SERVER' en '$EnvFilePath'. " +
-              "Ejecute 'Publish-NodeApi -Init' o agregue 'MACSS_DEPLOY_SERVER=<alias de ~/.ssh/config>' al env file."
+    $vars = @{}
+    if (Test-Path -LiteralPath $envPath) {
+        $vars = (Read-DotEnv -Path $envPath).Env
     }
 
-    return $target
+    $alias  = if ($vars['MACSS_DEPLOY_SSH_ALIAS']) { "$($vars['MACSS_DEPLOY_SSH_ALIAS'])".Trim() } else { '' }
+    $legacy = if ($vars['MACSS_DEPLOY_SERVER'])    { "$($vars['MACSS_DEPLOY_SERVER'])".Trim() }    else { '' }
+
+    # Los deprecados se comprueban ANTES de resolver: si el env trae la clave nueva y ademas
+    # arrastra la vieja, el estado es ambiguo y resolverlo en silencio dejaria archivos a medio
+    # migrar sin que nadie se entere.
+    if ($legacy) {
+        Deny-DeprecatedUsage -Cmdlet $Cmdlet -What 'MACSS_DEPLOY_SERVER' `
+            -UseInstead 'MACSS_DEPLOY_SSH_ALIAS' -Since '6.0.0' -Where $EnvFile `
+            -Detail 'El valor no cambia: sigue siendo el alias de ~/.ssh/config.' `
+            -Reference 'ADR 0010'
+    }
+
+    if ($LegacyServer) {
+        Deny-DeprecatedUsage -Cmdlet $Cmdlet -What "server: en el archivo versionado" `
+            -UseInstead 'MACSS_DEPLOY_SSH_ALIAS' -Since '6.0.0' -Where $EnvFile `
+            -Detail "Mueva el valor '$LegacyServer' al env file y borre la clave 'server' del archivo versionado." `
+            -Reference 'ADR 0010'
+    }
+
+    if (-not $alias) {
+        throw "${Cmdlet}: no hay destino de despliegue. Falta 'MACSS_DEPLOY_SSH_ALIAS' en '$EnvFile'. " +
+              "Agregue 'MACSS_DEPLOY_SSH_ALIAS=<alias de ~/.ssh/config>' a ese archivo."
+    }
+
+    return $alias
+}
+
+<#
+.SYNOPSIS
+Resuelve el nombre de la base SQL Server desde el `.sqlproj` (ADR 0011).
+
+.DESCRIPTION
+El nombre de la base no es *dónde* despliegas: es *qué* despliegas. Por eso vive en el archivo de
+proyecto versionado y no en el env file, que existe para expresar diferencias entre entornos. La
+medición que motivó la decisión: `DB_NAME` era idéntico en `.env` y `.env.production` en todos los
+repos de la organización — identidad duplicada, no configuración.
+
+`DB_NAME` sobrevive como **override explícito**, por las DB Tier-1 desechables (`dev_<nombre>`),
+donde el mismo dacpac se publica a una base con otro nombre. Derivar a secas eliminaría ese flujo.
+
+Dos usos de `DB_NAME` se rechazan:
+
+- **Redundante** (repite el nombre del proyecto): duplicación muerta, se pide borrarla.
+- **Difiere solo en mayúsculas**: en una collation case-insensitive da igual; en una
+  case-sensitive, no. El cmdlet no elige — adivinar sería cambiar el objetivo de un despliegue de
+  producción en silencio.
+
+.OUTPUTS
+PSCustomObject con Name (el objetivo real), ProjectName (lo que declara el .sqlproj) e IsOverride.
+#>
+function Resolve-SqlDbIdentity {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectRoot,
+
+        [Parameter()]
+        [string]$EnvFile = '.env'
+    )
+
+    $proj = Get-ChildItem -LiteralPath $ProjectRoot -Filter '*.sqlproj' -File -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+    if (-not $proj) {
+        throw "No se encontró ningún archivo .sqlproj en '$ProjectRoot'. Ejecute este cmdlet desde el directorio del SQL Project."
+    }
+
+    $content = Get-Content -LiteralPath $proj.FullName -Raw -Encoding UTF8
+    $projectName = ''
+    if ($content -match '<Name>\s*([^<]+?)\s*</Name>') { $projectName = $Matches[1].Trim() }
+
+    if (-not $projectName) {
+        throw "'$($proj.Name)' no declara <Name>. La identidad de la base se lee de ahí (ADR 0011): " +
+              "agregue <Name>NombreDeLaBase</Name> dentro de su PropertyGroup."
+    }
+
+    $envPath = if ([System.IO.Path]::IsPathRooted($EnvFile)) { $EnvFile } else { Join-Path $ProjectRoot $EnvFile }
+    $override = ''
+    if (Test-Path -LiteralPath $envPath) {
+        $vars = (Read-DotEnv -Path $envPath).Env
+        if ($vars['DB_NAME']) { $override = "$($vars['DB_NAME'])".Trim() }
+    }
+
+    if ($override) {
+        if ($override -ceq $projectName) {
+            throw "'$($proj.Name)' ya declara la base como '$projectName'. Borre 'DB_NAME' de '$EnvFile': " +
+                  "el nombre se lee del .sqlproj y tenerlo en dos sitios los deja divergir (ADR 0011)."
+        }
+
+        if ($override -ieq $projectName) {
+            throw "Conflicto de mayúsculas entre el proyecto y el env, y la diferencia importa en una " +
+                  "collation case-sensitive. '$($proj.Name)' declara <Name>$projectName</Name>; '$EnvFile' " +
+                  "declara DB_NAME=$override. Si el nombre real de la base es '$override', corrija <Name> " +
+                  "en el .sqlproj; si es '$projectName', borre DB_NAME. No se elige por usted (ADR 0011)."
+        }
+
+        return [pscustomobject]@{
+            Name        = $override
+            ProjectName = $projectName
+            IsOverride  = $true
+        }
+    }
+
+    return [pscustomobject]@{
+        Name        = $projectName
+        ProjectName = $projectName
+        IsOverride  = $false
+    }
+}
+
+<#
+.SYNOPSIS
+Resuelve el nombre de la base PostgreSQL desde `pgschema.yaml` (ADR 0011).
+
+.DESCRIPTION
+Misma frontera que en SQL Server: identidad en el archivo de proyecto versionado, conexión en el
+env file gitignored. `pgschema` no produce un artefacto compilado que cargue identidad como el
+dacpac, pero la identidad no necesita un binario: necesita un lugar versionado, y `pgschema.yaml`
+ya lo es.
+
+`PGDATABASE` en el env **falla**. No hay override aquí: si aparece un caso Tier-1 en PostgreSQL se
+decidirá entonces, con el caso delante.
+
+.OUTPUTS
+PSCustomObject con Name.
+#>
+function Resolve-PgDbIdentity {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectRoot,
+
+        [Parameter()]
+        [string]$EnvFile = '.env'
+    )
+
+    $yamlPath = Join-Path $ProjectRoot 'pgschema.yaml'
+    if (-not (Test-Path -LiteralPath $yamlPath)) {
+        throw "No se encontró pgschema.yaml en '$ProjectRoot'. Ejecute 'Invoke-PgSchema -Init' primero."
+    }
+
+    # El deprecado se comprueba antes de leer el yaml: si estan los dos, el estado es ambiguo.
+    $envPath = if ([System.IO.Path]::IsPathRooted($EnvFile)) { $EnvFile } else { Join-Path $ProjectRoot $EnvFile }
+    if (Test-Path -LiteralPath $envPath) {
+        $vars = (Read-DotEnv -Path $envPath).Env
+        if ($vars['PGDATABASE']) {
+            Deny-DeprecatedUsage -Cmdlet 'Invoke-PgSchema' -What 'PGDATABASE' `
+                -UseInstead 'database:' -Since '6.0.0' -Where 'pgschema.yaml' `
+                -Detail "El nombre de la base es identidad del proyecto, no configuracion de entorno: mueva el valor a 'database:' en pgschema.yaml y borrelo de '$EnvFile'." `
+                -Reference 'ADR 0011'
+        }
+    }
+
+    $yaml = Get-Content -LiteralPath $yamlPath -Raw -Encoding UTF8
+    $name = ''
+    if ($yaml -match '(?m)^\s*database\s*:\s*(.+?)\s*$') {
+        $name = $Matches[1].Trim().Trim("'", '"')
+    }
+
+    if (-not $name) {
+        throw "pgschema.yaml no declara 'database:'. La identidad de la base se lee de ahí (ADR 0011): " +
+              "agregue 'database: <nombre>' al inicio del archivo."
+    }
+
+    return [pscustomobject]@{ Name = $name }
 }
 
 <#
@@ -619,11 +876,11 @@ function Remove-DeployOnlyEnvKeys {
 
 <#
 .SYNOPSIS
-Asegura que un env file declare MACSS_DEPLOY_SERVER (ADR 0004), idempotente.
+Asegura que un env file declare MACSS_DEPLOY_SSH_ALIAS (ADR 0004), idempotente.
 
 .DESCRIPTION
 Usado por -Init. Si el archivo no existe lo crea con una plantilla mínima (incluye
-MACSS_DEPLOY_SERVER=, PORT, NODE_ENV). Si existe pero no tiene la clave, la agrega al final.
+MACSS_DEPLOY_SSH_ALIAS=, PORT, NODE_ENV). Si existe pero no tiene la clave, la agrega al final.
 Si ya la tiene, no toca nada. Retorna 'created' | 'appended' | 'exists'.
 
 .PARAMETER Path
@@ -654,7 +911,7 @@ $header Se copia al servidor como .env del release
 # (sin las claves MACSS_DEPLOY_*). NO versionar (está en .gitignore).
 
 $keyComment
-MACSS_DEPLOY_SERVER=
+MACSS_DEPLOY_SSH_ALIAS=
 
 PORT=8080
 NODE_ENV=production
@@ -664,12 +921,12 @@ NODE_ENV=production
     }
 
     $content = Get-Content $Path -Raw
-    if ($content -match '(?m)^\s*MACSS_DEPLOY_SERVER\s*=') {
+    if ($content -match '(?m)^\s*MACSS_DEPLOY_SSH_ALIAS\s*=') {
         return 'exists'
     }
 
     $sep = if ($content -and -not $content.EndsWith("`n")) { "`n" } else { '' }
-    Add-Content -Path $Path -Value "$sep`n$keyComment`nMACSS_DEPLOY_SERVER="
+    Add-Content -Path $Path -Value "$sep`n$keyComment`nMACSS_DEPLOY_SSH_ALIAS="
     return 'appended'
 }
 

@@ -34,9 +34,10 @@ function Get-DockerStackConfig {
 
     $y = (Get-Content $stackYaml -Raw) | ConvertFrom-Yaml
 
+    # 'server' ya no es la fuente del destino (ADR 0010): eso vive en MACSS_DEPLOY_SSH_ALIAS del
+    # env file. Se sigue leyendo para que, si sobrevive en un stack.yaml existente, el cmdlet pueda
+    # fallar nombrandolo en vez de ignorarlo en silencio.
     $server = if ($y.server) { [string]$y.server } else { $null }
-    if (-not $server) { throw "stack.yaml: falta 'server' (alias en ~/.ssh/config)." }
-    if ($server -eq 'your-ssh-alias') { throw "stack.yaml contiene el valor de ejemplo 'your-ssh-alias'. Cambie 'server' por el alias SSH real." }
 
     $stack = $y.stack
     if (-not $stack -or -not $stack.name) { throw "stack.yaml: falta 'stack.name'." }

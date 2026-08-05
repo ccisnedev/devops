@@ -65,12 +65,10 @@ function Publish-NodeApi {
 
         [Parameter(Mandatory, ParameterSetName = 'Plan',
             HelpMessage = "Dry-run: show what -Apply would do, without making changes")]
-        [Alias('DeployReport')]
         [switch]$Plan,
 
         [Parameter(Mandatory, ParameterSetName = 'Apply',
             HelpMessage = "Execute the deployment to the remote server")]
-        [Alias('Publish')]
         [switch]$Apply,
 
         [Parameter(ParameterSetName = 'Apply',
@@ -88,11 +86,11 @@ function Publish-NodeApi {
         [switch]$PushShared,
 
         [Parameter(ParameterSetName = 'Apply',
-            HelpMessage = "Env file selecting the environment (default .env). Its MACSS_DEPLOY_SERVER names the target; prod is explicit: -EnvFile .env.production")]
+            HelpMessage = "Env file selecting the environment (default .env). Its MACSS_DEPLOY_SSH_ALIAS names the target; prod is explicit: -EnvFile .env.production")]
         [Parameter(ParameterSetName = 'Plan',
-            HelpMessage = "Env file selecting the environment (default .env). Its MACSS_DEPLOY_SERVER names the target.")]
+            HelpMessage = "Env file selecting the environment (default .env). Its MACSS_DEPLOY_SSH_ALIAS names the target.")]
         [Parameter(ParameterSetName = 'PushShared',
-            HelpMessage = "Env file selecting the environment (default .env). Its MACSS_DEPLOY_SERVER names the target.")]
+            HelpMessage = "Env file selecting the environment (default .env). Its MACSS_DEPLOY_SSH_ALIAS names the target.")]
         [string]$EnvFile = '.env'
     )
 
@@ -110,7 +108,6 @@ function Publish-NodeApi {
 
         # Deprecation notice for the pre-ADR-0002 vocabulary.
         if ($MyInvocation.Line -match '-(Publish|DeployReport)\b') {
-            Write-Warning "-Publish/-DeployReport are deprecated; use -Apply/-Plan (ADR 0002). They will be removed in a future major."
         }
 
         switch ($PSCmdlet.ParameterSetName) {
@@ -167,7 +164,7 @@ function Publish-NodeApi {
                     Write-Host "  Creado: publish.yaml (runtime build:true — TypeScript)" -ForegroundColor Green
                 }
 
-                # Env files (ADR 0004): asegurar MACSS_DEPLOY_SERVER en .env (default: dev/pre-prod)
+                # Env files (ADR 0004): asegurar MACSS_DEPLOY_SSH_ALIAS en .env (default: dev/pre-prod)
                 # y .env.production (prod). Ambos gitignored; cada uno lleva su propio destino.
                 foreach ($ef in @(
                     @{ Name = '.env';            Label = 'default (dev/pre-prod)' },
@@ -176,9 +173,9 @@ function Publish-NodeApi {
                     $efPath = Join-Path $cwd $ef.Name
                     $status = Add-EnvDeployKey -Path $efPath -EnvLabel $ef.Label
                     switch ($status) {
-                        'created'  { Write-Host "  Creado: $($ef.Name) (con MACSS_DEPLOY_SERVER=)" -ForegroundColor Green }
-                        'appended' { Write-Host "  Actualizado: $($ef.Name) (+MACSS_DEPLOY_SERVER=)" -ForegroundColor Green }
-                        'exists'   { Write-Host "  Existe: $($ef.Name) (ya tiene MACSS_DEPLOY_SERVER)" -ForegroundColor Yellow }
+                        'created'  { Write-Host "  Creado: $($ef.Name) (con MACSS_DEPLOY_SSH_ALIAS=)" -ForegroundColor Green }
+                        'appended' { Write-Host "  Actualizado: $($ef.Name) (+MACSS_DEPLOY_SSH_ALIAS=)" -ForegroundColor Green }
+                        'exists'   { Write-Host "  Existe: $($ef.Name) (ya tiene MACSS_DEPLOY_SSH_ALIAS)" -ForegroundColor Yellow }
                     }
                 }
 
@@ -200,8 +197,8 @@ function Publish-NodeApi {
                 # Instrucciones
                 Write-Host ""
                 Write-Host "  Configuración creada. Próximos pasos:" -ForegroundColor Green
-                Write-Host "    1. Edite .env → MACSS_DEPLOY_SERVER=<su alias de ~/.ssh/config> + variables del entorno dev/pre-prod" -ForegroundColor DarkGray
-                Write-Host "    2. Edite .env.production → MACSS_DEPLOY_SERVER=<alias prod> + variables de producción" -ForegroundColor DarkGray
+                Write-Host "    1. Edite .env → MACSS_DEPLOY_SSH_ALIAS=<su alias de ~/.ssh/config> + variables del entorno dev/pre-prod" -ForegroundColor DarkGray
+                Write-Host "    2. Edite .env.production → MACSS_DEPLOY_SSH_ALIAS=<alias prod> + variables de producción" -ForegroundColor DarkGray
                 Write-Host "    3. (modular_api) Declare el basePath en package.json: `"modularApi`": { `"basePath`": `"/api/v1`" }" -ForegroundColor DarkGray
                 Write-Host "    4. Deploy: Publish-NodeApi -Apply           (usa .env)" -ForegroundColor DarkGray
                 Write-Host "              Publish-NodeApi -Apply -EnvFile .env.production   (prod, explícito)" -ForegroundColor DarkGray
@@ -225,14 +222,16 @@ function Publish-NodeApi {
                 $packageJsonPath = Join-Path $cwd "package.json"
                 $tsconfigPath = Join-Path $cwd "tsconfig.json"
                 # Env file que selecciona el entorno (ADR 0004): default .env, sobreescribible
-                # con -EnvFile (p.ej. .env.production para prod). Lleva MACSS_DEPLOY_SERVER.
+                # con -EnvFile (p.ej. .env.production para prod). Lleva MACSS_DEPLOY_SSH_ALIAS.
                 $envProdPath = if ([System.IO.Path]::IsPathRooted($EnvFile)) { $EnvFile } else { Join-Path $cwd $EnvFile }
 
                 if (-not $publishYamlPath) {
                     throw "No se encontró publish.yaml. Ejecute 'Publish-NodeApi -Init' primero."
                 }
                 if ($configResolution.IsLegacy) {
-                    Write-Host "  Aviso: 'deploy.yaml' está deprecado; renómbrelo a 'publish.yaml'." -ForegroundColor Yellow
+                    Deny-DeprecatedUsage -Cmdlet 'Publish-NodeApi' -What 'deploy.yaml' `
+                        -UseInstead 'publish.yaml' -Since '6.0.0' `
+                        -Detail "Renombre el archivo: el contenido no cambia." -Reference 'ADR 0012'
                 }
                 if (-not (Test-Path $packageJsonPath)) {
                     throw "No se encontró package.json en $cwd."
@@ -282,11 +281,11 @@ function Publish-NodeApi {
                     $release = "v$appVersion"
                 }
 
-                # env file (PORT + destino). ADR 0004: el destino sale de MACSS_DEPLOY_SERVER
+                # env file (PORT + destino). ADR 0004: el destino sale de MACSS_DEPLOY_SSH_ALIAS
                 # del env elegido, no de publish.yaml (que ya no lleva 'server').
                 $envConfig = Read-DotEnv -Path $envProdPath -DefaultPort 8080
                 $port = $envConfig.Port
-                $server = Resolve-DeployTarget -EnvVars $envConfig.Env -EnvFilePath $EnvFile
+                $server = Resolve-DeployTargetFromEnv -ProjectRoot $cwd -EnvFile $EnvFile -Cmdlet 'Publish-NodeApi'
 
                 $processManager = if ($deployConfig.runtime -and $deployConfig.runtime.processManager) {
                     $deployConfig.runtime.processManager
@@ -615,7 +614,9 @@ function Publish-NodeApi {
                     throw "No se encontró publish.yaml. Ejecute 'Publish-NodeApi -Init' primero."
                 }
                 if ($configResolution.IsLegacy) {
-                    Write-Host "  Aviso: 'deploy.yaml' está deprecado; renómbrelo a 'publish.yaml'." -ForegroundColor Yellow
+                    Deny-DeprecatedUsage -Cmdlet 'Publish-NodeApi' -What 'deploy.yaml' `
+                        -UseInstead 'publish.yaml' -Since '6.0.0' `
+                        -Detail "Renombre el archivo: el contenido no cambia." -Reference 'ADR 0012'
                 }
                 if (-not (Test-Path $envProdPath)) {
                     throw "No se encontró el env file '$EnvFile' en $cwd. Ejecute 'Publish-NodeApi -Init' o especifique -EnvFile <archivo>."
@@ -639,10 +640,10 @@ function Publish-NodeApi {
                     $release = "v$appVersion"
                 }
 
-                # env file (PORT + destino). ADR 0004: destino desde MACSS_DEPLOY_SERVER.
+                # env file (PORT + destino). ADR 0004: destino desde MACSS_DEPLOY_SSH_ALIAS.
                 $envConfig = Read-DotEnv -Path $envProdPath -DefaultPort 8080
                 $port = $envConfig.Port
-                $server = Resolve-DeployTarget -EnvVars $envConfig.Env -EnvFilePath $EnvFile
+                $server = Resolve-DeployTargetFromEnv -ProjectRoot $cwd -EnvFile $EnvFile -Cmdlet 'Publish-NodeApi'
 
                 $processManager = if ($deployConfig.runtime -and $deployConfig.runtime.processManager) {
                     $deployConfig.runtime.processManager
@@ -850,10 +851,9 @@ $sharedCheckBlock
                     throw "publish.yaml no declara runtime.sharedPaths; no hay nada que subir."
                 }
 
-                # Destino (mismo mecanismo que -Apply): MACSS_DEPLOY_SERVER del env elegido.
+                # Destino (mismo mecanismo que -Apply): MACSS_DEPLOY_SSH_ALIAS del env elegido.
                 $envConfig = Read-DotEnv -Path $envProdPath -DefaultPort 8080
-                $server = Resolve-DeployTarget -EnvVars $envConfig.Env -EnvFilePath $EnvFile
-                if (-not $server) { throw "No se encontró 'MACSS_DEPLOY_SERVER' en '$EnvFile'." }
+                $server = Resolve-DeployTargetFromEnv -ProjectRoot $cwd -EnvFile $EnvFile -Cmdlet 'Publish-NodeApi'
 
                 $sshConfig = Read-SSHConfig -HostAlias $server
                 $user = $sshConfig.User

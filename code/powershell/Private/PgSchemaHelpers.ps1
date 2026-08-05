@@ -71,6 +71,9 @@ function Read-PgSchemaConfig {
 .PARAMETER ExtraArgs
     Argumentos adicionales (output paths, flags, etc.).
 
+.PARAMETER Database
+    Nombre de la base, resuelto desde 'database:' de pgschema.yaml (ADR 0011).
+
 .OUTPUTS
     String[] — Array de argumentos para pgschema.
 #>
@@ -87,6 +90,9 @@ function Build-PgSchemaArgs {
         [Parameter(Mandatory)]
         [hashtable]$EnvVars,
 
+        [Parameter(Mandatory)]
+        [string]$Database,
+
         [Parameter()]
         [string[]]$ExtraArgs
     )
@@ -96,13 +102,14 @@ function Build-PgSchemaArgs {
     # Conexión al servidor (credenciales desde .env, variables PG* estándar)
     $host_    = $EnvVars['PGHOST']
     $port     = $EnvVars['PGPORT']
-    $database = $EnvVars['PGDATABASE']
     $user     = $EnvVars['PGUSER']
     $sslmode  = $EnvVars['PGSSLMODE']
 
-    if (-not $host_)    { throw "Falta PGHOST en .env" }
-    if (-not $database) { throw "Falta PGDATABASE en .env" }
-    if (-not $user)     { throw "Falta PGUSER en .env" }
+    # El nombre de la base llega resuelto desde pgschema.yaml (ADR 0011), no del env.
+    $database = $Database
+
+    if (-not $host_) { throw "Falta PGHOST en .env" }
+    if (-not $user)  { throw "Falta PGUSER en .env" }
 
     $pgArgs += '--host', $host_
     if ($port) { $pgArgs += '--port', $port }
@@ -158,6 +165,11 @@ function New-PgSchemaConfig {
 # Ejecutar desde: db/  (directorio raíz de la base de datos)
 # Referencia: https://www.pgschema.com
 #
+# La identidad de la base vive aqui, no en el .env (ADR 0011): el nombre no es donde
+# despliegas sino que despliegas, y por eso va en el archivo versionado. El .env queda
+# conteniendo solo conexion y credenciales.
+database: mi_base
+
 # pgschema trabaja schema-por-schema. Cada entrada define:
 #   name: nombre del schema PostgreSQL
 #   file: ruta al main.sql (estado deseado)
@@ -197,11 +209,11 @@ dump_options:
     if (-not (Test-Path ".\.env")) {
         $envContent = @"
 # .env — Credenciales PostgreSQL (NO versionar)
-# Variables estándar PG* usadas por pgschema
+# Variables estándar PG* usadas por pgschema.
+# El nombre de la base NO va aquí: vive en 'database:' de pgschema.yaml (ADR 0011).
 
 PGHOST=localhost
 PGPORT=5432
-PGDATABASE=socia
 PGUSER=postgres
 PGPASSWORD=tu_password_aqui
 # PGSSLMODE=prefer

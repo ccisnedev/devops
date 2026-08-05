@@ -5,26 +5,31 @@ Compila y despliega una aplicación Flutter Web a un servidor Linux remoto vía 
 .DESCRIPTION
 El cmdlet `Publish-FlutterWeb` gestiona el ciclo completo de despliegue de apps Flutter Web:
 - Lee `name` y `version` de `pubspec.yaml` (single source of truth).
-- Lee la configuración de despliegue de `publish.yaml` (server, port).
+- Lee el puerto nginx de `publish.yaml`; el servidor destino sale del env file (ADR 0010).
 - Compila con `Invoke-FlutterBuild -Web` y empaqueta los artefactos.
 - Sube al servidor con releases versionados en /var/www/<name>/releases/ y symlink `current`.
 - Configura nginx con un site dedicado en sites-available/ si no existe.
 
 Se debe ejecutar desde la raíz del proyecto Flutter donde existen:
   - pubspec.yaml  (name, version)
-  - publish.yaml  (servidor, puerto — generar con -Init)
+  - publish.yaml  (puerto nginx — generar con -Init)
+  - .env          (MACSS_DEPLOY_SSH_ALIAS — destino; gitignored)
 
 .PARAMETER Init
 Genera el archivo publish.yaml en el directorio actual.
 Requiere que exista pubspec.yaml.
 
-.PARAMETER Publish
-Ejecuta el despliegue completo al servidor remoto.
-Lee publish.yaml para el servidor destino y el puerto nginx.
+.PARAMETER Apply
+Ejecuta el despliegue completo al servidor remoto. El destino sale de MACSS_DEPLOY_SSH_ALIAS
+del env file elegido con -EnvFile; publish.yaml solo aporta el puerto nginx.
 
-.PARAMETER DeployReport
-Muestra las acciones que realizará -Publish sin ejecutarlas.
+.PARAMETER Plan
+Muestra las acciones que realizará -Apply sin ejecutarlas.
 Consulta el servidor para mostrar: versión actual, si la release existe, estado de nginx.
+
+.PARAMETER EnvFile
+Env file que selecciona el entorno (default .env). Producción es explícita:
+-EnvFile .env.production.
 
 .PARAMETER Force
 Despliega aunque el plan detecte problemas bloqueantes (ADR 0009). Sin este switch, -Apply
@@ -37,14 +42,15 @@ Publish-FlutterWeb -Init
 Genera publish.yaml en el directorio actual del proyecto Flutter.
 
 .EXAMPLE
-Publish-FlutterWeb -DeployReport
+Publish-FlutterWeb -Plan
 
 Muestra un reporte de lo que hará -Publish sin realizar cambios.
 
 .EXAMPLE
-Publish-FlutterWeb -Publish
+Publish-FlutterWeb -Apply -EnvFile .env.production
 
-Compila, empaqueta, sube y despliega la app Flutter Web al servidor configurado en publish.yaml. Acepta el nombre anterior deploy.yaml con aviso de deprecación.
+Compila, empaqueta, sube y despliega la app al servidor nombrado por MACSS_DEPLOY_SSH_ALIAS
+en .env.production.
 
 .NOTES
 Versión: 2.0.0
@@ -65,12 +71,10 @@ function Publish-FlutterWeb {
 
         [Parameter(Mandatory, ParameterSetName = 'Plan',
             HelpMessage = "Dry-run: show what -Apply would do, without making changes")]
-        [Alias('DeployReport')]
         [switch]$Plan,
 
         [Parameter(Mandatory, ParameterSetName = 'Apply',
             HelpMessage = "Execute the deployment to the remote server")]
-        [Alias('Publish')]
         [switch]$Apply,
 
         [Parameter(ParameterSetName = 'Apply',
@@ -79,7 +83,13 @@ function Publish-FlutterWeb {
 
         [Parameter(ParameterSetName = 'Apply',
             HelpMessage = "Deploy even if the plan reports blocking problems (ADR 0009)")]
-        [switch]$Force
+        [switch]$Force,
+
+        [Parameter(ParameterSetName = 'Apply',
+            HelpMessage = "Env file selecting the environment (default .env). Its MACSS_DEPLOY_SSH_ALIAS names the target; prod is explicit: -EnvFile .env.production")]
+        [Parameter(ParameterSetName = 'Plan',
+            HelpMessage = "Env file selecting the environment (default .env). Its MACSS_DEPLOY_SSH_ALIAS names the target.")]
+        [string]$EnvFile = '.env'
     )
 
     begin {
@@ -97,7 +107,6 @@ function Publish-FlutterWeb {
 
         # Deprecation notice for the pre-ADR-0002 vocabulary.
         if ($MyInvocation.Line -match '-(Publish|DeployReport)\b') {
-            Write-Warning "-Publish/-DeployReport are deprecated; use -Apply/-Plan (ADR 0002). They will be removed in a future major."
         }
 
         switch ($PSCmdlet.ParameterSetName) {
@@ -140,12 +149,45 @@ function Publish-FlutterWeb {
                 Copy-Item -Path $templatePath -Destination $publishYamlPath
                 Write-Host "  Creado: publish.yaml" -ForegroundColor Green
 
+                # Env files (ADR 0007 §4, ADR 0010 §7): el destino vive aqui, no en publish.yaml.
+                # Un proyecto Flutter no suele tener .env, asi que es una convencion nueva en el
+                # repo y su unico proposito es nombrar el destino del despliegue.
+                . "$PSScriptRoot/../Private/PublishHelpers.ps1"
+                foreach ($ef in @(
+                    @{ Name = '.env';            Label = 'default (dev/pre-prod)' },
+                    @{ Name = '.env.production'; Label = 'producción' }
+                )) {
+                    $status = Add-EnvDeployKey -Path (Join-Path $cwd $ef.Name) -EnvLabel $ef.Label
+                    switch ($status) {
+                        'created'  { Write-Host "  Creado: $($ef.Name) (con MACSS_DEPLOY_SSH_ALIAS=)" -ForegroundColor Green }
+                        'appended' { Write-Host "  Actualizado: $($ef.Name) (+MACSS_DEPLOY_SSH_ALIAS=)" -ForegroundColor Green }
+                        'exists'   { Write-Host "  Existe: $($ef.Name) (ya tiene MACSS_DEPLOY_SSH_ALIAS)" -ForegroundColor Yellow }
+                    }
+                }
+
+                # Gitignorar los env files. Sembrar el destino sin ignorarlo dejaria el alias camino
+                # de quedar versionado, que es justo lo que ADR 0010 vino a evitar.
+                $gitignorePath = Join-Path $cwd ".gitignore"
+                $ignoreRules = @('.env', '.env.production', '.env.*', '!.env.example')
+                if (Test-Path $gitignorePath) {
+                    $gitignoreContent = Get-Content $gitignorePath -Raw
+                    $toAdd = $ignoreRules | Where-Object { $gitignoreContent -notmatch ([regex]::Escape($_) + '(\r?\n|$)') }
+                    if ($toAdd) {
+                        Add-Content -Path $gitignorePath -Value ("`n" + ($toAdd -join "`n"))
+                        Write-Host "  Actualizado: .gitignore (+$($toAdd -join ', '))" -ForegroundColor Green
+                    }
+                } else {
+                    Set-Content -Path $gitignorePath -Value (($ignoreRules -join "`n") + "`n") -Encoding UTF8
+                    Write-Host "  Creado: .gitignore" -ForegroundColor Green
+                }
+
                 # Instrucciones
                 Write-Host ""
                 Write-Host "  Configuración creada. Próximos pasos:" -ForegroundColor Green
-                Write-Host "    1. Edite publish.yaml → cambie 'server' por su alias SSH" -ForegroundColor DarkGray
+                Write-Host "    1. Edite .env → MACSS_DEPLOY_SSH_ALIAS=<su alias de ~/.ssh/config>" -ForegroundColor DarkGray
                 Write-Host "    2. Edite publish.yaml → cambie 'port' por el puerto nginx deseado" -ForegroundColor DarkGray
-                Write-Host "    3. Ejecute: Publish-FlutterWeb -Publish" -ForegroundColor DarkGray
+                Write-Host "    3. Deploy: Publish-FlutterWeb -Apply           (usa .env)" -ForegroundColor DarkGray
+                Write-Host "              Publish-FlutterWeb -Apply -EnvFile .env.production   (prod, explícito)" -ForegroundColor DarkGray
                 Write-Host ""
             }
 
@@ -173,7 +215,9 @@ function Publish-FlutterWeb {
                     throw "No se encontró publish.yaml. Ejecute 'Publish-FlutterWeb -Init' primero."
                 }
                 if ($configResolution.IsLegacy) {
-                    Write-Host "  Aviso: 'deploy.yaml' está deprecado; renómbrelo a 'publish.yaml'." -ForegroundColor Yellow
+                    Deny-DeprecatedUsage -Cmdlet 'Publish-FlutterWeb' -What 'deploy.yaml' `
+                        -UseInstead 'publish.yaml' -Since '6.0.0' `
+                        -Detail "Renombre el archivo: el contenido no cambia." -Reference 'ADR 0012'
                 }
 
                 # ─── 2. Leer configuración ───────────────────
@@ -183,18 +227,17 @@ function Publish-FlutterWeb {
                 $appVersion = ($pubspec.version -split '\+')[0]  # sin build metadata
                 $release = "v$appVersion"
 
-                # publish.yaml (server, port)
+                # publish.yaml (port). El destino NO sale de aqui: un alias SSH es machine-local
+                # y versionarlo obliga a editar un archivo del repo para cambiar de entorno.
                 $deployConfig = Get-Content $publishYamlPath -Raw | ConvertFrom-Yaml
-                $server = $deployConfig.server
                 $port = $deployConfig.port
 
+                # El destino sale del env file elegido con -EnvFile (ADR 0010). Un 'server:'
+                # sobreviviente en publish.yaml hace fallar con la instruccion de migrarlo.
+                $server = Resolve-DeployTargetFromEnv -ProjectRoot $cwd -EnvFile $EnvFile `
+                              -LegacyServer $deployConfig.server -Cmdlet 'Publish-FlutterWeb'
+
                 # ─── 3. Validaciones de config ───────────────
-                if (-not $server) {
-                    throw "No se encontró 'server:' en publish.yaml."
-                }
-                if ($server -eq 'your-ssh-alias') {
-                    throw "publish.yaml contiene el valor de ejemplo 'your-ssh-alias'. Cambie 'server' por el alias SSH real de su servidor."
-                }
                 if (-not $port) {
                     throw "No se encontró 'port:' en publish.yaml."
                 }
@@ -375,7 +418,9 @@ fi
                     throw "No se encontró publish.yaml. Ejecute 'Publish-FlutterWeb -Init' primero."
                 }
                 if ($configResolution.IsLegacy) {
-                    Write-Host "  Aviso: 'deploy.yaml' está deprecado; renómbrelo a 'publish.yaml'." -ForegroundColor Yellow
+                    Deny-DeprecatedUsage -Cmdlet 'Publish-FlutterWeb' -What 'deploy.yaml' `
+                        -UseInstead 'publish.yaml' -Since '6.0.0' `
+                        -Detail "Renombre el archivo: el contenido no cambia." -Reference 'ADR 0012'
                 }
 
                 # ─── 2. Leer configuración ───────────────────
@@ -384,17 +429,17 @@ fi
                 $appVersion = ($pubspec.version -split '\+')[0]
                 $release = "v$appVersion"
 
+                # publish.yaml (port). El destino NO sale de aqui: un alias SSH es machine-local
+                # y versionarlo obliga a editar un archivo del repo para cambiar de entorno.
                 $deployConfig = Get-Content $publishYamlPath -Raw | ConvertFrom-Yaml
-                $server = $deployConfig.server
                 $port = $deployConfig.port
 
+                # El destino sale del env file elegido con -EnvFile (ADR 0010). Un 'server:'
+                # sobreviviente en publish.yaml hace fallar con la instruccion de migrarlo.
+                $server = Resolve-DeployTargetFromEnv -ProjectRoot $cwd -EnvFile $EnvFile `
+                              -LegacyServer $deployConfig.server -Cmdlet 'Publish-FlutterWeb'
+
                 # ─── 3. Validaciones de config ───────────────
-                if (-not $server) {
-                    throw "No se encontró 'server:' en publish.yaml."
-                }
-                if ($server -eq 'your-ssh-alias') {
-                    throw "publish.yaml contiene el valor de ejemplo 'your-ssh-alias'. Cambie 'server' por el alias SSH real de su servidor."
-                }
                 if (-not $port) {
                     throw "No se encontró 'port:' en publish.yaml."
                 }
