@@ -1155,3 +1155,43 @@ function New-Pm2EcosystemJson {
 
     return ([ordered]@{ apps = @($apps) } | ConvertTo-Json -Depth 6)
 }
+
+<#
+.SYNOPSIS
+Imprime el banner de un cmdlet, con la versión del módulo que lo está ejecutando.
+
+.DESCRIPTION
+La versión no es decoración. PowerShell no recarga un módulo ya importado aunque haya una versión
+mayor instalada, así que una sesión puede estar corriendo código viejo sin que nada lo indique:
+el plan sale con el formato de una versión y el comportamiento de otra, y diagnosticarlo obliga a
+inspeccionar `Get-Module`. Con la versión en el banner se ve de entrada.
+
+El ancho del marco se calcula, en vez de estar escrito a mano, para que el texto no lo desalinee.
+
+.PARAMETER Title
+Nombre del cmdlet, tal como se invoca.
+#>
+function Show-MacssBanner {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Title
+    )
+
+    $version = if ($ExecutionContext.SessionState.Module) {
+        "v$($ExecutionContext.SessionState.Module.Version)"
+    } else {
+        '(versión desconocida)'
+    }
+
+    $text  = "$Title — macss-devops $version"
+    $inner = [Math]::Max(50, $text.Length + 4)
+    $pad   = $inner - $text.Length
+    $left  = [Math]::Floor($pad / 2)
+
+    Write-Host ""
+    Write-Host ("╔" + ("═" * $inner) + "╗") -ForegroundColor Cyan
+    Write-Host ("║" + (' ' * $left) + $text + (' ' * ($pad - $left)) + "║") -ForegroundColor Cyan
+    Write-Host ("╚" + ("═" * $inner) + "╝") -ForegroundColor Cyan
+    Write-Host ""
+}

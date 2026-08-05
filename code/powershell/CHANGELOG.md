@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [6.1.0] - 2026-08-05
+
+### Added
+
+- **El banner anuncia la version del modulo**: `Publish-FlutterWeb — macss-devops v6.1.0`.
+
+  No es decoracion. PowerShell no recarga un modulo ya importado aunque haya una version mayor
+  instalada, asi que una sesion puede estar ejecutando codigo viejo sin que nada lo indique: el
+  reporte sale con el formato de una version y el comportamiento de otra. Paso de verdad --una
+  6.0.1 quedo por delante de la 6.0.3 y el plan omitia una fila sin explicacion-- y diagnosticarlo
+  obligo a inspeccionar `Get-Module` a mano. Con la version en pantalla se ve de entrada.
+
+### Fixed
+
+- **El marco del banner no cerraba.** Estaba escrito a mano y a la linea del texto le faltaba un
+  espacio: 51 caracteres frente a 52 de los bordes. Ahora el ancho se calcula y el texto se centra,
+  con tests que comprueban que las tres lineas miden lo mismo, que cada una abre y cierra con su
+  esquina, y que los margenes no difieren en mas de uno.
+
+- Los cinco cmdlets comparten `Show-MacssBanner` en vez de dibujar cada uno el suyo. Los titulos
+  eran inconsistentes --`pgschema`, `SqlPackage`-- y ahora nombran el cmdlet tal como se invoca.
+
 ## [6.0.3] - 2026-08-05
 
 ### Changed
