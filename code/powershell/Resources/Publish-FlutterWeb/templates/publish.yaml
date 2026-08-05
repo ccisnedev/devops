@@ -9,4 +9,6 @@
 # explícita: -EnvFile .env.production). Ver ADR 0004 y ADR 0010.
 
 # ─── Nginx ────────────────────────────────────────────
-port: 4000                    # puerto donde nginx escuchará para esta app
+port: <PORT>                  # puerto donde nginx escuchará para esta app.
+                              # Sin valor por defecto a propósito: un número plausible se queda
+                              # tal cual y acaba desplegando contra un puerto que nadie sirve.
