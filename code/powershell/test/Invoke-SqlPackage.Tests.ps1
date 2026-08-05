@@ -275,11 +275,11 @@ DB_PASSWORD=testpass123
         }
 
         It 'Genera argumentos correctos para Publish' {
-            $args = Build-SqlPackageArgs -Action 'Publish' -Config $script:config -EnvVars $script:envVars -DacpacPath ".\test.dacpac"
+            $args = Build-SqlPackageArgs -Action 'Publish' -Config $script:config -EnvVars $script:envVars -Database 'TestDB' -DacpacPath ".\test.dacpac"
             $args | Should -Contain "/Action:Publish"
             $args | Should -Contain "/SourceFile:.\test.dacpac"
             $args | Should -Contain "/TargetServerName:10.0.0.1"
-            $args | Should -Contain "/TargetDatabaseName:mydb"
+            $args | Should -Contain "/TargetDatabaseName:TestDB"
             $args | Should -Contain "/TargetUser:testuser"
             $args | Should -Contain "/TargetPassword:testpass123"
             $args | Should -Contain "/p:BlockOnPossibleDataLoss=True"
@@ -287,7 +287,7 @@ DB_PASSWORD=testpass123
         }
 
         It 'Genera argumentos correctos para Extract (sin /p: properties)' {
-            $args = Build-SqlPackageArgs -Action 'Extract' -Config $script:config -EnvVars $script:envVars -OutputPath ".\snapshot.dacpac"
+            $args = Build-SqlPackageArgs -Action 'Extract' -Config $script:config -EnvVars $script:envVars -Database 'TestDB' -OutputPath ".\snapshot.dacpac"
             $args | Should -Contain "/Action:Extract"
             $args | Should -Contain "/SourceServerName:10.0.0.1"
             $args | Should -Contain "/TargetFile:.\snapshot.dacpac"
@@ -297,7 +297,7 @@ DB_PASSWORD=testpass123
         }
 
         It 'Genera argumentos correctos para Import con sourcePath' {
-            $args = Build-SqlPackageArgs -Action 'Import' -Config $script:config -EnvVars $script:envVars -SourcePath ".\backup.bacpac"
+            $args = Build-SqlPackageArgs -Action 'Import' -Config $script:config -EnvVars $script:envVars -Database 'TestDB' -SourcePath ".\backup.bacpac"
             $args | Should -Contain "/Action:Import"
             $args | Should -Contain "/SourceFile:.\backup.bacpac"
             $args | Should -Contain "/TargetServerName:10.0.0.1"
@@ -305,11 +305,11 @@ DB_PASSWORD=testpass123
 
         It 'Lanza error si faltan variables en .env' {
             $badEnv = @{ DB_SERVER = "host"; DB_NAME = "db" }
-            { Build-SqlPackageArgs -Action 'Publish' -Config $script:config -EnvVars $badEnv -DacpacPath ".\t.dacpac" } | Should -Throw "*DB_USER*"
+            { Build-SqlPackageArgs -Action 'Publish' -Config $script:config -EnvVars $badEnv -Database 'TestDB' -DacpacPath ".\t.dacpac" } | Should -Throw "*DB_USER*"
         }
 
         It 'Lanza error si Publish no recibe DacpacPath' {
-            { Build-SqlPackageArgs -Action 'Publish' -Config $script:config -EnvVars $script:envVars } | Should -Throw "*DacpacPath*"
+            { Build-SqlPackageArgs -Action 'Publish' -Config $script:config -EnvVars $script:envVars -Database 'TestDB' } | Should -Throw "*DacpacPath*"
         }
     }
 
@@ -343,12 +343,12 @@ Describe 'Etapa 4: Validaciones de prerequisitos' {
         $script:noEnvDir = Join-Path $env:TEMP "PSDevOps_NoEnv_$(Get-Random)"
         New-Item -Path $script:noEnvDir -ItemType Directory -Force | Out-Null
         # Crear .sqlproj y sqlpackage.yaml pero NO .env
-        "<Project/>" | Set-Content (Join-Path $script:noEnvDir "test.sqlproj")
+        "<Project><PropertyGroup><Name>test</Name></PropertyGroup></Project>" | Set-Content (Join-Path $script:noEnvDir "test.sqlproj")
         "properties:`n  BlockOnPossibleDataLoss: true" | Set-Content (Join-Path $script:noEnvDir "sqlpackage.yaml")
 
         $script:noYamlDir = Join-Path $env:TEMP "PSDevOps_NoYaml_$(Get-Random)"
         New-Item -Path $script:noYamlDir -ItemType Directory -Force | Out-Null
-        "<Project/>" | Set-Content (Join-Path $script:noYamlDir "test.sqlproj")
+        "<Project><PropertyGroup><Name>test</Name></PropertyGroup></Project>" | Set-Content (Join-Path $script:noYamlDir "test.sqlproj")
         "DB_SERVER=x" | Set-Content (Join-Path $script:noYamlDir ".env")
     }
 
@@ -406,7 +406,7 @@ Describe 'Etapa 4: Validaciones de prerequisitos' {
         $baseDir = Join-Path $env:TEMP "PSDevOps_DRDir_$(Get-Random)"
         New-Item -Path $baseDir -ItemType Directory -Force | Out-Null
         $outputDir = Join-Path $baseDir "deploy_reports"
-        "<Project/>" | Set-Content (Join-Path $baseDir "test.sqlproj")
+        "<Project><PropertyGroup><Name>test</Name></PropertyGroup></Project>" | Set-Content (Join-Path $baseDir "test.sqlproj")
         "DB_SERVER=x`nDB_NAME=y`nDB_USER=u`nDB_PASSWORD=p" | Set-Content (Join-Path $baseDir ".env")
         @"
 properties:
@@ -432,7 +432,7 @@ deployReport:
         $baseDir = Join-Path $env:TEMP "PSDevOps_ScriptDir_$(Get-Random)"
         New-Item -Path $baseDir -ItemType Directory -Force | Out-Null
         $outputDir = Join-Path $baseDir "deploy_scripts"
-        "<Project/>" | Set-Content (Join-Path $baseDir "test.sqlproj")
+        "<Project><PropertyGroup><Name>test</Name></PropertyGroup></Project>" | Set-Content (Join-Path $baseDir "test.sqlproj")
         "DB_SERVER=x`nDB_NAME=y`nDB_USER=u`nDB_PASSWORD=p" | Set-Content (Join-Path $baseDir ".env")
         @"
 properties:
@@ -485,7 +485,7 @@ Describe 'Etapa 5: Flujo de acciones destructivas' {
         }
 
         It 'Publish incluye todas las propiedades de seguridad' {
-            $args = Build-SqlPackageArgs -Action 'Publish' -Config $script:config -EnvVars $script:envVars -DacpacPath ".\test.dacpac"
+            $args = Build-SqlPackageArgs -Action 'Publish' -Config $script:config -EnvVars $script:envVars -Database 'TestDB' -DacpacPath ".\test.dacpac"
             $args | Should -Contain "/p:BlockOnPossibleDataLoss=True"
             $args | Should -Contain "/p:DropObjectsNotInSource=True"
             $args | Should -Contain "/p:DropPermissionsNotInSource=True"
@@ -493,20 +493,20 @@ Describe 'Etapa 5: Flujo de acciones destructivas' {
         }
 
         It 'Import NO incluye /p: properties (no aplican)' {
-            $args = Build-SqlPackageArgs -Action 'Import' -Config $script:config -EnvVars $script:envVars -SourcePath ".\backup.bacpac"
+            $args = Build-SqlPackageArgs -Action 'Import' -Config $script:config -EnvVars $script:envVars -Database 'TestDB' -SourcePath ".\backup.bacpac"
             $propsArgs = $args | Where-Object { $_ -like "/p:*" }
             $propsArgs | Should -BeNullOrEmpty
         }
 
         It 'Export NO incluye /p: properties' {
-            $args = Build-SqlPackageArgs -Action 'Export' -Config $script:config -EnvVars $script:envVars -OutputPath ".\out.bacpac"
+            $args = Build-SqlPackageArgs -Action 'Export' -Config $script:config -EnvVars $script:envVars -Database 'TestDB' -OutputPath ".\out.bacpac"
             $propsArgs = $args | Where-Object { $_ -like "/p:*" }
             $propsArgs | Should -BeNullOrEmpty
         }
 
         It 'DeployReport incluye las mismas properties que Publish' {
-            $publishArgs = Build-SqlPackageArgs -Action 'Publish' -Config $script:config -EnvVars $script:envVars -DacpacPath ".\test.dacpac"
-            $reportArgs = Build-SqlPackageArgs -Action 'DeployReport' -Config $script:config -EnvVars $script:envVars -DacpacPath ".\test.dacpac" -OutputPath ".\report.xml"
+            $publishArgs = Build-SqlPackageArgs -Action 'Publish' -Config $script:config -EnvVars $script:envVars -Database 'TestDB' -DacpacPath ".\test.dacpac"
+            $reportArgs = Build-SqlPackageArgs -Action 'DeployReport' -Config $script:config -EnvVars $script:envVars -Database 'TestDB' -DacpacPath ".\test.dacpac" -OutputPath ".\report.xml"
 
             $publishProps = $publishArgs | Where-Object { $_ -like "/p:*" } | Sort-Object
             $reportProps = $reportArgs | Where-Object { $_ -like "/p:*" } | Sort-Object
@@ -515,12 +515,12 @@ Describe 'Etapa 5: Flujo de acciones destructivas' {
         }
 
         It 'La contraseña se incluye en los argumentos de conexión' {
-            $args = Build-SqlPackageArgs -Action 'Publish' -Config $script:config -EnvVars $script:envVars -DacpacPath ".\test.dacpac"
+            $args = Build-SqlPackageArgs -Action 'Publish' -Config $script:config -EnvVars $script:envVars -Database 'TestDB' -DacpacPath ".\test.dacpac"
             $args | Should -Contain "/TargetPassword:Pass123!"
         }
 
         It 'Conexión siempre usa TrustServerCertificate y EncryptConnection' {
-            $args = Build-SqlPackageArgs -Action 'Publish' -Config $script:config -EnvVars $script:envVars -DacpacPath ".\test.dacpac"
+            $args = Build-SqlPackageArgs -Action 'Publish' -Config $script:config -EnvVars $script:envVars -Database 'TestDB' -DacpacPath ".\test.dacpac"
             $args | Should -Contain "/TargetTrustServerCertificate:True"
             $args | Should -Contain "/TargetEncryptConnection:True"
         }
@@ -531,7 +531,7 @@ Describe 'Etapa 5: Flujo de acciones destructivas' {
         BeforeAll {
             $script:importDir = Join-Path $env:TEMP "PSDevOps_Import_$(Get-Random)"
             New-Item -Path $script:importDir -ItemType Directory -Force | Out-Null
-            "<Project/>" | Set-Content (Join-Path $script:importDir "test.sqlproj")
+            "<Project><PropertyGroup><Name>test</Name></PropertyGroup></Project>" | Set-Content (Join-Path $script:importDir "test.sqlproj")
 
             # .env válido
             @"
@@ -567,7 +567,7 @@ import: {}
         It 'Script genera argumentos con /p: (misma categoría que Publish)' {
             $config = @{ properties = @{ BlockOnPossibleDataLoss = $true } }
             $envVars = @{ DB_SERVER = "srv"; DB_NAME = "db"; DB_USER = "u"; DB_PASSWORD = "p" }
-            $args = Build-SqlPackageArgs -Action 'Script' -Config $config -EnvVars $envVars -DacpacPath ".\t.dacpac" -OutputPath ".\out.sql"
+            $args = Build-SqlPackageArgs -Action 'Script' -Config $config -EnvVars $envVars -Database 'TestDB' -DacpacPath ".\t.dacpac" -OutputPath ".\out.sql"
             $args | Should -Contain "/Action:Script"
             $args | Should -Contain "/p:BlockOnPossibleDataLoss=True"
             $args | Should -Contain "/OutputPath:.\out.sql"

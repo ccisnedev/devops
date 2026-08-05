@@ -97,19 +97,24 @@ function Build-SqlPackageArgs {
         [string]$OutputPath,
 
         [Parameter()]
-        [string]$SourcePath
+        [string]$SourcePath,
+
+        # El nombre de la base llega resuelto desde <Name> del .sqlproj (ADR 0011); el env solo
+        # aporta conexion y credenciales.
+        [Parameter(Mandatory)]
+        [string]$Database
     )
 
     $sqlArgs = @("/Action:$Action")
 
     # Conexión al servidor (credenciales desde .env)
     $server   = $EnvVars['DB_SERVER']
-    $database = $EnvVars['DB_NAME']
+    $database = $Database
     $user     = $EnvVars['DB_USER']
     $password = $EnvVars['DB_PASSWORD']
 
-    if (-not $server -or -not $database -or -not $user -or -not $password) {
-        throw "Faltan variables en .env. Se requieren: DB_SERVER, DB_NAME, DB_USER, DB_PASSWORD"
+    if (-not $server -or -not $user -or -not $password) {
+        throw "Faltan variables en el env file. Se requieren: DB_SERVER, DB_USER, DB_PASSWORD"
     }
 
     # Acciones que usan Source (el .dacpac como fuente)
