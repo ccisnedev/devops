@@ -105,7 +105,17 @@
         [Parameter(ParameterSetName = 'Apply')]
         [Parameter(ParameterSetName = 'Dump')]
         [Parameter(ParameterSetName = 'Script')]
-        [string]$Schema
+        [string]$Schema,
+
+        [Parameter(ParameterSetName = 'Plan',
+            HelpMessage = "Env file with the PostgreSQL credentials (default .env). Production is explicit: -EnvFile .env.production")]
+        [Parameter(ParameterSetName = 'Apply',
+            HelpMessage = "Env file with the PostgreSQL credentials (default .env). Production is explicit: -EnvFile .env.production")]
+        [Parameter(ParameterSetName = 'Dump',
+            HelpMessage = "Env file with the PostgreSQL credentials (default .env).")]
+        [Parameter(ParameterSetName = 'Script',
+            HelpMessage = "Env file with the PostgreSQL credentials (default .env).")]
+        [string]$EnvFile = '.env'
     )
 
     begin {
@@ -133,7 +143,7 @@
             }
 
             'Plan' {
-                $resolved = Resolve-PgSchemaTargets -Schema $Schema
+                $resolved = Resolve-PgSchemaTargets -Schema $Schema -EnvFile $EnvFile
                 $config   = $resolved.Config
                 $schemas  = $resolved.Schemas
                 $envVars  = $resolved.EnvVars
@@ -179,7 +189,7 @@
             }
 
             'Apply' {
-                $resolved = Resolve-PgSchemaTargets -Schema $Schema
+                $resolved = Resolve-PgSchemaTargets -Schema $Schema -EnvFile $EnvFile
                 $config   = $resolved.Config
                 $schemas  = $resolved.Schemas
                 $envVars  = $resolved.EnvVars
@@ -237,7 +247,7 @@
             }
 
             'Dump' {
-                $resolved = Resolve-PgSchemaTargets -Schema $Schema
+                $resolved = Resolve-PgSchemaTargets -Schema $Schema -EnvFile $EnvFile
                 $config   = $resolved.Config
                 $schemas  = $resolved.Schemas
                 $envVars  = $resolved.EnvVars
@@ -282,7 +292,7 @@
             }
 
             'Script' {
-                $resolved = Resolve-PgSchemaTargets -Schema $Schema
+                $resolved = Resolve-PgSchemaTargets -Schema $Schema -EnvFile $EnvFile
                 $config   = $resolved.Config
                 $schemas  = $resolved.Schemas
                 $envVars  = $resolved.EnvVars
@@ -335,7 +345,17 @@ function Resolve-PgSchemaTargets {
     [CmdletBinding()]
     param(
         [Parameter()]
-        [string]$Schema
+        [string]$Schema,
+
+        [Parameter(ParameterSetName = 'Plan',
+            HelpMessage = "Env file with the PostgreSQL credentials (default .env). Production is explicit: -EnvFile .env.production")]
+        [Parameter(ParameterSetName = 'Apply',
+            HelpMessage = "Env file with the PostgreSQL credentials (default .env). Production is explicit: -EnvFile .env.production")]
+        [Parameter(ParameterSetName = 'Dump',
+            HelpMessage = "Env file with the PostgreSQL credentials (default .env).")]
+        [Parameter(ParameterSetName = 'Script',
+            HelpMessage = "Env file with the PostgreSQL credentials (default .env).")]
+        [string]$EnvFile = '.env'
     )
 
     if (-not (Test-Path ".\pgschema.yaml")) { throw "No se encontró pgschema.yaml. Ejecute 'Invoke-PgSchema -Init'." }
@@ -361,6 +381,6 @@ function Resolve-PgSchemaTargets {
         Config   = $config
         Schemas  = $schemas
         EnvVars  = $envVars
-        Database = (Resolve-PgDbIdentity -ProjectRoot (Get-Location).Path).Name
+        Database = (Resolve-PgDbIdentity -ProjectRoot (Get-Location).Path -EnvFile $EnvFile).Name
     }
 }

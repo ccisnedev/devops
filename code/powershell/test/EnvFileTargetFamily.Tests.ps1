@@ -13,7 +13,10 @@
 # Cubre REQ-6 a REQ-10 de ADR 0010.
 
 BeforeAll {
-    Remove-Module 'macss-devops' -ErrorAction SilentlyContinue
+    # Remove-Module por nombre quita UNA version. Si el modulo publicado esta instalado en
+    # PSModulePath, puede quedar cargado junto al del repo y ganar la resolucion de nombres: la
+    # suite pasaria a medir el modulo instalado en vez del codigo bajo prueba. -All las quita todas.
+    Get-Module 'macss-devops' -All | Remove-Module -Force -ErrorAction SilentlyContinue
     Import-Module "$PSScriptRoot\..\macss-devops.psd1" -Force
 
     $script:FunctionsDir = Join-Path $PSScriptRoot '..\Functions'

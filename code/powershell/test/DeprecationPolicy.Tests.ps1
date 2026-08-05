@@ -15,7 +15,10 @@
 # Cubre REQ-1 a REQ-6 de ADR 0012.
 
 BeforeAll {
-    Remove-Module 'macss-devops' -ErrorAction SilentlyContinue
+    # Remove-Module por nombre quita UNA version. Si el modulo publicado esta instalado en
+    # PSModulePath, puede quedar cargado junto al del repo y ganar la resolucion de nombres: la
+    # suite pasaria a medir el modulo instalado en vez del codigo bajo prueba. -All las quita todas.
+    Get-Module 'macss-devops' -All | Remove-Module -Force -ErrorAction SilentlyContinue
     Import-Module "$PSScriptRoot\..\macss-devops.psd1" -Force
     . "$PSScriptRoot/../Private/PublishHelpers.ps1"
 
@@ -116,7 +119,9 @@ Describe "REQ-5: Publish-FlutterWebLegacy ya no existe" {
 
     # Cero usos en toda la organizacion, asi que se borra sin fase intermedia.
     It "no esta disponible como comando" {
-        Get-Command Publish-FlutterWebLegacy -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
+        # Get-Command autocargaria el modulo publicado desde PSModulePath y lo encontraria ahi.
+        # La pregunta es si lo exporta el modulo bajo prueba.
+        (Get-Module 'macss-devops').ExportedCommands.Keys | Should -Not -Contain 'Publish-FlutterWebLegacy'
     }
 
     It "no figura en el manifiesto" {
