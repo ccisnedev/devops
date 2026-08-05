@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [6.0.3] - 2026-08-05
+
+### Changed
+
+- **El template de `publish.yaml` ya no trae `port: 4000`, sino `port: <PORT>`.** Un numero
+  plausible por defecto se queda tal cual y acaba desplegando contra un puerto que nadie sirve.
+  El placeholder obliga a una decision.
+
+### Added
+
+- **`-Plan` valida el puerto declarado.** Si `publish.yaml` no trae un entero entre 1 y 65535
+  --el placeholder incluido-- falla antes de tocar el servidor, con un mensaje que dice que
+  poner. Sin esto el placeholder solo habria cambiado un error silencioso por otro.
+- **`-Plan` contrasta el puerto declarado con el que el site escucha de verdad.** Si no coinciden
+  emite una advertencia que nombra ambos. No es bloqueante: con el `root` correcto el deploy
+  funciona igual. Pero el puerto declarado se usa en la verificacion final por HTTP, asi que un
+  valor equivocado hace que el reporte compruebe algo que no es el sitio, y deja el repo
+  documentando un puerto que nadie sirve.
+
+## [6.0.2] - 2026-08-05
+
+### Fixed
+
+- **El plan no detectaba que el site de nginx no sirviera desde `current`.** Solo comprobaba que
+  el archivo de configuracion existiera, y reportaba *"config existe (no se modifica)"* en nivel
+  informativo. En un site con `root /var/www/<app>;` --plano, sin symlink-- el deploy creaba la
+  release, movia `current`, imprimia `DEPLOYED` y terminaba en verde **sin cambiar lo que ve el
+  usuario**. Un exito falso que nada en la salida delataba.
+
+  Ahora el sondeo compara el `root` del site contra `<webroot>/<app>/current` y, si no coincide,
+  emite una fila de severidad `error`. Por ADR 0009 eso es un bloqueante: `-Apply` aborta antes de
+  compilar, con `-Force` como escape explicito. Tampoco anuncia ya "crear configuracion nginx",
+  porque el archivo existe: apunta mal, que es otra cosa.
+
+- **`-Init` de `Publish-FlutterWeb` sembraba `PORT=8080` y `NODE_ENV=production`.** Son claves de
+  una API Node que en una web estatica no lee nadie, y `PORT` ademas confunde porque el puerto de
+  nginx vive en `publish.yaml`. `Add-EnvDeployKey` gana `-NodeDefaults`, que solo pide
+  `Publish-NodeApi`.
+
 ## [6.0.1] - 2026-08-05
 
 ### Fixed

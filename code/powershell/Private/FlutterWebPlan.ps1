@@ -48,9 +48,17 @@ else
     echo "RELEASE:new"
 fi
 
-# Nginx config
+# Nginx config. No basta con que exista: si el site no sirve desde <webroot>/<app>/current,
+# mover el symlink no cambia nada de cara al usuario y el deploy seria un exito falso.
 if [ -f "/etc/nginx/sites-available/$AppName" ]; then
-    echo "NGINX:exists"
+    if grep -Eq "^[^#]*root[[:space:]]+$RemoteWebRoot/$AppName/current[[:space:]]*;" "/etc/nginx/sites-available/$AppName"; then
+        echo "NGINX:exists"
+    else
+        echo "NGINX:root-mismatch"
+    fi
+    # Puertos que declara el site, para contrastarlos con el de publish.yaml.
+    PORTS=`$(grep -Eho "^[^#]*listen[[:space:]]+[0-9]+" "/etc/nginx/sites-available/$AppName" | grep -Eo "[0-9]+`$" | sort -un | paste -sd, -)
+    [ -n "`$PORTS" ] && echo "NGINXPORTS:`$PORTS"
 else
     if ss -tlnH sport = :$Port | grep -q .; then
         echo "NGINX:port-in-use"
@@ -78,12 +86,14 @@ fi
     $probe = [pscustomobject]@{
         Current = 'desconocido'
         Release = 'desconocido'
-        Nginx   = 'desconocido'
+        Nginx      = 'desconocido'
+        NginxPorts = @()
     }
     foreach ($line in $output) {
         if ($line -match '^CURRENT:(.+)$') { $probe.Current = $Matches[1] }
         if ($line -match '^RELEASE:(.+)$') { $probe.Release = $Matches[1] }
-        if ($line -match '^NGINX:(.+)$') { $probe.Nginx = $Matches[1] }
+        if ($line -match '^NGINX:(.+)$')      { $probe.Nginx = $Matches[1] }
+        if ($line -match '^NGINXPORTS:(.+)$') { $probe.NginxPorts = @($Matches[1] -split ',' | ForEach-Object { [int]$_ }) }
     }
     return $probe
 }
@@ -128,11 +138,30 @@ function ConvertTo-FlutterWebPlan {
     if ($Probe.Nginx -eq 'exists') {
         $nginxRow = New-DeployPlanRow -Text 'config existe (no se modifica)' -Level 'info'
     }
+    elseif ($Probe.Nginx -eq 'root-mismatch') {
+        $nginxRow = New-DeployPlanRow -Level 'error' `
+            -Text "el site no sirve desde '$RemoteWebRoot/$AppName/current' — mover el symlink no cambiaria lo que se ve"
+    }
     elseif ($Probe.Nginx -eq 'port-in-use') {
         $nginxRow = New-DeployPlanRow -Text "PUERTO $Port EN USO — el deploy fallará" -Level 'error'
     }
     else {
         $nginxRow = New-DeployPlanRow -Text "se creará config en puerto $Port" -Level 'ok'
+    }
+
+    # El puerto declarado en publish.yaml no modifica un site existente, pero sigue usandose para
+    # la verificacion final por HTTP: si no coincide, el reporte comprueba algo que no es el sitio.
+    $probePorts = @()
+    if ($Probe.PSObject.Properties['NginxPorts']) { $probePorts = @($Probe.NginxPorts) }
+
+    $portRow = $null
+    if ($probePorts.Count -gt 0) {
+        if ($probePorts -contains [int]$Port) {
+            $portRow = New-DeployPlanRow -Level 'info' -Text "$Port (coincide con el site)"
+        } else {
+            $portRow = New-DeployPlanRow -Level 'warn' `
+                -Text "publish.yaml declara $Port, pero el site escucha en $($probePorts -join ', ')"
+        }
     }
 
     # ─── Actions -Apply will perform ─────────────────────
@@ -143,7 +172,9 @@ function ConvertTo-FlutterWebPlan {
         "Instalar en ${RemoteWebRoot}/${AppName}/releases/${Release}/",
         "Actualizar symlink current → $Release"
     )
-    if ($Probe.Nginx -ne 'exists') {
+    # 'root-mismatch' significa que el site YA existe y apunta a otro sitio: no hay nada que
+    # crear, hay que corregirlo a mano. Anunciar una creacion aqui seria describir mal el plan.
+    if ($Probe.Nginx -notin @('exists', 'root-mismatch')) {
         $actions += "Crear configuración nginx en puerto $Port"
     }
 
@@ -158,6 +189,7 @@ function ConvertTo-FlutterWebPlan {
             'Current' = $currentRow
             'Release' = $releaseRow
             'Nginx'   = $nginxRow
+            'Puerto'  = $portRow
         }
     }
 
