@@ -100,11 +100,7 @@ function Publish-NodeApi {
 
     process {
         # Banner
-        Write-Host ""
-        Write-Host "╔══════════════════════════════════════════════════╗" -ForegroundColor Cyan
-        Write-Host "║       Publish-NodeApi — macss-devops            ║" -ForegroundColor Cyan
-        Write-Host "╚══════════════════════════════════════════════════╝" -ForegroundColor Cyan
-        Write-Host ""
+        Show-MacssBanner -Title 'Publish-NodeApi'
 
         # Deprecation notice for the pre-ADR-0002 vocabulary.
         if ($MyInvocation.Line -match '-(Publish|DeployReport)\b') {
