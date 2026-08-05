@@ -210,3 +210,35 @@ Describe "REQ-8: los templates y -Init siguen la nueva frontera" {
         [bool]($src -match "Falta PGDATABASE en \.env") | Should -BeFalse
     }
 }
+
+Describe "REQ-1 (cableado): los cmdlets USAN el resolvedor, no solo existe" {
+
+    # Este Describe existe por un bug que llego a 6.0.0: Resolve-SqlDbIdentity estaba implementado
+    # y con 19 tests en verde, pero Invoke-SqlPackage nunca lo llamaba. Seguia exigiendo DB_NAME en
+    # el .env, asi que al retirar esa clave --lo que ADR 0011 pide hacer-- el cmdlet fallaba con
+    # "Faltan variables en .env".
+    #
+    # La leccion: probar que un helper funciona no prueba que alguien lo use. La asercion tiene que
+    # llegar hasta el cmdlet.
+
+    It "Invoke-SqlPackage resuelve la identidad desde el .sqlproj" {
+        $src = Get-Content (Join-Path $PSScriptRoot '..\Functions\Invoke-SqlPackage.ps1') -Raw -Encoding UTF8
+        [bool]($src -match 'Resolve-SqlDbIdentity') | Should -BeTrue
+    }
+
+    It "Invoke-PgSchema resuelve la identidad desde pgschema.yaml" {
+        $src = Get-Content (Join-Path $PSScriptRoot '..\Functions\Invoke-PgSchema.ps1') -Raw -Encoding UTF8
+        [bool]($src -match 'Resolve-PgDbIdentity') | Should -BeTrue
+    }
+
+    It "Build-SqlPackageArgs ya no exige DB_NAME del entorno" {
+        $src = Get-Content (Join-Path $PSScriptRoot '..\Private\SqlPackageHelpers.ps1') -Raw -Encoding UTF8
+        [bool]($src -match "Se requieren: DB_SERVER, DB_NAME") | Should -BeFalse
+    }
+
+    It "Build-SqlPackageArgs recibe el nombre resuelto en vez de leerlo del env" {
+        $src = Get-Content (Join-Path $PSScriptRoot '..\Private\SqlPackageHelpers.ps1') -Raw -Encoding UTF8
+        [bool]($src -match '\$database\s*=\s*\$EnvVars\[.DB_NAME.\]') | Should -BeFalse
+        [bool]($src -match '\[string\]\$Database')                        | Should -BeTrue
+    }
+}
