@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [6.0.2] - 2026-08-05
+
+### Fixed
+
+- **El plan no detectaba que el site de nginx no sirviera desde `current`.** Solo comprobaba que
+  el archivo de configuracion existiera, y reportaba *"config existe (no se modifica)"* en nivel
+  informativo. En un site con `root /var/www/<app>;` --plano, sin symlink-- el deploy creaba la
+  release, movia `current`, imprimia `DEPLOYED` y terminaba en verde **sin cambiar lo que ve el
+  usuario**. Un exito falso que nada en la salida delataba.
+
+  Ahora el sondeo compara el `root` del site contra `<webroot>/<app>/current` y, si no coincide,
+  emite una fila de severidad `error`. Por ADR 0009 eso es un bloqueante: `-Apply` aborta antes de
+  compilar, con `-Force` como escape explicito. Tampoco anuncia ya "crear configuracion nginx",
+  porque el archivo existe: apunta mal, que es otra cosa.
+
+- **`-Init` de `Publish-FlutterWeb` sembraba `PORT=8080` y `NODE_ENV=production`.** Son claves de
+  una API Node que en una web estatica no lee nadie, y `PORT` ademas confunde porque el puerto de
+  nginx vive en `publish.yaml`. `Add-EnvDeployKey` gana `-NodeDefaults`, que solo pide
+  `Publish-NodeApi`.
+
 ## [6.0.1] - 2026-08-05
 
 ### Fixed

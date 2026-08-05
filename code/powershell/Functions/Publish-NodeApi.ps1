@@ -171,7 +171,7 @@ function Publish-NodeApi {
                     @{ Name = '.env.production'; Label = 'producción' }
                 )) {
                     $efPath = Join-Path $cwd $ef.Name
-                    $status = Add-EnvDeployKey -Path $efPath -EnvLabel $ef.Label
+                    $status = Add-EnvDeployKey -Path $efPath -EnvLabel $ef.Label -NodeDefaults
                     switch ($status) {
                         'created'  { Write-Host "  Creado: $($ef.Name) (con MACSS_DEPLOY_SSH_ALIAS=)" -ForegroundColor Green }
                         'appended' { Write-Host "  Actualizado: $($ef.Name) (+MACSS_DEPLOY_SSH_ALIAS=)" -ForegroundColor Green }

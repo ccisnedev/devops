@@ -126,3 +126,70 @@ Describe "ConvertTo-FlutterWebPlan — integración con Get-DeployPlanBlocker" {
         @(Get-DeployPlanBlocker -Plan (New-PlanFrom $probe)).Count | Should -Be 0
     }
 }
+
+Describe "ConvertTo-FlutterWebPlan — el site debe servir desde 'current'" {
+
+    # Caso real que lo motivo: micro sirve con `root /var/www/micro;` --plano, sin symlink--.
+    # El deploy creaba releases/ y movia current, reportaba DEPLOYED y terminaba en verde, pero
+    # nginx seguia sirviendo los archivos viejos de la raiz. Un exito falso: nada en la salida
+    # delataba que el sitio no habia cambiado.
+    #
+    # El plan solo comprobaba que el archivo de config existiera, nunca a donde apuntaba.
+
+    It "marca como BLOQUEANTE que el site no apunte a current" {
+        $plan = ConvertTo-FlutterWebPlan -Probe (New-Probe -Nginx 'root-mismatch') -AppName 'micro' `
+            -Release 'v0.15.1' -Server 'prod' -IP '10.0.0.5' -Port 3046 -RemoteWebRoot '/var/www'
+        (Get-Row -Plan $plan -Label 'Nginx').Level | Should -Be 'error'
+    }
+
+    It "el texto dice que el deploy no se veria, no solo que hay un desajuste" {
+        $plan = ConvertTo-FlutterWebPlan -Probe (New-Probe -Nginx 'root-mismatch') -AppName 'micro' `
+            -Release 'v0.15.1' -Server 'prod' -IP '10.0.0.5' -Port 3046 -RemoteWebRoot '/var/www'
+        (Get-Row -Plan $plan -Label 'Nginx').Text | Should -Match 'current'
+    }
+
+    # Un bloqueante hace que -Apply aborte antes de compilar (ADR 0009), que es justo lo que
+    # habria evitado el despliegue silencioso.
+    It "produce un bloqueante que -Apply puede detectar" {
+        $plan = ConvertTo-FlutterWebPlan -Probe (New-Probe -Nginx 'root-mismatch') -AppName 'micro' `
+            -Release 'v0.15.1' -Server 'prod' -IP '10.0.0.5' -Port 3046 -RemoteWebRoot '/var/www'
+        @(Get-DeployPlanBlocker -Plan $plan).Count | Should -BeGreaterThan 0
+    }
+
+    It "no anuncia crear la config: el archivo ya existe, solo apunta mal" {
+        $plan = ConvertTo-FlutterWebPlan -Probe (New-Probe -Nginx 'root-mismatch') -AppName 'micro' `
+            -Release 'v0.15.1' -Server 'prod' -IP '10.0.0.5' -Port 3046 -RemoteWebRoot '/var/www'
+        ($plan.Actions -join ' ') | Should -Not -Match 'Crear configuración nginx'
+    }
+
+    It "un site que si apunta a current sigue siendo informativo" {
+        $plan = ConvertTo-FlutterWebPlan -Probe (New-Probe -Nginx 'exists') -AppName 'impulsa' `
+            -Release 'v1.7.1' -Server 'prod' -IP '10.0.0.5' -Port 3048 -RemoteWebRoot '/var/www'
+        (Get-Row -Plan $plan -Label 'Nginx').Level | Should -Be 'info'
+    }
+}
+
+Describe "Add-EnvDeployKey — el env sembrado no inventa claves de otro runtime" {
+
+    # -Init de Publish-FlutterWeb reutiliza este helper, y la plantilla traia PORT=8080 y
+    # NODE_ENV=production: claves de una API Node que en una web estatica no las lee nadie.
+    # PORT ademas confunde, porque el puerto de nginx vive en publish.yaml.
+    BeforeAll { . "$PSScriptRoot/../Private/PublishHelpers.ps1" }
+
+    It "sin -NodeDefaults siembra solo la clave de destino" {
+        $f = Join-Path ([IO.Path]::GetTempPath()) ("envseed_" + [guid]::NewGuid().ToString('N') + ".env")
+        Add-EnvDeployKey -Path $f -EnvLabel 'prueba' | Out-Null
+        $c = Get-Content $f -Raw
+        $c | Should -Match 'MACSS_DEPLOY_SSH_ALIAS='
+        $c | Should -Not -Match 'PORT='
+        $c | Should -Not -Match 'NODE_ENV='
+    }
+
+    It "con -NodeDefaults conserva las de la API Node" {
+        $f = Join-Path ([IO.Path]::GetTempPath()) ("envseed_" + [guid]::NewGuid().ToString('N') + ".env")
+        Add-EnvDeployKey -Path $f -EnvLabel 'prueba' -NodeDefaults | Out-Null
+        $c = Get-Content $f -Raw
+        $c | Should -Match 'PORT='
+        $c | Should -Match 'NODE_ENV='
+    }
+}
