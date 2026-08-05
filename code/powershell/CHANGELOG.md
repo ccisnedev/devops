@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [6.0.1] - 2026-08-05
+
+### Fixed
+
+- **`Invoke-SqlPackage` no usaba el resolvedor de identidad que 6.0.0 introdujo.**
+  `Resolve-SqlDbIdentity` estaba implementado y con tests en verde, pero el cmdlet nunca lo
+  llamaba: seguia exigiendo `DB_NAME` en el env. Al retirar esa clave --que es justo lo que ADR
+  0011 pide hacer-- el cmdlet fallaba con *"Faltan variables en .env. Se requieren: DB_SERVER,
+  DB_NAME, DB_USER, DB_PASSWORD"*, y el reporte mostraba `Base datos:` vacio.
+
+  `Build-SqlPackageArgs` recibe ahora el nombre resuelto por parametro y ya no lo lee del entorno;
+  el env vuelve a ser solo conexion y credenciales. Cuando `DB_NAME` actua como override
+  legitimo (DB Tier-1), el encabezado lo dice: `Base datos: dev_carlos  (override de DB_NAME; el
+  proyecto declara 'IMPULSA')`.
+
+  Probar que un helper funciona no prueba que alguien lo use. Se agregan tests que asertan el
+  **cableado**: que `Invoke-SqlPackage` referencia `Resolve-SqlDbIdentity`, que `Invoke-PgSchema`
+  referencia `Resolve-PgDbIdentity`, y que el helper de argumentos ya no exige `DB_NAME`.
+
 ## [6.0.0] - 2026-08-05
 
 Release de ruptura. **Invocaciones y archivos de configuración que hoy funcionan dejarán de

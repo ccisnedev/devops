@@ -167,9 +167,14 @@
                 $envConfig = Read-DotEnv -Path $EnvFile
                 $envVars = $envConfig.Env
 
+                # Identidad de la base: <Name> del .sqlproj, con DB_NAME como override explicito
+                # (ADR 0011). El env aporta conexion y credenciales, no identidad.
+                $dbIdentity = Resolve-SqlDbIdentity -ProjectRoot (Get-Location).Path -EnvFile $EnvFile
+                $dbName = $dbIdentity.Name
+
                 try {
                     Write-Host "  Servidor:  $($envVars['DB_SERVER'])" -ForegroundColor Cyan
-                    Write-Host "  Base datos: $($envVars['DB_NAME'])" -ForegroundColor Cyan
+                    Write-Host "  Base datos: $dbName$(if ($dbIdentity.IsOverride) { "  (override de DB_NAME; el proyecto declara '$($dbIdentity.ProjectName)')" })" -ForegroundColor Cyan
                     Write-Host "  Usuario:   $($envVars['DB_USER'])" -ForegroundColor Cyan
                     Write-Host ""
 
@@ -196,7 +201,7 @@
                     }
                     if (-not (Test-Path $outputDir)) { New-Item -Path $outputDir -ItemType Directory -Force | Out-Null }
                     $reportPath = Join-Path $outputDir "deploy_report_$(Get-Date -Format 'yyyyMMdd_HHmmss').xml"
-                    $reportArgs = Build-SqlPackageArgs -Action 'DeployReport' -Config $config -EnvVars $envVars -DacpacPath $dacpacPath -OutputPath $reportPath
+                    $reportArgs = Build-SqlPackageArgs -Action 'DeployReport' -Config $config -EnvVars $envVars -Database $dbName -DacpacPath $dacpacPath -OutputPath $reportPath
 
                     & sqlpackage @reportArgs 2>&1 | Tee-Object -Variable reportOutput
                     if ($LASTEXITCODE -ne 0) {
@@ -211,7 +216,7 @@
                     }
 
                     # 4. Confirmation (ADR 0002): -AutoApprove skips; fails clearly when non-interactive.
-                    if (-not (Confirm-MacssChange -Action "Apply dacpac to '$($envVars['DB_NAME'])' on '$($envVars['DB_SERVER'])'" -AutoApprove:$AutoApprove)) {
+                    if (-not (Confirm-MacssChange -Action "Apply dacpac to '$dbName' on '$($envVars['DB_SERVER'])'" -AutoApprove:$AutoApprove)) {
                         Write-Host "  Apply cancelled." -ForegroundColor Yellow
                         Remove-Item $reportPath -ErrorAction SilentlyContinue
                         return
@@ -220,7 +225,7 @@
                     # 5. Publish
                     Write-Host ""
                     Write-Host "  Iniciando despliegue..." -ForegroundColor Cyan
-                    $publishArgs = Build-SqlPackageArgs -Action 'Publish' -Config $config -EnvVars $envVars -DacpacPath $dacpacPath
+                    $publishArgs = Build-SqlPackageArgs -Action 'Publish' -Config $config -EnvVars $envVars -Database $dbName -DacpacPath $dacpacPath
 
                     & sqlpackage @publishArgs 2>&1 | Tee-Object -Variable publishOutput
                     if ($LASTEXITCODE -eq 0) {
@@ -247,6 +252,11 @@
                 $config = Read-SqlPackageConfig
                 $envConfig = Read-DotEnv -Path $EnvFile
                 $envVars = $envConfig.Env
+
+                # Identidad de la base: <Name> del .sqlproj, con DB_NAME como override explicito
+                # (ADR 0011). El env aporta conexion y credenciales, no identidad.
+                $dbIdentity = Resolve-SqlDbIdentity -ProjectRoot (Get-Location).Path -EnvFile $EnvFile
+                $dbName = $dbIdentity.Name
                 $outputDir = "."
                 if ($config.deployReport -and $config.deployReport.outputDir) {
                     $outputDir = $config.deployReport.outputDir
@@ -255,7 +265,7 @@
 
                 try {
                     Write-Host "  Servidor:  $($envVars['DB_SERVER'])" -ForegroundColor Cyan
-                    Write-Host "  Base datos: $($envVars['DB_NAME'])" -ForegroundColor Cyan
+                    Write-Host "  Base datos: $dbName$(if ($dbIdentity.IsOverride) { "  (override de DB_NAME; el proyecto declara '$($dbIdentity.ProjectName)')" })" -ForegroundColor Cyan
                     Write-Host "  Modo: SOLO REPORTE" -ForegroundColor Cyan
                     Write-Host ""
 
@@ -276,7 +286,7 @@
                     $reportPath = Join-Path $outputDir "deploy_report_$(Get-Date -Format 'yyyyMMdd_HHmmss').xml"
 
                     Write-Host "  Generando reporte de cambios..." -ForegroundColor Cyan
-                    $reportArgs = Build-SqlPackageArgs -Action 'DeployReport' -Config $config -EnvVars $envVars -DacpacPath $dacpacPath -OutputPath $reportPath
+                    $reportArgs = Build-SqlPackageArgs -Action 'DeployReport' -Config $config -EnvVars $envVars -Database $dbName -DacpacPath $dacpacPath -OutputPath $reportPath
 
                     & sqlpackage @reportArgs 2>&1 | Tee-Object -Variable reportOutput
                     if ($LASTEXITCODE -ne 0) {
@@ -301,6 +311,11 @@
                 $config = Read-SqlPackageConfig
                 $envConfig = Read-DotEnv -Path $EnvFile
                 $envVars = $envConfig.Env
+
+                # Identidad de la base: <Name> del .sqlproj, con DB_NAME como override explicito
+                # (ADR 0011). El env aporta conexion y credenciales, no identidad.
+                $dbIdentity = Resolve-SqlDbIdentity -ProjectRoot (Get-Location).Path -EnvFile $EnvFile
+                $dbName = $dbIdentity.Name
                 $outputDir = "."
                 if ($config.script -and $config.script.outputDir) {
                     $outputDir = $config.script.outputDir
@@ -309,7 +324,7 @@
 
                 try {
                     Write-Host "  Servidor:  $($envVars['DB_SERVER'])" -ForegroundColor Cyan
-                    Write-Host "  Base datos: $($envVars['DB_NAME'])" -ForegroundColor Cyan
+                    Write-Host "  Base datos: $dbName$(if ($dbIdentity.IsOverride) { "  (override de DB_NAME; el proyecto declara '$($dbIdentity.ProjectName)')" })" -ForegroundColor Cyan
                     Write-Host "  Modo: GENERAR SCRIPT SQL" -ForegroundColor Cyan
                     Write-Host ""
 
@@ -330,7 +345,7 @@
                     $scriptPath = Join-Path $outputDir "deploy_script_$(Get-Date -Format 'yyyyMMdd_HHmmss').sql"
 
                     Write-Host "  Generando script SQL..." -ForegroundColor Cyan
-                    $scriptArgs = Build-SqlPackageArgs -Action 'Script' -Config $config -EnvVars $envVars -DacpacPath $dacpacPath -OutputPath $scriptPath
+                    $scriptArgs = Build-SqlPackageArgs -Action 'Script' -Config $config -EnvVars $envVars -Database $dbName -DacpacPath $dacpacPath -OutputPath $scriptPath
 
                     & sqlpackage @scriptArgs 2>&1 | Tee-Object -Variable scriptOutput
                     if ($LASTEXITCODE -ne 0) {
@@ -356,9 +371,14 @@
                 $envConfig = Read-DotEnv -Path $EnvFile
                 $envVars = $envConfig.Env
 
+                # Identidad de la base: <Name> del .sqlproj, con DB_NAME como override explicito
+                # (ADR 0011). El env aporta conexion y credenciales, no identidad.
+                $dbIdentity = Resolve-SqlDbIdentity -ProjectRoot (Get-Location).Path -EnvFile $EnvFile
+                $dbName = $dbIdentity.Name
+
                 try {
                     Write-Host "  Servidor:  $($envVars['DB_SERVER'])" -ForegroundColor Cyan
-                    Write-Host "  Base datos: $($envVars['DB_NAME'])" -ForegroundColor Cyan
+                    Write-Host "  Base datos: $dbName$(if ($dbIdentity.IsOverride) { "  (override de DB_NAME; el proyecto declara '$($dbIdentity.ProjectName)')" })" -ForegroundColor Cyan
                     Write-Host "  Modo: EXTRACT (snapshot)" -ForegroundColor Cyan
                     Write-Host ""
 
@@ -368,11 +388,10 @@
                     }
                     if (-not (Test-Path $outputDir)) { New-Item -Path $outputDir -ItemType Directory -Force | Out-Null }
 
-                    $dbName = $envVars['DB_NAME']
                     $extractPath = Join-Path $outputDir "$($dbName)_$(Get-Date -Format 'yyyyMMdd_HHmmss').dacpac"
 
                     Write-Host "  Extrayendo esquema del servidor..." -ForegroundColor Cyan
-                    $extractArgs = Build-SqlPackageArgs -Action 'Extract' -Config $config -EnvVars $envVars -OutputPath $extractPath
+                    $extractArgs = Build-SqlPackageArgs -Action 'Extract' -Config $config -EnvVars $envVars -Database $dbName -OutputPath $extractPath
 
                     & sqlpackage @extractArgs 2>&1 | Tee-Object -Variable extractOutput
                     if ($LASTEXITCODE -ne 0) {
@@ -398,9 +417,14 @@
                 $envConfig = Read-DotEnv -Path $EnvFile
                 $envVars = $envConfig.Env
 
+                # Identidad de la base: <Name> del .sqlproj, con DB_NAME como override explicito
+                # (ADR 0011). El env aporta conexion y credenciales, no identidad.
+                $dbIdentity = Resolve-SqlDbIdentity -ProjectRoot (Get-Location).Path -EnvFile $EnvFile
+                $dbName = $dbIdentity.Name
+
                 try {
                     Write-Host "  Servidor:  $($envVars['DB_SERVER'])" -ForegroundColor Cyan
-                    Write-Host "  Base datos: $($envVars['DB_NAME'])" -ForegroundColor Cyan
+                    Write-Host "  Base datos: $dbName$(if ($dbIdentity.IsOverride) { "  (override de DB_NAME; el proyecto declara '$($dbIdentity.ProjectName)')" })" -ForegroundColor Cyan
                     Write-Host "  Modo: EXPORT (esquema + datos)" -ForegroundColor Cyan
                     Write-Host ""
 
@@ -410,11 +434,10 @@
                     }
                     if (-not (Test-Path $outputDir)) { New-Item -Path $outputDir -ItemType Directory -Force | Out-Null }
 
-                    $dbName = $envVars['DB_NAME']
                     $exportPath = Join-Path $outputDir "$($dbName)_$(Get-Date -Format 'yyyyMMdd_HHmmss').bacpac"
 
                     Write-Host "  Exportando esquema y datos..." -ForegroundColor Cyan
-                    $exportArgs = Build-SqlPackageArgs -Action 'Export' -Config $config -EnvVars $envVars -OutputPath $exportPath
+                    $exportArgs = Build-SqlPackageArgs -Action 'Export' -Config $config -EnvVars $envVars -Database $dbName -OutputPath $exportPath
 
                     & sqlpackage @exportArgs 2>&1 | Tee-Object -Variable exportOutput
                     if ($LASTEXITCODE -ne 0) {
@@ -440,6 +463,11 @@
                 $envConfig = Read-DotEnv -Path $EnvFile
                 $envVars = $envConfig.Env
 
+                # Identidad de la base: <Name> del .sqlproj, con DB_NAME como override explicito
+                # (ADR 0011). El env aporta conexion y credenciales, no identidad.
+                $dbIdentity = Resolve-SqlDbIdentity -ProjectRoot (Get-Location).Path -EnvFile $EnvFile
+                $dbName = $dbIdentity.Name
+
                 # Obtener ruta del .bacpac
                 $sourcePath = $null
                 if ($config.import -and $config.import.sourcePath) {
@@ -451,21 +479,21 @@
 
                 try {
                     Write-Host "  Servidor:  $($envVars['DB_SERVER'])" -ForegroundColor Cyan
-                    Write-Host "  Base datos: $($envVars['DB_NAME'])" -ForegroundColor Cyan
+                    Write-Host "  Base datos: $dbName$(if ($dbIdentity.IsOverride) { "  (override de DB_NAME; el proyecto declara '$($dbIdentity.ProjectName)')" })" -ForegroundColor Cyan
                     Write-Host "  Fuente:    $sourcePath" -ForegroundColor Cyan
                     Write-Host "  Modo: IMPORT (.bacpac → servidor)" -ForegroundColor Yellow
                     Write-Host ""
                     Write-Host "  ADVERTENCIA: Esta acción reemplazará la base de datos completa." -ForegroundColor Red
                     Write-Host ""
 
-                    if (-not (Confirm-MacssChange -Action "Import bacpac into '$($envVars['DB_NAME'])' on '$($envVars['DB_SERVER'])' (replaces the whole database)" -AutoApprove:$AutoApprove)) {
+                    if (-not (Confirm-MacssChange -Action "Import bacpac into '$dbName' on '$($envVars['DB_SERVER'])' (replaces the whole database)" -AutoApprove:$AutoApprove)) {
                         Write-Host "  Import cancelled." -ForegroundColor Yellow
                         return
                     }
 
                     Write-Host ""
                     Write-Host "  Importando .bacpac..." -ForegroundColor Cyan
-                    $importArgs = Build-SqlPackageArgs -Action 'Import' -Config $config -EnvVars $envVars -SourcePath $sourcePath
+                    $importArgs = Build-SqlPackageArgs -Action 'Import' -Config $config -EnvVars $envVars -Database $dbName -SourcePath $sourcePath
 
                     & sqlpackage @importArgs 2>&1 | Tee-Object -Variable importOutput
                     if ($LASTEXITCODE -eq 0) {
