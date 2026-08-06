@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [6.2.0] - 2026-08-05
+
+### Changed
+
+- **La plantilla de `Invoke-SqlPackage -Init` deja de administrar las cuentas de la instancia**
+  (ADR 0013). `DropPermissionsNotInSource` y `DropRoleMembersNotInSource` pasan a `false`, y se
+  agrega `DoNotDropObjectTypes: "Logins;Users"`.
+
+  Para SqlPackage un usuario de BD es un objeto como cualquier otro: con la plantilla anterior,
+  `DropObjectsNotInSource` eliminaba toda cuenta que no estuviera en el modelo --y las cuentas
+  nominales y las de otras integraciones no estan en el modelo de ningun proyecto--. Medido en un
+  repo real: agregar tres columnas a una tabla habria borrado **7 usuarios de produccion**, dos de
+  ellos cuentas de servicio en uso, con sus 12 membresias de rol y 8 permisos. De cinco repos
+  auditados, cuatro tenian la exposicion y ninguno la habia advertido.
+
+  El plan lo declaraba, y aun asi no servia de aviso: iba mezclado entre los cambios esperados,
+  en una lista que se lee por encima buscando el `Alter` que uno fue a buscar.
+
+  Las tres propiedades son una sola decision: proteger al usuario sin proteger sus permisos y sus
+  roles lo deja sin acceso igual, con la cuenta viva pero vacia. Solo bloquean el `DROP`; el
+  proyecto sigue creando y actualizando las cuentas de servicio que si declara.
+
+  Dos restricciones de sqlpackage quedan cubiertas por tests, porque ambas fallan el despliegue
+  entero: `DoNotDropObjectTypes` solo es valida con `DropObjectsNotInSource: true`, y
+  `RoleMembership` no puede ir en esa lista mientras `DropRoleMembersNotInSource` sea `true`.
+
+  **La plantilla solo aplica a proyectos nuevos**: los `sqlpackage.yaml` ya versionados hay que
+  revisarlos uno por uno. `Invoke-SqlPackage -Plan` lo detecta --contra produccion tambien, que es
+  donde las cuentas son distintas y donde duele--.
+
+
 ## [6.1.0] - 2026-08-05
 
 ### Added
