@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [6.2.2] - 2026-08-07
+
+### Fixed
+
+- **`Publish-DockerStack -Apply` reportaba "Deploy completado" sin aplicar los cambios de
+  configuracion.** El script remoto hacia `cd` al symlink `current` antes de invocar a Compose.
+  Compose toma ese directorio como raiz de los bind mounts relativos y guarda la ruta sin
+  resolver symlinks, asi que un `./conf` resolvia siempre a `.../current/conf`: una cadena
+  identica en todos los releases. Sin diferencia que detectar, Compose no recreaba el contenedor,
+  y el mount vivo seguia apuntando al release anterior porque el kernel resolvio el symlink al
+  crearlo. El despliegue terminaba en verde, healthcheck incluido, con la configuracion vieja
+  corriendo. Afectaba a todo despliegue cuyo unico cambio fuera configuracion montada por bind
+  mount, que es el caso mas frecuente en un stack ya estable.
+
+  Compose ahora corre desde el directorio real del release. La ruta cambia en cada uno, Compose
+  ve la diferencia y recrea **solo los servicios afectados**. `current` se mantiene como puntero
+  para el operador; los contenedores ya no dependen de el.
+
+  Detectado en produccion el 2026-08-07: una regla de alerta de Prometheus desplegada y nunca
+  aplicada. Analisis en `docs/issues/despliegue-de-stack-no-aplica-cambios-de-configuracion.md`.
+
+- **El rollback documentado tenia el mismo defecto.** El mensaje final indicaba repuntar el
+  symlink y correr `docker compose up -d` desde `current`, lo que por la misma razon habria
+  terminado en verde sin revertir nada. Ahora entra al directorio del release anterior.
+
 ## [6.2.1] - 2026-08-06
 
 ### Fixed
