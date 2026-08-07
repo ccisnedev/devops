@@ -33,10 +33,22 @@ cp "$REMOTE_ENV" "$RELEASE_DIR/.env"
 chmod 600 "$RELEASE_DIR/.env"
 rm -f "$TARBALL" "$REMOTE_ENV"
 
-# Apuntar 'current' al nuevo release (rollback = repuntar este symlink)
+# Apuntar 'current' al nuevo release. Es un puntero para el operador (logs, inspeccion): los
+# contenedores NO dependen de el, por lo que sigue mas abajo.
 ln -sfn "$RELEASE_DIR" "$CURRENT"
 
-cd "$CURRENT"
+# Compose corre desde el directorio REAL del release, nunca desde el symlink.
+#
+# Compose toma el directorio del proyecto como raiz de los bind mounts relativos y guarda la
+# ruta tal cual, sin resolver symlinks. Parado en "$CURRENT", un `./conf` del compose resuelve
+# siempre a ".../current/conf": una cadena identica en todos los releases. Compose compara
+# imagen, variables y esa cadena, no encuentra diferencia y no recrea el contenedor; el mount
+# vivo sigue apuntando al release anterior, porque el kernel resolvio el symlink al crearlo.
+# El despliegue termina en verde con la configuracion vieja corriendo.
+#
+# Parado en "$RELEASE_DIR" la ruta cambia en cada release, Compose ve la diferencia y recrea
+# solo los servicios afectados. Fijado en test/DockerStackAplicaConfig.container.test.sh.
+cd "$RELEASE_DIR"
 
 if [ ! -f "$COMPOSE_FILE" ]; then
     echo "ERROR: no se encontró el compose '$COMPOSE_FILE' en el release" >&2
