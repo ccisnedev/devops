@@ -316,7 +316,10 @@ MACSS_DEPLOY_SSH_ALIAS=
                     Write-Host "══════════════════════════════════════════════════" -ForegroundColor Green
                     Write-Host "  Servidor:  $server ($ip)" -ForegroundColor White
                     Write-Host "  Release:   $releaseDir" -ForegroundColor White
-                    Write-Host "  Rollback:  ssh $server 'ln -sfn <release-anterior> $currentLink && cd $currentLink && docker compose -p $($cfg.Name) up -d'" -ForegroundColor White
+                    # El rollback entra al directorio REAL del release anterior, no al symlink:
+                    # parado en 'current' la ruta de los bind mounts no cambia, Compose no ve
+                    # diferencia y no recrea nada — el rollback terminaria en verde sin revertir.
+                    Write-Host "  Rollback:  ssh $server 'cd $stackDir/releases/<release-anterior> && docker compose -p $($cfg.Name) up -d && ln -sfn `$PWD $currentLink'" -ForegroundColor White
                     Write-Host "══════════════════════════════════════════════════" -ForegroundColor Green
                     Write-Host ""
                 }
