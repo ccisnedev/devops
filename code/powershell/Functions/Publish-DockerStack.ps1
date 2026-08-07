@@ -167,6 +167,11 @@ MACSS_DEPLOY_SSH_ALIAS=
                 $cfg = Get-DockerStackConfig -ProjectRoot $cwd
                 $release = Get-DockerStackRelease -ProjectRoot $cwd -Version $cfg.Version -AllowDirty:$AllowDirty
 
+                # El destino se resuelve antes de mostrarlo y antes de pedir confirmacion:
+                # confirmar un despliegue sin ver a donde va anula el gate de ADR 0002.
+                $server = Resolve-DeployTargetFromEnv -ProjectRoot $cwd -EnvFile $EnvFile `
+                              -LegacyServer $cfg.Server -Cmdlet 'Publish-DockerStack'
+
                 Write-Host "  Stack:      $($cfg.Name)" -ForegroundColor Cyan
                 Write-Host "  Release:    $release" -ForegroundColor Cyan
                 Write-Host "  Compose:    $($cfg.ComposeFile)" -ForegroundColor Cyan
@@ -183,8 +188,6 @@ MACSS_DEPLOY_SSH_ALIAS=
                 }
 
                 # ─── SSH ─────────────────────────────────────
-                $server = Resolve-DeployTargetFromEnv -ProjectRoot $cwd -EnvFile $EnvFile `
-                              -LegacyServer $cfg.Server -Cmdlet 'Publish-DockerStack'
                 $ssh = Read-SSHConfig -HostAlias $server
                 $user = $ssh.User
                 $ip = $ssh.HostName
@@ -291,7 +294,7 @@ MACSS_DEPLOY_SSH_ALIAS=
                         $hrc = Invoke-RemoteScript -ScriptContent $healthScript `
                             -User $user -IP $ip -Port $sshPort -KeyPath $keyPath -ScriptPrefix "psdevops_dockhealth_"
                         if ($hrc -ne 0) {
-                            throw "Healthcheck falló. Revise: ssh $($cfg.Server) 'cd $currentLink && docker compose -p $($cfg.Name) logs --tail 80'"
+                            throw "Healthcheck falló. Revise: ssh $server 'cd $currentLink && docker compose -p $($cfg.Name) logs --tail 80'"
                         }
                     } else {
                         Write-Host "  (sin healthcheck configurado)" -ForegroundColor Yellow
@@ -311,9 +314,9 @@ MACSS_DEPLOY_SSH_ALIAS=
                     Write-Host "══════════════════════════════════════════════════" -ForegroundColor Green
                     Write-Host "  Deploy completado: $($cfg.Name) $release" -ForegroundColor Green
                     Write-Host "══════════════════════════════════════════════════" -ForegroundColor Green
-                    Write-Host "  Servidor:  $ip ($($cfg.Server))" -ForegroundColor White
+                    Write-Host "  Servidor:  $server ($ip)" -ForegroundColor White
                     Write-Host "  Release:   $releaseDir" -ForegroundColor White
-                    Write-Host "  Rollback:  ssh $($cfg.Server) 'ln -sfn <release-anterior> $currentLink && cd $currentLink && docker compose -p $($cfg.Name) up -d'" -ForegroundColor White
+                    Write-Host "  Rollback:  ssh $server 'ln -sfn <release-anterior> $currentLink && cd $currentLink && docker compose -p $($cfg.Name) up -d'" -ForegroundColor White
                     Write-Host "══════════════════════════════════════════════════" -ForegroundColor Green
                     Write-Host ""
                 }
@@ -345,7 +348,7 @@ MACSS_DEPLOY_SSH_ALIAS=
                 Write-Host "  Release:    $release" -ForegroundColor White
                 Write-Host "  Compose:    $($cfg.ComposeFile)" -ForegroundColor White
                 Write-Host "  Build:      $($cfg.Build)" -ForegroundColor White
-                Write-Host "  Servidor:   $($cfg.Server) ($ip)" -ForegroundColor White
+                Write-Host "  Servidor:   $server ($ip)" -ForegroundColor White
                 if ($cfg.HealthMode) { Write-Host "  Health:     $($cfg.HealthMode) → $($cfg.HealthTarget)" -ForegroundColor White }
                 Write-Host ""
 
@@ -392,15 +395,22 @@ fi
                 }
 
                 Write-Host ""
-                Write-Host "  ─── Acciones que realizará -Apply ───" -ForegroundColor Cyan
-                Write-Host "  1. Empaquetar compose + include en tar.gz" -ForegroundColor White
+                # Los pasos se numeran al imprimirse, no en el texto: con numeros fijos, saltarse
+                # un paso condicional dejaba huecos (1, 3, 4, 5) e invitaba a preguntarse que fue
+                # del 2 y si fallo en silencio.
+                $acciones = @("Empaquetar compose + include en tar.gz")
                 if ($cfg.Build -eq 'transfer') {
-                    Write-Host "  2. Build local + docker save/load de $($cfg.Image) al servidor" -ForegroundColor White
+                    $acciones += "Build local + docker save/load de $($cfg.Image) al servidor"
                 }
-                Write-Host "  3. Subir a ${ip}:$stackDir/releases/$release/ y apuntar 'current'" -ForegroundColor White
-                Write-Host "  4. docker compose -p $($cfg.Name) up -d ($($cfg.Build))" -ForegroundColor White
-                if ($cfg.HealthMode) { Write-Host "  5. Healthcheck ($($cfg.HealthMode))" -ForegroundColor White }
-                if ($cfg.PostDeploy.Count -gt 0) { Write-Host "  6. postDeploy: $($cfg.PostDeploy.Count) paso(s)" -ForegroundColor White }
+                $acciones += "Subir a ${ip}:$stackDir/releases/$release/ y apuntar 'current'"
+                $acciones += "docker compose -p $($cfg.Name) up -d ($($cfg.Build))"
+                if ($cfg.HealthMode)            { $acciones += "Healthcheck ($($cfg.HealthMode))" }
+                if ($cfg.PostDeploy.Count -gt 0) { $acciones += "postDeploy: $($cfg.PostDeploy.Count) paso(s)" }
+
+                Write-Host "  ─── Acciones que realizará -Apply ───" -ForegroundColor Cyan
+                for ($i = 0; $i -lt $acciones.Count; $i++) {
+                    Write-Host "  $($i + 1). $($acciones[$i])" -ForegroundColor White
+                }
                 Write-Host ""
             }
         }
