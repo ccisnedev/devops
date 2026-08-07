@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [6.2.1] - 2026-08-06
+
+### Fixed
+
+- **`Publish-DockerStack -Apply` pedia confirmacion sin decir a donde desplegaba.** Al migrar a
+  ADR 0010 se retiro `server:` de `stack.yaml`, pero las lineas que mostraban el destino siguieron
+  leyendo `$cfg.Server` --ahora `$null`-- y la resolucion del alias quedo *despues* del prompt. El
+  resultado era `Apply this change? (Deploy stack '...' to '' (build:server))`. Confirmar un
+  despliegue sin ver el destino anula el gate de ADR 0002. La resolucion pasa a ocurrir antes de
+  mostrar y de confirmar.
+
+- Por la misma causa, los mensajes de **fallo de healthcheck y de rollback** imprimian `ssh ` sin
+  alias, justo en el momento en que hacen falta.
+
+- **El plan saltaba numeros de paso.** Estaban escritos a mano, asi que omitir un paso condicional
+  producia `1, 3, 4, 5`. Un plan que salta un numero invita a preguntarse que fue del 2 y si fallo
+  en silencio. Ahora se enumeran al imprimir, desde una lista.
+
 ## [6.2.0] - 2026-08-05
 
 ### Changed
