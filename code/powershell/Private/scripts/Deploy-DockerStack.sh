@@ -74,7 +74,9 @@ docker compose -p "$NAME" -f "$COMPOSE_FILE" ps
 #   OTRO_RELEASE el contenedor no se recreo y quedo atado a un release anterior. Recrearlo basta.
 VIA_SYMLINK=""
 OTRO_RELEASE=""
+CONTENEDORES=0
 for ID in $(docker ps -q --filter "label=com.docker.compose.project=$NAME"); do
+    CONTENEDORES=$((CONTENEDORES + 1))
     for SRC in $(docker inspect -f '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}' "$ID"); do
         case "$SRC" in
             "$RELEASE_DIR"|"$RELEASE_DIR"/*) ;;                       # de este release: correcto
@@ -106,5 +108,11 @@ if [ -n "$VIA_SYMLINK$OTRO_RELEASE" ]; then
     } >&2
     exit 1
 fi
+
+# El exito se afirma, no se deja en silencio. Un despliegue que no dice nada no permite
+# distinguir "verifique y esta bien" de "la verificacion ni siquiera corrio" —que fue justo lo
+# que paso al desplegar con una version anterior del modulo cargada en la sesion—. Toda esta
+# funcion existe porque un "Deploy completado" sin evidencia resulto ser mentira.
+echo "Verificado: $CONTENEDORES contenedor(es) corriendo __RELEASE_ID__"
 
 echo "Stack '$NAME' levantado."

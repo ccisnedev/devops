@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [6.3.1] - 2026-08-08
+
+### Changed
+
+- **La verificacion post-despliegue ahora confirma el exito en voz alta**, en vez de limitarse a
+  no fallar:
+
+  ```
+  Verificado: 5 contenedor(es) corriendo v0.1.0+cef4a6e
+  ```
+
+  Callarse al pasar deja al operador sin poder distinguir "verifique y esta bien" de "la
+  verificacion ni siquiera corrio". Paso de verdad: un despliegue no menciono la verificacion
+  porque la sesion de PowerShell tenia cargada una version anterior del modulo, y eso solo se
+  descubrio por otro detalle de la salida.
+
+  Toda esta funcion existe porque un `Deploy completado` sin evidencia resulto ser mentira; un
+  exito silencioso repite el mismo patron un nivel mas abajo.
+
 ## [6.3.0] - 2026-08-07
 
 ### Added

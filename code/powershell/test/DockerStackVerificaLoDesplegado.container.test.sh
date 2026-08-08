@@ -89,6 +89,20 @@ SHIM
     || { echo "FALLO caso 3: no indica el remedio, que aqui si es recrear"; cat /tmp/salida.txt; exit 1; }
   echo "  caso 3 (mount de un release anterior, con el remedio correcto): PASS"
 
+  # ── Caso 4b: el exito tiene que DECIRSE, no solo no fallar ──
+  # Un despliegue que no dice nada no distingue "verifique y esta bien" de "ni siquiera corri".
+  # Paso de verdad: la salida no menciono la verificacion porque la sesion tenia cargada una
+  # version anterior del modulo, y eso solo se descubrio por otro detalle de la salida.
+  printf "%s
+" "$STACK/releases/v6/conf" > /tmp/mounts.txt
+  if ! desplegar v6; then
+    echo "FALLO caso 4b: aborto un despliegue correcto"; cat /tmp/salida.txt; exit 1
+  fi
+  grep -qi "verificado" /tmp/salida.txt     || { echo "FALLO caso 4b: la verificacion paso en silencio"; cat /tmp/salida.txt; exit 1; }
+  # Y lo que afirma tiene que ser comprobable: cuantos contenedores y contra que release.
+  grep -q "v6" /tmp/salida.txt     || { echo "FALLO caso 4b: no dice contra que release verifico"; cat /tmp/salida.txt; exit 1; }
+  echo "  caso 4b (el exito se afirma, con release y cantidad): PASS"
+
   # ── Caso 4: los mounts ajenos al stack no son asunto suyo ──
   # Un volumen con nombre o un socket del host no dicen nada sobre que release corre.
   printf "%s\n" "/var/run/docker.sock" "/var/lib/docker/volumes/demo_datos/_data" > /tmp/mounts.txt
