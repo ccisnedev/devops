@@ -128,11 +128,21 @@ El test observa el directorio de trabajo con el que se llama a Compose, mediante
 mentira en el PATH. Se eligio verificar la causa raiz y no el contenido del contenedor para no
 exigir un docker dentro de docker en CI.
 
-## Leccion pendiente
+## La leccion, resuelta en 6.3.0
 
 El healthcheck pregunta *"¿el servicio responde?"*. Nunca pregunto *"¿esta corriendo el release
 que acabo de instalar?"*, y esas son dos cosas distintas: el servicio viejo respondia perfecto.
 
-Una verificacion post-despliegue que falle si algun contenedor monta rutas de un release anterior
-cerraria la clase entera de este problema, cualquiera sea la causa. Queda como trabajo aparte por
-ser mas invasivo que el arreglo.
+Desde 6.3.0 el despliegue verifica lo segundo y **aborta** si no se cumple: ningun contenedor del
+proyecto puede montar un directorio de release que no sea el instalado. Se mira la ruta de los
+mounts y no la fecha de creacion, para no depender de relojes ni de heuristicas.
+
+Eso cierra la clase entera del problema, no solo la causa concreta de 6.2.2. En particular caza
+el caso que `--force-recreate` habria tapado: un compose con rutas absolutas contra `current`.
+Ese caso ahora falla **incluso en el primer despliegue**, donde el contenido todavia es correcto;
+es deliberado, porque esa declaracion sirve configuracion vieja en el despliegue siguiente y lo
+hace en silencio.
+
+Un detalle que solo aparecio al probar contra Docker real: el primer mensaje de error aconsejaba
+recrear los servicios, remedio que **no** sirve para un mount contra el symlink —volveria a
+montarlo—. El mensaje ahora distingue las dos causas y da el remedio que corresponde a cada una.
