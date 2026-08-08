@@ -16,6 +16,7 @@
 set -euo pipefail
 
 NAME="__NAME__"
+STACK_DIR="__STACK_DIR__"
 RELEASE_DIR="__RELEASE_DIR__"
 CURRENT="__CURRENT_LINK__"
 TARBALL="__TARBALL__"
@@ -60,4 +61,50 @@ echo "docker compose -p $NAME up -d $BUILD_FLAG --remove-orphans"
 docker compose -p "$NAME" --env-file .env -f "$COMPOSE_FILE" up -d $BUILD_FLAG --remove-orphans
 
 docker compose -p "$NAME" -f "$COMPOSE_FILE" ps
+
+# ── Verificar que lo que corre sea lo que se acaba de instalar ────────────────────────────────
+# El healthcheck pregunta si el servicio responde, y el servicio ANTERIOR responde igual de bien:
+# por eso un despliegue pudo terminar en verde con la configuracion vieja corriendo. Esto
+# pregunta otra cosa: si algun contenedor del proyecto quedo montando un directorio de release
+# que no es este. Se mira la ruta de los mounts y no la fecha de creacion, para no depender de
+# relojes ni de heuristicas, y para detectar el problema sea cual sea su causa.
+# Se distinguen dos causas porque el remedio NO es el mismo:
+#   VIA_SYMLINK  el compose declara una ruta a 'current'. Recrear no arregla nada: volveria a
+#                montar el symlink. Hay que corregir la declaracion.
+#   OTRO_RELEASE el contenedor no se recreo y quedo atado a un release anterior. Recrearlo basta.
+VIA_SYMLINK=""
+OTRO_RELEASE=""
+for ID in $(docker ps -q --filter "label=com.docker.compose.project=$NAME"); do
+    for SRC in $(docker inspect -f '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}' "$ID"); do
+        case "$SRC" in
+            "$RELEASE_DIR"|"$RELEASE_DIR"/*) ;;                       # de este release: correcto
+            "$CURRENT"|"$CURRENT"/*) VIA_SYMLINK="$VIA_SYMLINK  $ID  $SRC\n" ;;
+            "$STACK_DIR"/*)          OTRO_RELEASE="$OTRO_RELEASE  $ID  $SRC\n" ;;
+            *) ;;                                                     # volumenes y rutas del host: ajenos
+        esac
+    done
+done
+
+if [ -n "$VIA_SYMLINK$OTRO_RELEASE" ]; then
+    {
+        echo "ERROR: el stack no quedo corriendo la configuracion de este release."
+        if [ -n "$OTRO_RELEASE" ]; then
+            echo
+            echo "Contenedores atados a un release anterior (no se recrearon):"
+            printf "%b" "$OTRO_RELEASE"
+            echo "Recrearlos alcanza:"
+            echo "  cd $RELEASE_DIR && docker compose -p $NAME up -d --force-recreate"
+        fi
+        if [ -n "$VIA_SYMLINK" ]; then
+            echo
+            echo "Mounts declarados contra el symlink 'current':"
+            printf "%b" "$VIA_SYMLINK"
+            echo "Aca recrear NO alcanza: volveria a montar el symlink, y el kernel lo resuelve"
+            echo "una sola vez, al crear el contenedor. Corrija el compose para que la ruta sea"
+            echo "relativa al proyecto ('./conf') en vez de apuntar a '$CURRENT'."
+        fi
+    } >&2
+    exit 1
+fi
+
 echo "Stack '$NAME' levantado."

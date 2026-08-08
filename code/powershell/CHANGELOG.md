@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [6.3.0] - 2026-08-07
+
+### Added
+
+- **`Publish-DockerStack` verifica que lo que corre sea lo que instalo, y aborta si no.** El
+  healthcheck pregunta si el servicio responde, y el servicio *anterior* responde igual de bien:
+  por eso 6.2.2 se desplego en verde con la configuracion vieja corriendo. La verificacion nueva
+  pregunta otra cosa, y sobre las rutas de los mounts, no sobre fechas: ningun contenedor del
+  proyecto puede montar un directorio de release que no sea el recien instalado.
+
+  Detecta la clase entera del problema sin importar su causa, incluido el caso que
+  `--force-recreate` habria tapado: un compose que declara rutas absolutas contra `current`.
+
+  El mensaje distingue las dos causas, porque el remedio **no** es el mismo:
+
+  | Sintoma | Remedio |
+  |---|---|
+  | Contenedor atado a un release anterior | recrear el servicio |
+  | Mount declarado contra el symlink `current` | corregir el compose: recrear no arregla nada |
+
+### Changed
+
+- Un despliegue cuyo compose apunte a `current` **ahora falla**, incluso el primero, donde el
+  contenido todavia es el correcto. Es deliberado: esa declaracion sirve config vieja en el
+  despliegue siguiente, en silencio. Se prefiere exponerla a que siga latente.
+
 ## [6.2.2] - 2026-08-07
 
 ### Fixed
