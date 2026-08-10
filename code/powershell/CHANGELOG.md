@@ -68,7 +68,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   para el operador; los contenedores ya no dependen de el.
 
   Detectado en produccion el 2026-08-07: una regla de alerta de Prometheus desplegada y nunca
-  aplicada. Analisis en `docs/issues/despliegue-de-stack-no-aplica-cambios-de-configuracion.md`.
+  aplicada. Analisis en ccisnedev/devops#77.
 
 - **El rollback documentado tenia el mismo defecto.** El mensaje final indicaba repuntar el
   symlink y correr `docker compose up -d` desde `current`, lo que por la misma razon habria
