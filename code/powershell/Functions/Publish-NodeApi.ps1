@@ -709,23 +709,9 @@ else
     echo "RELEASE:new"
 fi
 
-# Estado del servicio
-if [ "$processManager" = "systemd" ]; then
-    if systemctl is-active --quiet $appName 2>/dev/null; then
-        echo "SERVICE:running"
-    elif systemctl is-enabled --quiet $appName 2>/dev/null; then
-        echo "SERVICE:stopped"
-    else
-        echo "SERVICE:not-configured"
-    fi
-else
-    if pm2 describe $appName >/dev/null 2>&1; then
-        STATUS=`$(pm2 describe $appName 2>/dev/null | grep status | head -1 | awk '{print `$4}')
-        echo "SERVICE:`$STATUS"
-    else
-        echo "SERVICE:not-configured"
-    fi
-fi
+# Estado del servicio (el sondeo lo genera el módulo: resuelve el binario igual que el
+# despliegue, y distingue "no pude comprobarlo" de "no hay servicio" — issue #78)
+$(New-NodeServiceProbeScript -ProcessManager $(if ($processManager -eq 'systemd') { 'systemd' } else { 'pm2' }) -AppName $appName)
 $sharedCheckBlock
 "@
 
@@ -768,13 +754,14 @@ $sharedCheckBlock
                     Write-Host "  Release:    $release (nueva)" -ForegroundColor Green
                 }
 
-                if ($serviceStatus -eq 'running') {
-                    Write-Host "  Servicio:   $processManager activo (se reiniciará)" -ForegroundColor White
-                } elseif ($serviceStatus -eq 'not-configured') {
-                    Write-Host "  Servicio:   se creará ($processManager)" -ForegroundColor Green
-                } else {
-                    Write-Host "  Servicio:   $serviceStatus" -ForegroundColor Yellow
+                $estadoServicio = ConvertTo-NodeServiceState -Status $serviceStatus -ProcessManager $processManager
+                $colorServicio = switch ($estadoServicio.Level) {
+                    'ok'    { 'White' }
+                    'info'  { 'White' }
+                    'warn'  { 'Yellow' }
+                    default { 'Red' }
                 }
+                Write-Host "  Servicio:   $($estadoServicio.Text)" -ForegroundColor $colorServicio
 
                 # Estado de sharedPaths (para saber si hay que correr -PushShared antes de -Apply)
                 if (@($runtime.SharedPaths).Count -gt 0) {
