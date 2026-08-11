@@ -122,6 +122,32 @@ Describe "ConvertTo-WebVerification — anomalías reales" {
     }
 }
 
+Describe "Invoke-WebVerification — la composición" {
+    # Las tres partes puras pueden estar perfectas y la composición no funcionar. Paso: el
+    # sondeo se ejecutaba con Invoke-RemoteScript, que IMPRIME la salida y devuelve el código
+    # de salida. Al parser le llegaba un 0, no las líneas, y la verificación fallaba siempre
+    # con "el sitio no responde correctamente" sobre un sitio sano.
+
+    BeforeAll {
+        # El I/O se simula: lo que se prueba aquí es que las piezas estén enchufadas.
+        function Invoke-RemoteScriptCapture { param($ScriptContent, $User, $IP, $Port, $KeyPath, $ScriptPrefix) }
+    }
+
+    It "lleva la salida del sondeo hasta el veredicto" {
+        Mock Invoke-RemoteScriptCapture { @('HTTP:301', 'LOCATION:https://x/', 'FINAL:200', 'VERSION:1.7.3') }
+        $r = Invoke-WebVerification -Port 3048 -ExpectedVersion '1.7.3' `
+                                    -User 'u' -IP '1.2.3.4' -SshPort '22' -KeyPath 'k'
+        $r.Level | Should -Be 'ok'
+    }
+
+    It "un sitio que sirve otra versión no termina en verde" {
+        Mock Invoke-RemoteScriptCapture { @('HTTP:200', 'FINAL:200', 'VERSION:1.7.1') }
+        $r = Invoke-WebVerification -Port 3048 -ExpectedVersion '1.7.3' `
+                                    -User 'u' -IP '1.2.3.4' -SshPort '22' -KeyPath 'k'
+        $r.Level | Should -Be 'error'
+    }
+}
+
 Describe "ConvertFrom-WebProbeOutput — leer la salida del sondeo" {
     # Está separado del SSH para que la prueba de contenedor pueda tomar la salida de un nginx
     # real y llevarla hasta el veredicto. Si el parseo viviera dentro de Invoke-WebVerification,

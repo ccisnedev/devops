@@ -190,9 +190,11 @@ function Invoke-WebVerification {
         [Parameter(Mandatory = $true)][string]$KeyPath
     )
 
-    $salida = Invoke-RemoteScript -ScriptContent (New-WebVerificationScript -Port $Port) `
-                                  -User $User -IP $IP -Port $SshPort -KeyPath $KeyPath `
-                                  -ScriptPrefix "psdevops_verify_web_"
+    # Capture y no Invoke-RemoteScript: aquel imprime la salida y devuelve el código de salida,
+    # así que al parser le llegaba un 0 en vez de las líneas y la verificación fallaba siempre.
+    $salida = Invoke-RemoteScriptCapture -ScriptContent (New-WebVerificationScript -Port $Port) `
+                                         -User $User -IP $IP -Port $SshPort -KeyPath $KeyPath `
+                                         -ScriptPrefix "psdevops_verify_web_"
 
     $probe = ConvertFrom-WebProbeOutput -Lines $salida
 
