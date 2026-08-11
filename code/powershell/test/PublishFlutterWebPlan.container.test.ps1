@@ -68,8 +68,13 @@ function Get-Row($Plan, [string]$Label) {
 }
 
 function Invoke-InContainer([string]$Script) {
-    docker exec $CONTAINER bash -c $Script
-    if ($LASTEXITCODE -ne 0) { throw "docker exec falló (exit $LASTEXITCODE): $Script" }
+    # Se normalizan los saltos de línea a LF. En Windows una here-string de PowerShell
+    # produce CRLF, y bash toma el \r como parte del último argumento de cada línea: el
+    # 'mkdir -p .../releases/v1.2.3\r' crea un directorio con el retorno de carro dentro,
+    # y el 'ln -sfn' siguiente falla apuntando a una ruta que no existe.
+    $lf = ($Script -replace "`r`n", "`n") -replace "`r", "`n"
+    docker exec $CONTAINER bash -c $lf
+    if ($LASTEXITCODE -ne 0) { throw "docker exec falló (exit $LASTEXITCODE): $lf" }
 }
 
 # ── Preflight ──────────────────────────────────────────────────────────────
@@ -163,10 +168,17 @@ try {
 
     # ── 3. Escenario B: release existente + nginx configurado ──────────────
     Write-Host "==> B. Release ya existe y nginx configurado" -ForegroundColor Cyan
+    # El site DEBE declarar 'root .../current': es lo que hace que mover el symlink surta
+    # efecto. El fixture solo ponía 'listen', sin root, y desde que un root que no apunta a
+    # 'current' pasó a ser bloqueante —el despliegue silencioso detectado en 'micro'— eso
+    # ya no describe un nginx bien configurado, sino justamente el caso roto.
+    #
+    # El escenario contrario ('root-mismatch') está cubierto por FlutterWebPlan.Tests.ps1;
+    # aquí lo que se verifica es que una configuración correcta no genere bloqueantes.
     Invoke-InContainer @"
 mkdir -p $WEBROOT/$APP/releases/$RELEASE $WEBROOT/$APP/releases/v0.9.0 /etc/nginx/sites-available
 ln -sfn $WEBROOT/$APP/releases/v0.9.0 $WEBROOT/$APP/current
-echo 'server { listen $AppPort; }' > /etc/nginx/sites-available/$APP
+printf 'server {\n    listen $AppPort;\n    root $WEBROOT/$APP/current;\n}\n' > /etc/nginx/sites-available/$APP
 "@
     $planB = Get-FlutterWebPlan @probeArgs
 
