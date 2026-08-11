@@ -4,10 +4,16 @@
 # handle): without -AutoApprove it must FAIL clearly; with -AutoApprove it must proceed.
 # This exercises the real Test-MacssInteractive detection (the Pester tests mock it).
 #
-# Usage: bash Confirm-MacssChange.container.test.sh <path-to-Private-dir>
+# Usage: bash Confirm-MacssChange.container.test.sh [path-to-Private/scripts]
+#
+# Recibe Private/scripts como las otras catorce y sube un nivel, en vez de esperar
+# Private/. Era la unica con convencion propia, asi que quien las ejecutara tenia que
+# saber de la excepcion: pasarle lo mismo que a las demas hacia que ApprovalHelpers.ps1
+# no se encontrara, y la prueba fallaba por la invocacion y no por el codigo.
 set -euo pipefail
 
-HELPER_DIR="${1:?usage: $0 <path-to-Private-dir>}"
+SCRIPTS_DIR="${1:-$(cd "$(dirname "$0")/../Private/scripts" && pwd)}"
+HELPER_DIR="$(dirname "$SCRIPTS_DIR")"
 IMAGE="${PWSH_IMAGE:-mcr.microsoft.com/powershell:latest}"
 
 echo "=== Running Confirm-MacssChange in a non-interactive pwsh container ==="
