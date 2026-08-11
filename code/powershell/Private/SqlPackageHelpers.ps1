@@ -217,17 +217,75 @@ function Find-DacpacPath {
 
 <#
 .SYNOPSIS
+    Indexa por Id las alertas de un DeployReport XML.
+
+.DESCRIPTION
+    SqlPackage no escribe las consecuencias de una operación dentro de su <Item>: las deja en
+    un bloque <Alerts> aparte y las enlaza por Id desde el objeto afectado. Un Alter de tabla
+    que borra tres columnas se ve, en la rama <Operations>, exactamente igual que uno que no
+    borra nada; la diferencia entera vive en <Alerts>.
+
+    Esta función resuelve ese enlace: devuelve un índice Id → alerta que Show-DeployReport usa
+    para colgar cada advertencia bajo el objeto que la provoca.
+
+.PARAMETER Report
+    Documento XML del DeployReport ya cargado.
+
+.OUTPUTS
+    Hashtable — Id (string) → PSCustomObject con Id, Kind, Message, IsDataLoss.
+#>
+function Get-DeployReportAlert {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [xml]$Report
+    )
+
+    $index = @{}
+
+    # ChildNodes + LocalName en vez de $Report.DeploymentReport.Alerts.Alert: el documento
+    # declara un namespace por defecto y los nombres 'Name' y 'Value' chocan con propiedades
+    # propias de XmlElement.
+    $alertsNode = $Report.DocumentElement.ChildNodes | Where-Object { $_.LocalName -eq 'Alerts' }
+    $alerts = $alertsNode.ChildNodes | Where-Object { $_.LocalName -eq 'Alert' }
+
+    foreach ($alert in $alerts) {
+        $kind = $alert.GetAttribute('Name')
+        $issues = $alert.ChildNodes | Where-Object { $_.LocalName -eq 'Issue' }
+        foreach ($issue in $issues) {
+            $id = $issue.GetAttribute('Id')
+            $index[$id] = [PSCustomObject]@{
+                Id         = $id
+                Kind       = $kind
+                Message    = $issue.GetAttribute('Value')
+                IsDataLoss = ($kind -eq 'DataIssue')
+            }
+        }
+    }
+
+    return $index
+}
+
+<#
+.SYNOPSIS
     Parsea un DeployReport XML y muestra un resumen visual de las operaciones.
 
 .DESCRIPTION
-    Lee el archivo XML generado por SqlPackage /Action:DeployReport y muestra
-    cada operación detectada con formato y colores.
+    Lee el archivo XML generado por SqlPackage /Action:DeployReport y muestra cada operación
+    detectada con formato y colores, junto con las alertas que cada objeto arrastra.
+
+    Las alertas importan tanto como las operaciones. El 2026-08-10 un despliegue a IMPULSA
+    mostró "Alter → [dbo].[CanastaPersona]" y nada más; ese Alter borraba tres columnas con
+    datos y el despliegue abortó contra el guardián de BlockOnPossibleDataLoss. La advertencia
+    existía —en la salida cruda de sqlpackage, sepultada entre 27 warnings de cuentas— pero el
+    resumen que uno lee justo antes de teclear "y" la callaba.
 
 .PARAMETER ReportPath
     Ruta al archivo XML del DeployReport.
 
 .OUTPUTS
     PSCustomObject[] — Array de operaciones encontradas, o $null si no hay cambios.
+    Cada elemento lleva Operation, Object, Issues (string[]) y HasDataLoss (bool).
 #>
 function Show-DeployReport {
     [CmdletBinding()]
@@ -242,8 +300,13 @@ function Show-DeployReport {
 
     [xml]$report = Get-Content $ReportPath
     $operations = $report.DeploymentReport.Operations.Operation
+    $alerts = Get-DeployReportAlert -Report $report
+    $referenced = @{}
+    $dataLossCount = 0
+    $dataLossObjects = 0
 
     if ($null -eq $operations) {
+        Show-DeployReportOrphanAlert -Alerts $alerts -Referenced $referenced | Out-Null
         Write-Host "  No hay cambios pendientes. La base de datos está sincronizada." -ForegroundColor Green
         return $null
     }
@@ -252,23 +315,101 @@ function Show-DeployReport {
     Write-Host "  Cambios detectados:" -ForegroundColor Cyan
     $results = @()
 
-    $operations | ForEach-Object {
-        $op = $_.Name
-        $items = $_.Item
-        if ($items -is [array]) {
-            $items | ForEach-Object {
-                Write-Host "    $op → $($_.Value)" -ForegroundColor Yellow
-                $results += [PSCustomObject]@{ Operation = $op; Object = $_.Value }
+    foreach ($operation in @($operations)) {
+        $op = $operation.GetAttribute('Name')
+        $items = $operation.ChildNodes | Where-Object { $_.LocalName -eq 'Item' }
+
+        foreach ($item in $items) {
+            $itemAlerts = @()
+            foreach ($ref in ($item.ChildNodes | Where-Object { $_.LocalName -eq 'Issue' })) {
+                $id = $ref.GetAttribute('Id')
+                $referenced[$id] = $true
+                if ($alerts.ContainsKey($id)) { $itemAlerts += $alerts[$id] }
+            }
+
+            $lossAlerts = @($itemAlerts | Where-Object { $_.IsDataLoss })
+            $hasDataLoss = $lossAlerts.Count -gt 0
+            if ($hasDataLoss) {
+                $dataLossCount += $lossAlerts.Count
+                $dataLossObjects++
+            }
+
+            $objectName = $item.GetAttribute('Value')
+            Write-Host "    $op → $objectName" -ForegroundColor $(if ($hasDataLoss) { 'Red' } else { 'Yellow' })
+            foreach ($alert in $itemAlerts) {
+                Write-Host "        $(Format-DeployReportAlert -Alert $alert)" `
+                    -ForegroundColor $(if ($alert.IsDataLoss) { 'Red' } else { 'DarkYellow' })
+            }
+
+            $results += [PSCustomObject]@{
+                Operation   = $op
+                Object      = $objectName
+                Issues      = @($itemAlerts | ForEach-Object { $_.Message })
+                HasDataLoss = $hasDataLoss
             }
         }
-        else {
-            Write-Host "    $op → $($items.Value)" -ForegroundColor Yellow
-            $results += [PSCustomObject]@{ Operation = $op; Object = $items.Value }
-        }
+    }
+
+    $dataLossCount += (Show-DeployReportOrphanAlert -Alerts $alerts -Referenced $referenced)
+
+    if ($dataLossCount -gt 0) {
+        Write-Host ""
+        Write-Host "  PÉRDIDA DE DATOS: $dataLossCount advertencia(s) en $dataLossObjects objeto(s)." -ForegroundColor Red
+        Write-Host "  Con BlockOnPossibleDataLoss activo el despliegue abortará; sin él, los datos se van." -ForegroundColor Red
     }
 
     Write-Host ""
     return $results
+}
+
+<#
+.SYNOPSIS
+    Formatea una alerta del DeployReport como una línea legible.
+#>
+function Format-DeployReportAlert {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [PSCustomObject]$Alert
+    )
+
+    $label = if ($Alert.IsDataLoss) { 'PÉRDIDA DE DATOS' } else { $Alert.Kind }
+    return "! ${label}: $($Alert.Message)"
+}
+
+<#
+.SYNOPSIS
+    Muestra las alertas que ningún objeto del plan referencia.
+
+.DESCRIPTION
+    Una alerta cuyo Id no aparece en ningún <Item> no tiene dónde colgarse. Callarla repetiría,
+    en la otra rama del XML, el mismo modo de falla que este módulo corrige: información de
+    pérdida de datos presente en el reporte y ausente del resumen.
+
+.OUTPUTS
+    Int — Cantidad de alertas huérfanas de pérdida de datos, para el conteo del resumen.
+#>
+function Show-DeployReportOrphanAlert {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Alerts,
+
+        [Parameter(Mandatory)]
+        [hashtable]$Referenced
+    )
+
+    $orphans = @($Alerts.Values | Where-Object { -not $Referenced.ContainsKey($_.Id) })
+    if ($orphans.Count -eq 0) { return 0 }
+
+    Write-Host ""
+    Write-Host "  Alertas sin objeto asociado:" -ForegroundColor Red
+    foreach ($alert in $orphans) {
+        Write-Host "    $(Format-DeployReportAlert -Alert $alert)" `
+            -ForegroundColor $(if ($alert.IsDataLoss) { 'Red' } else { 'DarkYellow' })
+    }
+
+    return @($orphans | Where-Object { $_.IsDataLoss }).Count
 }
 
 <#

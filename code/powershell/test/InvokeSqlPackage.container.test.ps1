@@ -76,10 +76,21 @@ CREATE TABLE [dbo].[Persona]
 );
 '@
     # env files: .env.container = target REAL; .env (default) = server MUERTO (para el negativo)
+    #
+    # SIN DB_NAME: desde la ADR 0011 el nombre de la base se lee del <Name> del .sqlproj, y
+    # el cmdlet rechaza tenerlo tambien en el env file para que ambos no diverjan. Este
+    # fixture lo escribia, asi que la prueba fallaba con el error de la propia ADR:
+    #
+    #   'TestDb.sqlproj' ya declara la base como 'TestDb'. Borre 'DB_NAME' de
+    #   '.env.container': el nombre se lee del .sqlproj y tenerlo en dos sitios los deja
+    #   divergir (ADR 0011).
+    #
+    # Quedo obsoleto al implementarse esa ADR y nadie lo noto, porque no habia forma de
+    # ejecutar estas pruebas.
     Set-Content -Path (Join-Path $workDir '.env.container') -Encoding UTF8 `
-        -Value "DB_SERVER=$SRV`nDB_NAME=$DB`nDB_USER=sa`nDB_PASSWORD=$SA_PW"
+        -Value "DB_SERVER=$SRV`nDB_USER=sa`nDB_PASSWORD=$SA_PW"
     Set-Content -Path (Join-Path $workDir '.env') -Encoding UTF8 `
-        -Value "DB_SERVER=localhost,15999`nDB_NAME=$DB`nDB_USER=sa`nDB_PASSWORD=$SA_PW"
+        -Value "DB_SERVER=localhost,15999`nDB_USER=sa`nDB_PASSWORD=$SA_PW"
 
     Import-Module $ModulePath -Force
     Push-Location $workDir
