@@ -240,6 +240,55 @@ DB_PASSWORD=testpass123
   <Operations />
 </DeploymentReport>
 '@ | Set-Content (Join-Path $script:helpersDir "empty_report.xml")
+
+        # DeployReport con alertas de pérdida de datos.
+        # Copia literal (recortada) del reporte que produjo el despliegue de impulsa del
+        # 2026-08-10: tres columnas de CanastaPersona que existen en prod y no en el código.
+        # SqlPackage NO pone esa información en el <Item>: la deja en <Alerts> y enlaza por Id.
+        @'
+<?xml version="1.0" encoding="utf-8"?>
+<DeploymentReport xmlns="http://schemas.microsoft.com/sqlserver/dac/DeployReport/2012/02">
+  <Alerts>
+    <Alert Name="DataIssue">
+      <Issue Value="The column [dbo].[CanastaPersona].[cambioTipoCanasta] is being dropped, data loss could occur." Id="1" />
+      <Issue Value="The column [dbo].[CanastaPersona].[fechaCambio] is being dropped, data loss could occur." Id="2" />
+      <Issue Value="The column [dbo].[CanastaPersona].[idcanastaAnterior] is being dropped, data loss could occur." Id="3" />
+    </Alert>
+  </Alerts>
+  <Operations>
+    <Operation Name="Alter">
+      <Item Value="[dbo].[CanastaPersona]" Type="SqlTable">
+        <Issue Id="1" />
+        <Issue Id="2" />
+        <Issue Id="3" />
+      </Item>
+      <Item Value="[motores].[sp_ValidarMontos]" Type="SqlProcedure" />
+    </Operation>
+  </Operations>
+</DeploymentReport>
+'@ | Set-Content (Join-Path $script:helpersDir "dataloss_report.xml")
+
+        # DeployReport con una alerta que ningún <Item> referencia, y una de otra clase.
+        @'
+<?xml version="1.0" encoding="utf-8"?>
+<DeploymentReport xmlns="http://schemas.microsoft.com/sqlserver/dac/DeployReport/2012/02">
+  <Alerts>
+    <Alert Name="DataIssue">
+      <Issue Value="The table [dbo].[Huerfana] is being dropped, data loss could occur." Id="7" />
+    </Alert>
+    <Alert Name="OtherIssue">
+      <Issue Value="Algo que no es pérdida de datos." Id="8" />
+    </Alert>
+  </Alerts>
+  <Operations>
+    <Operation Name="Alter">
+      <Item Value="[dbo].[Otra]" Type="SqlTable">
+        <Issue Id="8" />
+      </Item>
+    </Operation>
+  </Operations>
+</DeploymentReport>
+'@ | Set-Content (Join-Path $script:helpersDir "orphan_alert_report.xml")
     }
 
     AfterAll {
@@ -352,6 +401,117 @@ DB_PASSWORD=testpass123
 
         It 'Lanza error si el archivo no existe' {
             { Show-DeployReport -ReportPath ".\no_existe.xml" } | Should -Throw
+        }
+    }
+
+    # El resumen del plan mostraba "Alter → [dbo].[CanastaPersona]" y nada más: quien lo leía
+    # antes de teclear "y" no tenía forma de saber que ese Alter borraba tres columnas. La
+    # información sí estaba en el XML, en <Alerts>, y el parser nunca la miraba.
+    Context 'Get-DeployReportAlert' {
+        It 'Indexa las alertas por Id' {
+            [xml]$xml = Get-Content (Join-Path $script:helpersDir "dataloss_report.xml")
+            $alerts = Get-DeployReportAlert -Report $xml
+            $alerts.Count | Should -Be 3
+            $alerts['1'].Message | Should -Match 'cambioTipoCanasta'
+            $alerts['1'].Kind | Should -Be 'DataIssue'
+        }
+
+        It 'Un reporte sin alertas produce un índice vacío' {
+            [xml]$xml = Get-Content (Join-Path $script:helpersDir "test_report.xml")
+            (Get-DeployReportAlert -Report $xml).Count | Should -Be 0
+        }
+
+        It 'Distingue la clase de cada alerta' {
+            [xml]$xml = Get-Content (Join-Path $script:helpersDir "orphan_alert_report.xml")
+            $alerts = Get-DeployReportAlert -Report $xml
+            $alerts['7'].Kind | Should -Be 'DataIssue'
+            $alerts['7'].IsDataLoss | Should -BeTrue
+            $alerts['8'].Kind | Should -Be 'OtherIssue'
+            $alerts['8'].IsDataLoss | Should -BeFalse
+        }
+    }
+
+    Context 'Show-DeployReport — alertas de pérdida de datos' {
+
+        BeforeAll {
+            # Show-DeployReport escribe con Write-Host: para afirmar sobre lo IMPRESO hay que
+            # leer el stream 6 y quedarse solo con los InformationRecord. Si se usara
+            # `6>&1 | Out-String` también entrarían los objetos retornados, y un test de
+            # "lo imprime" pasaría por lo que la función devuelve, no por lo que muestra.
+            function Get-PrintedOutput {
+                param([string]$Path)
+                $records = Show-DeployReport -ReportPath $Path 6>&1 |
+                    Where-Object { $_ -is [System.Management.Automation.InformationRecord] }
+                ($records | ForEach-Object { $_.MessageData.Message }) -join "`n"
+            }
+        }
+
+        It 'Adjunta al objeto afectado cada alerta que lo referencia' {
+            $results = Show-DeployReport -ReportPath (Join-Path $script:helpersDir "dataloss_report.xml") 6>$null
+            $tabla = $results | Where-Object { $_.Object -eq '[dbo].[CanastaPersona]' }
+            @($tabla.Issues).Count | Should -Be 3
+            $tabla.Issues -join ' ' | Should -Match 'cambioTipoCanasta'
+            $tabla.Issues -join ' ' | Should -Match 'fechaCambio'
+            $tabla.Issues -join ' ' | Should -Match 'idcanastaAnterior'
+        }
+
+        It 'Marca con HasDataLoss solo al objeto que pierde datos' {
+            $results = Show-DeployReport -ReportPath (Join-Path $script:helpersDir "dataloss_report.xml") 6>$null
+            ($results | Where-Object { $_.Object -eq '[dbo].[CanastaPersona]' }).HasDataLoss | Should -BeTrue
+            ($results | Where-Object { $_.Object -eq '[motores].[sp_ValidarMontos]' }).HasDataLoss | Should -BeFalse
+        }
+
+        It 'No contamina con alertas ajenas al objeto limpio' {
+            $results = Show-DeployReport -ReportPath (Join-Path $script:helpersDir "dataloss_report.xml") 6>$null
+            $sp = $results | Where-Object { $_.Object -eq '[motores].[sp_ValidarMontos]' }
+            @($sp.Issues).Count | Should -Be 0
+        }
+
+        It 'Un reporte sin alertas deja Issues vacío y HasDataLoss en falso' {
+            $results = Show-DeployReport -ReportPath (Join-Path $script:helpersDir "test_report.xml") 6>$null
+            foreach ($r in $results) {
+                @($r.Issues).Count | Should -Be 0
+                $r.HasDataLoss | Should -BeFalse
+            }
+        }
+
+        It 'Imprime cada columna que se elimina, debajo de su objeto' {
+            $printed = Get-PrintedOutput (Join-Path $script:helpersDir "dataloss_report.xml")
+            $printed | Should -Match 'cambioTipoCanasta'
+            $printed | Should -Match 'fechaCambio'
+            $printed | Should -Match 'idcanastaAnterior'
+        }
+
+        It 'Rotula la pérdida de datos con esas palabras, no con jerga de SqlPackage' {
+            $printed = Get-PrintedOutput (Join-Path $script:helpersDir "dataloss_report.xml")
+            $printed | Should -Match 'PÉRDIDA DE DATOS'
+        }
+
+        It 'Cierra con un resumen que cuenta las advertencias y los objetos' {
+            $printed = Get-PrintedOutput (Join-Path $script:helpersDir "dataloss_report.xml")
+            $printed | Should -Match '3 advertencia'
+            $printed | Should -Match '1 objeto'
+        }
+
+        It 'Un plan sin pérdida de datos no inventa el resumen' {
+            $printed = Get-PrintedOutput (Join-Path $script:helpersDir "test_report.xml")
+            $printed | Should -Not -Match 'PÉRDIDA DE DATOS'
+        }
+
+        # Una alerta que ningún <Item> referencia no puede desaparecer: era exactamente el modo
+        # de falla que se está corrigiendo, solo que en la otra rama del XML.
+        It 'No silencia una alerta que ningún objeto referencia' {
+            $printed = Get-PrintedOutput (Join-Path $script:helpersDir "orphan_alert_report.xml")
+            $printed | Should -Match 'sin objeto asociado'
+            $printed | Should -Match 'Huerfana'
+        }
+
+        It 'Una alerta que no es de pérdida de datos se adjunta sin ese rótulo' {
+            $results = Show-DeployReport -ReportPath (Join-Path $script:helpersDir "orphan_alert_report.xml") 6>$null
+            $otra = $results | Where-Object { $_.Object -eq '[dbo].[Otra]' }
+            @($otra.Issues).Count | Should -Be 1
+            $otra.Issues[0] | Should -Match 'no es pérdida de datos'
+            $otra.HasDataLoss | Should -BeFalse
         }
     }
 }
