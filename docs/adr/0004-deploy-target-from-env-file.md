@@ -1,6 +1,20 @@
 # ADR 0004: Deploy target lives in the (gitignored) env file, selected by `-EnvFile`
 
-**Status:** Accepted (2026-07-07)
+**Status:** Accepted (2026-07-07) · **Enmendada** (2026-08-12) por la ADR 0011 del handbook
+
+> **Enmienda — de dónde lo toma un ejecutor que no es una persona.**
+> Esta ADR decidió que el destino sale del env file y no del archivo versionado, y eso no
+> cambia. Lo que no resolvió es que el env file está gitignoreado: tras `actions/checkout` no
+> existe, así que un runner de CI no tiene de dónde leerlo y ningún job de deploy podía correr.
+>
+> Desde 6.6.0 el destino también puede venir de la **variable de entorno**
+> `MACSS_DEPLOY_SSH_ALIAS`, con la precedencia de dotenv que adopta la ADR 0011 del handbook:
+> **el entorno del proceso gana sobre el archivo**. El archivo es un default para cuando el
+> entorno no dijo nada.
+>
+> Dos condiciones inseparables, para que la precedencia no se vuelva un peligro: el valor
+> resuelto **se imprime siempre con su origen**, y la ausencia de ambos sigue siendo un error
+> explícito (ADR 0012), nunca un valor por defecto.
 
 ## Context
 

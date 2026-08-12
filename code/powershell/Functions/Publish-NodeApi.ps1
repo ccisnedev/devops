@@ -240,7 +240,11 @@ function Publish-NodeApi {
                 # tsconfig.json solo se exige en modo build:true (ADR 0003) — se valida
                 # más abajo, una vez leída la configuración de runtime.
                 if (-not (Test-Path $envProdPath)) {
-                    throw "No se encontró el env file '$EnvFile' en $cwd. Ejecute 'Publish-NodeApi -Init' o especifique -EnvFile <archivo>."
+                    # El destino ya puede venir del entorno (ADR 0011 del handbook), pero esta
+                    # familia todavia necesita el archivo para PORT. Decirlo evita que alguien en
+                    # un runner busque el problema en la variable, que ya puso bien.
+                    throw "No se encontró el env file '$EnvFile' en $cwd. Publish-NodeApi lo necesita para PORT, " +
+                          "aunque el destino venga de la variable de entorno. Ejecute 'Publish-NodeApi -Init' o especifique -EnvFile <archivo>."
                 }
 
                 # ─── 2. Leer configuración ───────────────────
@@ -647,7 +651,11 @@ function Publish-NodeApi {
                         -Detail "Renombre el archivo: el contenido no cambia." -Reference 'ADR 0012'
                 }
                 if (-not (Test-Path $envProdPath)) {
-                    throw "No se encontró el env file '$EnvFile' en $cwd. Ejecute 'Publish-NodeApi -Init' o especifique -EnvFile <archivo>."
+                    # El destino ya puede venir del entorno (ADR 0011 del handbook), pero esta
+                    # familia todavia necesita el archivo para PORT. Decirlo evita que alguien en
+                    # un runner busque el problema en la variable, que ya puso bien.
+                    throw "No se encontró el env file '$EnvFile' en $cwd. Publish-NodeApi lo necesita para PORT, " +
+                          "aunque el destino venga de la variable de entorno. Ejecute 'Publish-NodeApi -Init' o especifique -EnvFile <archivo>."
                 }
 
                 # ─── 2. Leer configuración ───────────────────
@@ -1022,6 +1030,20 @@ $envKeysBlock
                     Write-Host ""
                     Write-Host "  Shared subido a $server ($ip): [$($sharedList -join ', ')]" -ForegroundColor Green
                     Write-Host ""
+
+                    # Solo si se subió un .env (issue #84). Una llave RSA no deja nada pendiente
+                    # —la app la lee del disco cuando la necesita— y avisar siempre convertiría
+                    # esto en ruido, que es como el health check anterior dejó de leerse.
+                    if ('.env' -in $sharedList) {
+                        $procMgr = if ($deployConfig.runtime -and $deployConfig.runtime.processManager) {
+                            [string]$deployConfig.runtime.processManager
+                        } else { 'systemd' }
+                        foreach ($linea in (New-SharedEnvRestartNotice -ProcessManager $procMgr `
+                                                                       -AppName $appName -Server $server)) {
+                            Write-Host "  $linea" -ForegroundColor Yellow
+                        }
+                        Write-Host ""
+                    }
                 } finally {
                     Remove-Item -LiteralPath $localTarball -ErrorAction SilentlyContinue
                 }
