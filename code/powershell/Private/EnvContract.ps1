@@ -203,6 +203,37 @@ function Test-EnvContractOrThrow {
     return $estado
 }
 
+function New-SharedEnvRestartNotice {
+    <#
+    .SYNOPSIS
+    Aviso tras subir un .env a shared/: el proceso todavía corre con la configuración anterior.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory = $true)][string]$ProcessManager,
+        [Parameter(Mandatory = $true)][string]$AppName,
+        [Parameter(Mandatory = $true)][string]$Server
+    )
+
+    # '--update-env' no es opcional: sin esa bandera pm2 reutiliza el entorno que ya tenia
+    # cargado, el comando termina sin error, y la variable nueva sigue sin aplicarse.
+    $comando = if ($ProcessManager -eq 'systemd') {
+        "sudo systemctl restart $AppName"
+    } else {
+        "pm2 restart $AppName --update-env"
+    }
+
+    return @(
+        "El archivo cambio, pero el proceso sigue corriendo con la configuracion anterior:",
+        "el .env se lee una sola vez, al arrancar.",
+        "",
+        "Para aplicarla, una de las dos:",
+        "  - en '$Server':  $comando",
+        "  - o un release nuevo:  Publish-NodeApi -Apply"
+    )
+}
+
 function Resolve-SharedSourcePath {
     <#
     .SYNOPSIS
