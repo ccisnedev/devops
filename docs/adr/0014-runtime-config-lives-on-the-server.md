@@ -101,7 +101,11 @@ configuración en el servidor.
 
 ## Consequences
 
-- **CI puede desplegar la API.** Es el bloqueo que esta decisión existe para levantar.
+- **Cae uno de los dos bloqueos de CI**, no los dos. Ya existe un origen para la configuración
+  de runtime que no es un portátil, que era el bloqueo grande. El otro sigue en pie: el env file
+  está gitignoreado, así que tras `actions/checkout` tampoco existe `MACSS_DEPLOY_SSH_ALIAS` y el
+  job no sabe a dónde ir (issue #75). Con solo esta decisión, un job de deploy de API todavía no
+  corre.
 - **Cambiar configuración deja de exigir un release.** Hoy ajustar un timeout obliga a
   desplegar; con esto es `-PushShared`.
 - **`.env.example` deja de ser documentación que se desactualiza en silencio.** Pasa a ser un
