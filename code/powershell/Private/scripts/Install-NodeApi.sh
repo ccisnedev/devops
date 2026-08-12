@@ -80,10 +80,26 @@ $SUDO tar -xzf "$TARBALL" -C "$RELEASE_DIR"
 $SUDO rm -f "$TARBALL"
 
 # ─── 4. Copiar .env ─────────────────────────────────────
+# Si el .env es un sharedPath, no se sube: vive en shared/ y lo enlaza el paso 4b, igual que
+# cualquier otro secreto (issue #79). Avisar de su ausencia convertiria lo normal en
+# sospechoso, y el aviso dejaria de leerse justo donde importa.
+#
+# La lista se desarma igual que en el paso 4b: sin comillas para que se separe en palabras, y
+# neutralizando el placeholder sin reemplazar. El 'if' en vez de '&&' porque un '&&' que no se
+# cumple en la ultima vuelta deja el bucle en estado 1 y con 'set -e' eso aborta la instalacion.
+ENV_SHARED_LIST="__SHARED_PATHS__"
+case "$ENV_SHARED_LIST" in __*__) ENV_SHARED_LIST="";; esac
+ENV_ES_SHARED=0
+for p in $ENV_SHARED_LIST; do
+    if [ "$p" = ".env" ]; then ENV_ES_SHARED=1; fi
+done
+
 if [ -f "$ENV_FILE" ]; then
     echo "Copiando .env al release..."
     $SUDO cp "$ENV_FILE" "$RELEASE_DIR/.env"
     $SUDO rm -f "$ENV_FILE"
+elif [ "$ENV_ES_SHARED" = "1" ]; then
+    echo "  .env: sharedPath, se enlaza desde shared/"
 else
     echo "WARNING: No se encontró $ENV_FILE" >&2
 fi
