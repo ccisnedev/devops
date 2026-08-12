@@ -32,8 +32,9 @@ Omite la confirmación, para uso desatendido.
 Env file de origen. Por defecto `.env`; producción es explícita: `-EnvFile .env.production`.
 
 .PARAMETER Environment
-GitHub Environment de destino. Por defecto `production`. Es lo que permite exigir aprobación
-antes de desplegar (R05, R23); un secret de repositorio no tiene esa puerta.
+GitHub Environment de destino. Por defecto `production`. Permite restringir el despliegue a la
+rama `main` y deja historial por entorno, cosas que un secret de repositorio no da. (No es por
+los gates de aprobación: R05, R22 y R23 gobiernan el merge, no el despliegue.)
 
 .PARAMETER SecretName
 Nombre del secret. Por defecto `ENV_FILE`.
