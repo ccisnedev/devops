@@ -699,6 +699,50 @@ se recibe para poder nombrarlo en el mensaje de migración.
 .PARAMETER Cmdlet
 Nombre del cmdlet que llama, para que el error diga de dónde salió.
 #>
+<#
+.SYNOPSIS
+Decide de dónde sale el destino del despliegue: del entorno o del env file.
+
+.DESCRIPTION
+La precedencia es la de dotenv (ADR 0011 del handbook): **el entorno del proceso gana sobre el
+archivo**. Ninguna implementación de dotenv sobrescribe una variable que ya existe en el
+proceso; el archivo es un default para cuando el entorno no dijo nada.
+
+Es lo que permite que un runner de CI aporte su destino sin materializar un archivo para leerlo
+de vuelta. Tras `actions/checkout` no hay env file --está gitignoreado-- y escribirlo desde el
+workflow es exactamente lo contrario de lo que la práctica dotenv resuelve.
+
+Está separada del I/O para que la regla sea comprobable sin proyecto ni variables de sesión.
+#>
+function Resolve-DeployTargetSource {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$FromFile,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$FromProcess,
+        [Parameter(Mandatory = $true)][string]$EnvFile
+    )
+
+    $archivo = "$FromFile".Trim()
+    $proceso = "$FromProcess".Trim()
+
+    if ($proceso) {
+        # Que el entorno gane en silencio sobre un archivo que dice otra cosa es el accidente a
+        # evitar: quien lea la salida tiene que poder ver que habia un conflicto.
+        $texto = if ($archivo -and $archivo -ne $proceso) {
+            "$proceso  (variable de entorno MACSS_DEPLOY_SSH_ALIAS; '$EnvFile' declara '$archivo' y se ignora)"
+        } else {
+            "$proceso  (variable de entorno MACSS_DEPLOY_SSH_ALIAS)"
+        }
+        return [pscustomobject]@{ Alias = $proceso; Origin = 'entorno'; Text = $texto }
+    }
+
+    if ($archivo) {
+        return [pscustomobject]@{ Alias = $archivo; Origin = 'archivo'; Text = "$archivo  (desde '$EnvFile')" }
+    }
+
+    return [pscustomobject]@{ Alias = ''; Origin = 'ninguno'; Text = "sin destino" }
+}
+
 function Resolve-DeployTargetFromEnv {
     [CmdletBinding()]
     [OutputType([string])]
@@ -727,8 +771,16 @@ function Resolve-DeployTargetFromEnv {
         $vars = (Read-DotEnv -Path $envPath).Env
     }
 
-    $alias  = if ($vars['MACSS_DEPLOY_SSH_ALIAS']) { "$($vars['MACSS_DEPLOY_SSH_ALIAS'])".Trim() } else { '' }
-    $legacy = if ($vars['MACSS_DEPLOY_SERVER'])    { "$($vars['MACSS_DEPLOY_SERVER'])".Trim() }    else { '' }
+    $enArchivo = if ($vars['MACSS_DEPLOY_SSH_ALIAS']) { "$($vars['MACSS_DEPLOY_SSH_ALIAS'])".Trim() } else { '' }
+    $enProceso = "$($env:MACSS_DEPLOY_SSH_ALIAS)".Trim()
+
+    $fuente = Resolve-DeployTargetSource -FromFile $enArchivo -FromProcess $enProceso -EnvFile $EnvFile
+    $alias  = $fuente.Alias
+
+    # La clave vieja se comprueba en los dos origenes: si solo se mirara el archivo, un runner
+    # podria exportar el nombre viejo y quedarse sin destino sin entender por que.
+    $legacy = if ($vars['MACSS_DEPLOY_SERVER']) { "$($vars['MACSS_DEPLOY_SERVER'])".Trim() } else { '' }
+    if (-not $legacy) { $legacy = "$($env:MACSS_DEPLOY_SERVER)".Trim() }
 
     # Los deprecados se comprueban ANTES de resolver: si el env trae la clave nueva y ademas
     # arrastra la vieja, el estado es ambiguo y resolverlo en silencio dejaria archivos a medio
@@ -748,9 +800,18 @@ function Resolve-DeployTargetFromEnv {
     }
 
     if (-not $alias) {
-        throw "${Cmdlet}: no hay destino de despliegue. Falta 'MACSS_DEPLOY_SSH_ALIAS' en '$EnvFile'. " +
-              "Agregue 'MACSS_DEPLOY_SSH_ALIAS=<alias de ~/.ssh/config>' a ese archivo."
+        # Se nombran los DOS origenes: decirle a alguien que le falta una clave en un archivo
+        # que no puede existir --gitignoreado, y esto es un runner-- lo manda por el camino
+        # equivocado.
+        throw "${Cmdlet}: no hay destino de despliegue. Falta 'MACSS_DEPLOY_SSH_ALIAS' en '$EnvFile' " +
+              "y tampoco esta en el entorno. Agregue 'MACSS_DEPLOY_SSH_ALIAS=<alias de ~/.ssh/config>' " +
+              "a ese archivo, o expórtelo como variable de entorno (asi lo hace un runner de CI)."
     }
+
+    # El origen se imprime SIEMPRE (ADR 0011 del handbook). Sin esto, una variable exportada y
+    # olvidada en una sesion redirige un despliegue sin que nadie lo vea, y eso seria peor que
+    # el problema que la precedencia resuelve.
+    Write-Host "  Destino:    $($fuente.Text)" -ForegroundColor Cyan
 
     return $alias
 }
