@@ -239,13 +239,8 @@ function Publish-NodeApi {
                 }
                 # tsconfig.json solo se exige en modo build:true (ADR 0003) — se valida
                 # más abajo, una vez leída la configuración de runtime.
-                if (-not (Test-Path $envProdPath)) {
-                    # El destino ya puede venir del entorno (ADR 0011 del handbook), pero esta
-                    # familia todavia necesita el archivo para PORT. Decirlo evita que alguien en
-                    # un runner busque el problema en la variable, que ya puso bien.
-                    throw "No se encontró el env file '$EnvFile' en $cwd. Publish-NodeApi lo necesita para PORT, " +
-                          "aunque el destino venga de la variable de entorno. Ejecute 'Publish-NodeApi -Init' o especifique -EnvFile <archivo>."
-                }
+                # El env file se valida mas abajo: que sea obligatorio depende de si la
+                # configuracion de runtime vive en el servidor, y eso lo declara publish.yaml.
 
                 # ─── 2. Leer configuración ───────────────────
                 # publish.yaml (server, runtime, health, api)
@@ -259,6 +254,26 @@ function Publish-NodeApi {
                 # ─── Runtime (ADR 0003): build (default true) + entrypoint ───
                 $runtime = Resolve-NodeRuntime -PublishConfig $deployConfig
                 $entrypoint = $runtime.Entrypoint
+
+                # El .env como sharedPath (ADR 0014): la configuración de runtime vive en el
+                # servidor y el release la enlaza. Opt-in por proyecto.
+                $envEsShared = ('.env' -in @($runtime.SharedPaths))
+
+                # Con la configuración en el servidor, el env file local deja de aportar nada:
+                # el destino puede venir del entorno (ADR 0011 del handbook) y PORT sale del
+                # shared/.env. Es lo que hace desplegable la API desde un runner, donde ese
+                # archivo no existe porque está gitignoreado.
+                if (-not (Test-Path $envProdPath)) {
+                    if (-not $envEsShared) {
+                        throw "No se encontró el env file '$EnvFile' en $cwd. Sin él, la configuración de runtime " +
+                              "no tiene de dónde salir: declare '.env' en runtime.sharedPaths (ADR 0014) para que " +
+                              "viva en el servidor, o ejecute 'Publish-NodeApi -Init'."
+                    }
+                    if (-not "$($env:MACSS_DEPLOY_SSH_ALIAS)".Trim()) {
+                        throw "No se encontró el env file '$EnvFile' en $cwd ni MACSS_DEPLOY_SSH_ALIAS en el entorno. " +
+                              "Sin uno de los dos no hay destino de despliegue."
+                    }
+                }
 
                 # tsconfig.json se exige solo en modo build:true
                 if ($runtime.Build -and -not (Test-Path $tsconfigPath)) {
@@ -288,8 +303,18 @@ function Publish-NodeApi {
 
                 # env file (PORT + destino). ADR 0004: el destino sale de MACSS_DEPLOY_SSH_ALIAS
                 # del env elegido, no de publish.yaml (que ya no lleva 'server').
-                $envConfig = Read-DotEnv -Path $envProdPath -DefaultPort 8080
-                $port = $envConfig.Port
+                if ($envEsShared) {
+                    # El puerto se decide despues de sondear el servidor: la app arranca leyendo
+                    # PORT de shared/.env, asi que ese es el dato bueno (issue #83). Aqui solo se
+                    # recoge lo que declare el archivo local, para poder contrastarlos.
+                    $puertoLocal = if (Test-Path $envProdPath) {
+                        "$((Read-DotEnv -Path $envProdPath -DefaultPort 8080).Env['PORT'])"
+                    } else { '' }
+                    $port = 0
+                } else {
+                    $envConfig = Read-DotEnv -Path $envProdPath -DefaultPort 8080
+                    $port = $envConfig.Port
+                }
                 $server = Resolve-DeployTargetFromEnv -ProjectRoot $cwd -EnvFile $EnvFile -Cmdlet 'Publish-NodeApi'
 
                 $processManager = if ($deployConfig.runtime -and $deployConfig.runtime.processManager) {
@@ -322,10 +347,49 @@ function Publish-NodeApi {
                     throw "Process manager '$processManager' no soportado. Use 'systemd' o 'pm2'."
                 }
 
-                # El .env como sharedPath (issue #79): la configuración de runtime vive en el
-                # servidor y el release la enlaza, en vez de subirse desde esta máquina en cada
-                # despliegue. Opt-in por proyecto: se activa declarándolo en runtime.sharedPaths.
-                $envEsShared = ('.env' -in @($runtime.SharedPaths))
+                # ─── 4. SSH Config ───────────────────────────
+                # Se resuelve ANTES del resumen: leer ~/.ssh/config es local y no cambia nada, y
+                # con la conexión a mano se puede sondear el servidor a tiempo para que lo que se
+                # muestra y se confirma sea lo que realmente va a pasar (ADR 0009).
+                $sshConfig = Read-SSHConfig -HostAlias $server
+                $user = $sshConfig.User
+                $ip = $sshConfig.HostName
+                $sshPort = $sshConfig.Port
+                $privateKeyPath = $sshConfig.IdentityFile
+
+                # ─── Constantes remotas ──────────────────────
+                $remoteRoot = "/opt/app"
+                $releaseDir = "$remoteRoot/$appName/releases/$release"
+                $currentLink = "$remoteRoot/$appName/current"
+                $entryPath = "$currentLink/$entrypoint"
+                $workingDir = "$currentLink"
+                $envFile = "$currentLink/.env"
+                $tarballName = "${appName}-${release}.tar.gz"
+                $remoteTarball = "/tmp/$tarballName"
+                $remoteEnvFile = "/tmp/${appName}.env.production"
+
+                # ─── Contrato de configuración y puerto (issues #79 y #83) ───
+                # Con el .env en shared/, el archivo persiste entre releases: una versión que
+                # introduzca una variable nueva se desplegaría en verde y fallaría en runtime. Y
+                # el puerto tiene que salir de la misma configuración que la app va a leer, o el
+                # healthcheck sondea un puerto donde la app no escucha.
+                #
+                # Un solo viaje al servidor: el sondeo trae los nombres de las claves y, por
+                # excepción declarada, el valor de PORT.
+                if ($envEsShared) {
+                    $contrato = Test-EnvContractOrThrow -SharedEnvPath "$remoteRoot/$appName/shared/.env" `
+                                                        -ExamplePath (Join-Path $cwd '.env.example') `
+                                                        -User $user -IP $ip -SshPort $sshPort `
+                                                        -KeyPath $privateKeyPath -ValueKeys @('PORT')
+
+                    $resPuerto = Resolve-NodeApiPort -LocalPort $puertoLocal `
+                                                     -ServerPort "$($contrato.Values['PORT'])" `
+                                                     -EnvFile $EnvFile
+                    if ($resPuerto.Level -eq 'error') {
+                        throw ("No se puede determinar el puerto de la API: " + $resPuerto.Text)
+                    }
+                    $port = $resPuerto.Port
+                }
 
                 Write-Host "  Proyecto:   $appName" -ForegroundColor Cyan
                 Write-Host "  Release:    $release" -ForegroundColor Cyan
@@ -348,35 +412,6 @@ function Publish-NodeApi {
                 if (-not (Confirm-MacssChange -Action "Deploy $appName $release to '$server' ($processManager)" -AutoApprove:$AutoApprove)) {
                     Write-Host "  Apply cancelled." -ForegroundColor Yellow
                     return
-                }
-
-                # ─── 4. SSH Config ───────────────────────────
-                $sshConfig = Read-SSHConfig -HostAlias $server
-                $user = $sshConfig.User
-                $ip = $sshConfig.HostName
-                $sshPort = $sshConfig.Port
-                $privateKeyPath = $sshConfig.IdentityFile
-
-                # ─── Constantes remotas ──────────────────────
-                $remoteRoot = "/opt/app"
-                $releaseDir = "$remoteRoot/$appName/releases/$release"
-                $currentLink = "$remoteRoot/$appName/current"
-                $entryPath = "$currentLink/$entrypoint"
-                $workingDir = "$currentLink"
-                $envFile = "$currentLink/.env"
-                $tarballName = "${appName}-${release}.tar.gz"
-                $remoteTarball = "/tmp/$tarballName"
-                $remoteEnvFile = "/tmp/${appName}.env.production"
-
-                # ─── Contrato de configuración (issue #79) ───
-                # Con el .env en shared/, el archivo persiste entre releases: una versión que
-                # introduzca una variable nueva se desplegaría en verde y fallaría en runtime.
-                # Se comprueba ANTES de tocar nada en el servidor. Solo nombres de claves.
-                if ($envEsShared) {
-                    Test-EnvContractOrThrow -SharedEnvPath "$remoteRoot/$appName/shared/.env" `
-                                            -ExamplePath (Join-Path $cwd '.env.example') `
-                                            -User $user -IP $ip -SshPort $sshPort `
-                                            -KeyPath $privateKeyPath | Out-Null
                 }
 
                 # ─── 5. Preparar artefactos ──────────────────
@@ -650,13 +685,8 @@ function Publish-NodeApi {
                         -UseInstead 'publish.yaml' -Since '6.0.0' `
                         -Detail "Renombre el archivo: el contenido no cambia." -Reference 'ADR 0012'
                 }
-                if (-not (Test-Path $envProdPath)) {
-                    # El destino ya puede venir del entorno (ADR 0011 del handbook), pero esta
-                    # familia todavia necesita el archivo para PORT. Decirlo evita que alguien en
-                    # un runner busque el problema en la variable, que ya puso bien.
-                    throw "No se encontró el env file '$EnvFile' en $cwd. Publish-NodeApi lo necesita para PORT, " +
-                          "aunque el destino venga de la variable de entorno. Ejecute 'Publish-NodeApi -Init' o especifique -EnvFile <archivo>."
-                }
+                # El env file se valida mas abajo: que sea obligatorio depende de si la
+                # configuracion de runtime vive en el servidor, y eso lo declara publish.yaml.
 
                 # ─── 2. Leer configuración ───────────────────
                 $packageJson = Get-Content $packageJsonPath -Raw | ConvertFrom-Json
@@ -668,6 +698,23 @@ function Publish-NodeApi {
                 # Runtime + release id (ADR 0003): mismo cálculo que -Apply.
                 $runtime = Resolve-NodeRuntime -PublishConfig $deployConfig
                 $entrypoint = $runtime.Entrypoint
+
+                # Mismo criterio que -Apply: con la configuración en el servidor, el env file
+                # local deja de ser obligatorio. Un plan que exija un archivo que el apply ya no
+                # necesita miente sobre lo que va a pasar (ADR 0009).
+                $envEsSharedPlan = ('.env' -in @($runtime.SharedPaths))
+                if (-not (Test-Path $envProdPath)) {
+                    if (-not $envEsSharedPlan) {
+                        throw "No se encontró el env file '$EnvFile' en $cwd. Sin él, la configuración de runtime " +
+                              "no tiene de dónde salir: declare '.env' en runtime.sharedPaths (ADR 0014) para que " +
+                              "viva en el servidor, o ejecute 'Publish-NodeApi -Init'."
+                    }
+                    if (-not "$($env:MACSS_DEPLOY_SSH_ALIAS)".Trim()) {
+                        throw "No se encontró el env file '$EnvFile' en $cwd ni MACSS_DEPLOY_SSH_ALIAS en el entorno. " +
+                              "Sin uno de los dos no hay destino de despliegue."
+                    }
+                }
+
                 $gitSha = (& git -C $cwd rev-parse --short HEAD 2>$null)
                 if ($LASTEXITCODE -eq 0 -and $gitSha) {
                     if (-not $runtime.Build -and -not (Test-CleanWorktree -Path $cwd)) { $gitSha = "$gitSha-dirty" }
@@ -677,8 +724,15 @@ function Publish-NodeApi {
                 }
 
                 # env file (PORT + destino). ADR 0004: destino desde MACSS_DEPLOY_SSH_ALIAS.
-                $envConfig = Read-DotEnv -Path $envProdPath -DefaultPort 8080
-                $port = $envConfig.Port
+                if ($envEsSharedPlan) {
+                    $puertoLocal = if (Test-Path $envProdPath) {
+                        "$((Read-DotEnv -Path $envProdPath -DefaultPort 8080).Env['PORT'])"
+                    } else { '' }
+                    $port = 0   # sale del sondeo, como en -Apply
+                } else {
+                    $envConfig = Read-DotEnv -Path $envProdPath -DefaultPort 8080
+                    $port = $envConfig.Port
+                }
                 $server = Resolve-DeployTargetFromEnv -ProjectRoot $cwd -EnvFile $EnvFile -Cmdlet 'Publish-NodeApi'
 
                 $processManager = if ($deployConfig.runtime -and $deployConfig.runtime.processManager) {
@@ -709,7 +763,11 @@ function Publish-NodeApi {
                 Write-Host "  Runtime:    $(if ($runtime.Build) { 'build (TypeScript)' } else { 'no-build (source)' }) → $entrypoint" -ForegroundColor White
                 Write-Host "  Servidor:   $server ($ip)" -ForegroundColor White
                 Write-Host "  Proceso:    $processManager" -ForegroundColor White
-                Write-Host "  Puerto:     $port" -ForegroundColor White
+                if (-not $envEsSharedPlan) {
+                    Write-Host "  Puerto:     $port" -ForegroundColor White
+                }
+                # Con la configuración en el servidor, el puerto no es un dato local: se muestra
+                # abajo, junto al resto de lo que se sondeó.
                 if ($apiBasePath) {
                     Write-Host "  BasePath:   $apiBasePath (healthcheck: $apiBasePath/health)" -ForegroundColor White
                 }
@@ -732,11 +790,12 @@ else echo "SHARED:${sp}:empty"; fi
 "@
                 }
 
-                # Contrato de configuración (issue #79): solo si el .env es un sharedPath. Viaja
-                # en el mismo sondeo que el resto del reporte, en vez de abrir un segundo ssh.
-                $envEsSharedPlan = ('.env' -in @($runtime.SharedPaths))
+                # Contrato de configuración (#79) y puerto (#83): solo si el .env es un
+                # sharedPath. Viajan en el mismo sondeo que el resto del reporte, en vez de abrir
+                # un segundo ssh. De PORT sale el valor, por excepción declarada: es el único que
+                # el despliegue necesita conocer y no es un secreto.
                 $envKeysBlock = if ($envEsSharedPlan) {
-                    New-RemoteEnvKeysScript -SharedEnvPath "$remoteRoot/$appName/shared/.env"
+                    New-RemoteEnvKeysScript -SharedEnvPath "$remoteRoot/$appName/shared/.env" -ValueKeys @('PORT')
                 } else { "" }
 
                 $reportScript = @"
@@ -847,6 +906,19 @@ $envKeysBlock
                             Write-Host "  BLOQUEANTE: $($contrato.Text)" -ForegroundColor Red
                             Write-Host "  -Apply no procederá hasta que el servidor tenga esas claves." -ForegroundColor Red
                         }
+                    }
+
+                    # El puerto sale de la configuración que la app va a leer (issue #83). Si el
+                    # archivo local declara otro, el plan lo dice: sondear un puerto donde la app
+                    # no escucha da un rojo sin causa o, peor, un verde sin fundamento.
+                    $resPuerto = Resolve-NodeApiPort -LocalPort $puertoLocal `
+                                                     -ServerPort "$((ConvertFrom-EnvValuesOutput -Lines $output)['PORT'])" `
+                                                     -EnvFile $EnvFile
+                    $port = $resPuerto.Port
+                    if ($resPuerto.Level -eq 'ok') {
+                        Write-Host "  Puerto:     $($resPuerto.Text)" -ForegroundColor Green
+                    } else {
+                        Write-Host "  BLOQUEANTE: $($resPuerto.Text)" -ForegroundColor Red
                     }
                 }
 

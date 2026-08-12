@@ -46,19 +46,96 @@ function New-RemoteEnvKeysScript {
     [CmdletBinding()]
     [OutputType([string])]
     param(
-        [Parameter(Mandatory = $true)][string]$SharedEnvPath
+        [Parameter(Mandatory = $true)][string]$SharedEnvPath,
+
+        # Claves cuyo VALOR se exporta además del nombre. La lista es explícita a propósito: qué
+        # sale del servidor es una decisión, no un efecto secundario de cómo se escribió un sed.
+        # Hoy solo PORT, que el despliegue necesita para sondear y que no es un secreto.
+        [Parameter()][string[]]$ValueKeys = @()
     )
 
     # El sed recorta todo lo que sigue al '=' antes de imprimir: los valores no salen del
     # servidor, así que no terminan en la salida del ssh ni en ningún log que la capture.
+    $bloqueValores = ""
+    foreach ($k in @($ValueKeys)) {
+        $bloqueValores += @"
+
+    sed -nE 's/^[[:space:]]*(export[[:space:]]+)?$k[[:space:]]*=[[:space:]]*(.*)/ENVVALUE:${k}=\2/p' "$SharedEnvPath"
+"@
+    }
+
     return @"
 if [ -f "$SharedEnvPath" ]; then
     echo "ENVFILE:present"
-    sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=.*/ENVKEY:\2/p' "$SharedEnvPath"
+    sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=.*/ENVKEY:\2/p' "$SharedEnvPath"$bloqueValores
 else
     echo "ENVFILE:absent"
 fi
 "@
+}
+
+function ConvertFrom-EnvValuesOutput {
+    <#
+    .SYNOPSIS
+    Lee los valores que el sondeo exportó explícitamente.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory = $true)][AllowNull()]$Lines
+    )
+
+    $valores = @{}
+    foreach ($linea in (@($Lines) | ForEach-Object { "$_" -split "`r?`n" })) {
+        # El primer '=' separa; el resto es el valor, que puede llevar más.
+        if ("$linea".Trim() -match '^ENVVALUE:([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
+            $valores[$Matches[1]] = $Matches[2].Trim()
+        }
+    }
+
+    return $valores
+}
+
+function Resolve-NodeApiPort {
+    <#
+    .SYNOPSIS
+    Decide el puerto a sondear cuando hay dos fuentes: el archivo local y el del servidor.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$LocalPort,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ServerPort,
+        [Parameter(Mandatory = $true)][string]$EnvFile
+    )
+
+    $local    = "$LocalPort".Trim()
+    $servidor = "$ServerPort".Trim()
+
+    $n = 0
+    $localNum    = if ($local -and [int]::TryParse($local, [ref]$n)) { $n } else { 0 }
+    $servidorNum = if ($servidor -and [int]::TryParse($servidor, [ref]$n)) { $n } else { 0 }
+
+    if (-not $localNum -and -not $servidorNum) {
+        # Un 8080 por defecto sondea un puerto que nadie declaró y da un verde sin fundamento.
+        return [pscustomobject]@{
+            Port = 0; Level = 'error'
+            Text = "no hay PORT ni en '$EnvFile' ni en el shared/.env del servidor; declárelo en uno de los dos"
+        }
+    }
+
+    if ($localNum -and $servidorNum -and $localNum -ne $servidorNum) {
+        # Manda el del servidor aunque bloquee: es el que la app va a leer al arrancar. Sondear
+        # el otro es, en el mejor caso, un despliegue que falla estando bien; en el peor, uno que
+        # pasa porque en ese puerto responde otra cosa.
+        return [pscustomobject]@{
+            Port = $servidorNum; Level = 'error'
+            Text = "'$EnvFile' declara PORT=$localNum y el shared/.env del servidor declara PORT=$servidorNum; la app leerá el del servidor"
+        }
+    }
+
+    $elegido = if ($servidorNum) { $servidorNum } else { $localNum }
+    $origen  = if ($servidorNum) { 'shared/.env del servidor' } else { "'$EnvFile'" }
+    return [pscustomobject]@{ Port = $elegido; Level = 'ok'; Text = "PORT=$elegido (desde $origen)" }
 }
 
 function ConvertTo-EnvContractState {
@@ -154,11 +231,16 @@ function Invoke-EnvContractCheck {
         [Parameter(Mandatory = $true)][string]$User,
         [Parameter(Mandatory = $true)][string]$IP,
         [Parameter(Mandatory = $true)][string]$SshPort,
-        [Parameter(Mandatory = $true)][string]$KeyPath
+        [Parameter(Mandatory = $true)][string]$KeyPath,
+
+        # Claves cuyo valor se necesita además del nombre (hoy PORT, issue #83). Viajan en el
+        # mismo sondeo: abrir un segundo ssh para un dato es latencia sin ninguna ventaja.
+        [Parameter()][string[]]$ValueKeys = @()
     )
 
     # Capture y no Invoke-RemoteScript: aquel imprime la salida y devuelve el código de salida.
-    $salida = Invoke-RemoteScriptCapture -ScriptContent ("#!/bin/bash`n" + (New-RemoteEnvKeysScript -SharedEnvPath $SharedEnvPath)) `
+    $sonda = New-RemoteEnvKeysScript -SharedEnvPath $SharedEnvPath -ValueKeys $ValueKeys
+    $salida = Invoke-RemoteScriptCapture -ScriptContent ("#!/bin/bash`n" + $sonda) `
                                          -User $User -IP $IP -Port $SshPort -KeyPath $KeyPath `
                                          -ScriptPrefix "psdevops_envkeys_"
 
@@ -169,7 +251,10 @@ function Invoke-EnvContractCheck {
         $ejemplo = Get-DotEnvKeys -Lines @(Get-Content -LiteralPath $ExamplePath)
     }
 
-    return ConvertTo-EnvContractState -ExampleKeys $ejemplo -ServerKeys $servidor
+    $estado = ConvertTo-EnvContractState -ExampleKeys $ejemplo -ServerKeys $servidor
+    Add-Member -InputObject $estado -NotePropertyName 'Values' `
+               -NotePropertyValue (ConvertFrom-EnvValuesOutput -Lines $salida) -Force
+    return $estado
 }
 
 function Test-EnvContractOrThrow {
@@ -184,11 +269,13 @@ function Test-EnvContractOrThrow {
         [Parameter(Mandatory = $true)][string]$User,
         [Parameter(Mandatory = $true)][string]$IP,
         [Parameter(Mandatory = $true)][string]$SshPort,
-        [Parameter(Mandatory = $true)][string]$KeyPath
+        [Parameter(Mandatory = $true)][string]$KeyPath,
+        [Parameter()][string[]]$ValueKeys = @()
     )
 
     $estado = Invoke-EnvContractCheck -SharedEnvPath $SharedEnvPath -ExamplePath $ExamplePath `
-                                      -User $User -IP $IP -SshPort $SshPort -KeyPath $KeyPath
+                                      -User $User -IP $IP -SshPort $SshPort -KeyPath $KeyPath `
+                                      -ValueKeys $ValueKeys
 
     switch ($estado.Level) {
         'ok'   { Write-Host "  Config:     $($estado.Text)" -ForegroundColor Green }
