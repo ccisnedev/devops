@@ -148,8 +148,9 @@ Describe "New-EnvSecretCommand — cómo se invoca gh" {
     }
 
     It "lo publica en el environment indicado, no a nivel de repositorio" {
-        # El environment es lo que permite exigir aprobación antes de desplegar (R05, R23). Un
-        # secret de repositorio no tiene esa puerta.
+        # El environment permite restringir el despliegue a la rama main: sin eso, cualquiera
+        # lanza el workflow desde otra rama y usa los secrets de producción. Un secret de
+        # repositorio no da esa protección.
         $args = New-EnvSecretCommand -Repo 'cacsi-dev/impulsa' -Environment 'production' -SecretName 'ENV_FILE'
         $args | Should -Contain '--env'
         $args | Should -Contain 'production'

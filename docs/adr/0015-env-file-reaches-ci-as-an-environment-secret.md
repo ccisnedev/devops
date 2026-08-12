@@ -57,10 +57,23 @@ llevaría la configuración de otro.
 
 ### El environment, no el repositorio
 
-El secret cuelga de un GitHub Environment (`production`) y no del repositorio, porque el
-environment es lo que permite exigir **aprobación antes de desplegar** —los gates que R05 y R23
-ya piden— y deja historial de despliegues por entorno. Un secret de repositorio no tiene esa
-puerta.
+El secret cuelga de un GitHub Environment (`production`) y no del repositorio, por dos razones
+que **no** son la aprobación humana:
+
+- **Restricción de ramas.** El environment puede exigir que el despliegue salga solo de `main`.
+  Sin eso, cualquiera puede lanzar el workflow desde una rama cualquiera y usar los secrets de
+  producción. Es la protección que importa aquí, y no detiene a nadie.
+- **Historial por entorno.** Queda registro de qué se desplegó a producción y cuándo.
+
+Conviene ser exacto sobre los gates, porque es fácil confundirlos: **R05, R22 y R23 gobiernan el
+merge, no el despliegue.** El PO acepta en UAT y QA aprueba la PR; ambos son prerrequisitos de
+mergear. El paso 9 del flujo del handbook dice *auto-deploy a PROD* después del merge. Exigir
+revisores en el environment sería un cuarto gate que nadie pidió, después de que los tres suyos
+ya pasaron.
+
+El environment **admite** revisores obligatorios si algún día se quieren —el candidato razonable
+es solo la capa `db`, porque una migración mala es lo único difícil de deshacer— pero eso es una
+decisión aparte y no forma parte de esta.
 
 ### La huella
 
