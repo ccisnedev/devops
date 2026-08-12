@@ -88,6 +88,16 @@ Se comparan **solo nombres de claves**. El sondeo recorta el valor en el servido
 imprimirlo: la garantía tiene que estar donde se lee el archivo, no en quien recibe la salida, o
 los secretos terminan en la salida del `ssh` y en cualquier log que la capture.
 
+**Con una excepción declarada: `PORT`.** Su valor sí sale del servidor, porque el despliegue
+necesita saber a qué puerto sondear el healthcheck y la app lo lee de ese mismo archivo. Mientras
+salía del archivo local había dos fuentes para el mismo dato y nada impedía que divergieran: el
+caso benigno es un healthcheck que falla estando todo bien; el malo es que en el puerto sondeado
+responda otra cosa —un proceso anterior que quedó vivo— y el despliegue termine en verde sin que
+la release nueva esté sirviendo. Si ambos lo declaran y difieren, bloquea.
+
+La excepción es una **lista explícita** en el sondeo, no un efecto secundario: qué valor sale del
+servidor es una decisión que se lee en el código.
+
 La distinción entre bloqueante y aviso es la misma que el módulo ya aplica en otros lugares: lo
 que **no se puede comprobar** avisa; lo que **se comprobó y está mal** bloquea.
 
