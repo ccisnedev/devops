@@ -1,6 +1,16 @@
 # ADR 0014: La configuración de runtime vive en el servidor, y `.env.example` es su contrato
 
-**Status:** Accepted (2026-08-11)
+**Status:** Accepted (2026-08-11) · **Acotada** (2026-08-12) por la ADR 0015
+
+> **Deja de ser el camino para desbloquear CI.** Esta ADR resolvía dos cosas a la vez y solo una
+> era el problema: aprovisionar al runner. Mover la configuración al servidor cuesta el rollback
+> por versión —cada release tiene hoy su propio `.env` y volver atrás devuelve el código *con su
+> configuración*—, y esa propiedad se usa. La ADR 0015 aprovisiona al runner con un secret del
+> environment sin tocar ese mecanismo.
+>
+> Lo que sigue aquí en pie: `.env` como `sharedPath` funciona, está probado y es opt-in. Es
+> razonable donde cambiar configuración sin release importe más que el rollback por versión. No
+> es el caso de ningún componente de `impulsa`.
 
 **Relacionada con:** ADR 0004 (el destino del despliegue sale del env file), ADR 0003
 (sharedPaths), ADR 0009 (el plan y el apply dicen lo mismo).
