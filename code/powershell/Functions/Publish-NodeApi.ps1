@@ -15,7 +15,9 @@ Se debe ejecutar desde la raíz del proyecto donde existen:
   - package.json   (name, version)
   - tsconfig.json  (proyecto TypeScript)
   - publish.yaml   (servidor, runtime, health, api — generar con -Init)
-  - .env.production (variables de entorno — se copia al servidor como .env)
+  - .env.production (variables de entorno — se copia al servidor como .env, salvo que
+                     '.env' se declare en runtime.sharedPaths: entonces la configuración vive
+                     en el servidor y el release la enlaza)
 
 .PARAMETER Init
 Genera los archivos de configuración (publish.yaml y .env.production) en el directorio actual.
@@ -23,8 +25,11 @@ Requiere que existan package.json y tsconfig.json.
 
 .PARAMETER Publish
 Ejecuta el despliegue completo al servidor remoto.
-Lee publish.yaml para el servidor destino y la configuración de runtime.
-Siempre sube .env.production como .env dentro del release.
+El destino sale del env file elegido (MACSS_DEPLOY_SSH_ALIAS, ADR 0004); publish.yaml aporta
+la configuración de runtime.
+Sube el env file como .env del release, salvo que '.env' esté declarado en
+runtime.sharedPaths: en ese caso la configuración vive en shared/ y solo se enlaza, y antes de
+desplegar se comprueba que el servidor tenga las claves que .env.example declara.
 
 .PARAMETER DeployReport
 Muestra las acciones que realizará -Publish sin ejecutarlas.
@@ -313,11 +318,19 @@ function Publish-NodeApi {
                     throw "Process manager '$processManager' no soportado. Use 'systemd' o 'pm2'."
                 }
 
+                # El .env como sharedPath (issue #79): la configuración de runtime vive en el
+                # servidor y el release la enlaza, en vez de subirse desde esta máquina en cada
+                # despliegue. Opt-in por proyecto: se activa declarándolo en runtime.sharedPaths.
+                $envEsShared = ('.env' -in @($runtime.SharedPaths))
+
                 Write-Host "  Proyecto:   $appName" -ForegroundColor Cyan
                 Write-Host "  Release:    $release" -ForegroundColor Cyan
                 Write-Host "  Runtime:    $(if ($runtime.Build) { 'build (TypeScript)' } else { 'no-build (source)' }) → $entrypoint" -ForegroundColor Cyan
                 if (@($runtime.SharedPaths).Count -gt 0) {
                     Write-Host "  Shared:     $(@($runtime.SharedPaths) -join ', ') (symlink desde shared/, no versionado)" -ForegroundColor Cyan
+                }
+                if ($envEsShared) {
+                    Write-Host "  Config:     shared/.env en el servidor (no se sube desde aquí)" -ForegroundColor Cyan
                 }
                 Write-Host "  Servidor:   $server" -ForegroundColor Cyan
                 Write-Host "  Proceso:    $processManager" -ForegroundColor Cyan
@@ -350,6 +363,17 @@ function Publish-NodeApi {
                 $tarballName = "${appName}-${release}.tar.gz"
                 $remoteTarball = "/tmp/$tarballName"
                 $remoteEnvFile = "/tmp/${appName}.env.production"
+
+                # ─── Contrato de configuración (issue #79) ───
+                # Con el .env en shared/, el archivo persiste entre releases: una versión que
+                # introduzca una variable nueva se desplegaría en verde y fallaría en runtime.
+                # Se comprueba ANTES de tocar nada en el servidor. Solo nombres de claves.
+                if ($envEsShared) {
+                    Test-EnvContractOrThrow -SharedEnvPath "$remoteRoot/$appName/shared/.env" `
+                                            -ExamplePath (Join-Path $cwd '.env.example') `
+                                            -User $user -IP $ip -SshPort $sshPort `
+                                            -KeyPath $privateKeyPath | Out-Null
+                }
 
                 # ─── 5. Preparar artefactos ──────────────────
                 $localTarball = Join-Path $env:TEMP $tarballName
@@ -468,12 +492,20 @@ function Publish-NodeApi {
                     # Subir el env como .env del release (LF para bash en Linux). ADR 0004: se
                     # quitan las claves MACSS_DEPLOY_* (metadato deploy-time) para no contaminar
                     # el runtime env de la app.
-                    $envContent = (Remove-DeployOnlyEnvKeys -Lines @(Get-Content $envProdPath)) -join "`n"
-                    $tmpEnvPath = New-UnixTempFile -Content $envContent -Prefix "psdevops_env_"
-                    $scpEnvArgs = @('-i', $privateKeyPath, '-P', $sshPort, $tmpEnvPath, "$($user)@$($ip):$remoteEnvFile")
-                    & scp @scpEnvArgs 2>&1 | Out-Null
-                    if ($LASTEXITCODE -ne 0) { throw "Error al subir el env (scp exit: $LASTEXITCODE)" }
-                    Write-Host "    $EnvFile subido como .env (LF, sin MACSS_DEPLOY_*)" -ForegroundColor Green
+                    #
+                    # Salvo que el .env sea un sharedPath (issue #79): entonces vive en el
+                    # servidor, el release lo enlaza como cualquier otro secreto, y subirlo
+                    # desde aquí volvería a atar la configuración de producción a esta máquina.
+                    if ($envEsShared) {
+                        Write-Host "    .env: sharedPath, se enlaza desde shared/ (no se sube)" -ForegroundColor Cyan
+                    } else {
+                        $envContent = (Remove-DeployOnlyEnvKeys -Lines @(Get-Content $envProdPath)) -join "`n"
+                        $tmpEnvPath = New-UnixTempFile -Content $envContent -Prefix "psdevops_env_"
+                        $scpEnvArgs = @('-i', $privateKeyPath, '-P', $sshPort, $tmpEnvPath, "$($user)@$($ip):$remoteEnvFile")
+                        & scp @scpEnvArgs 2>&1 | Out-Null
+                        if ($LASTEXITCODE -ne 0) { throw "Error al subir el env (scp exit: $LASTEXITCODE)" }
+                        Write-Host "    $EnvFile subido como .env (LF, sin MACSS_DEPLOY_*)" -ForegroundColor Green
+                    }
 
                     # ─── 7b. Ecosystem pm2 generado (ADR 0005: config-as-data) ───
                     # Si el supervisor es pm2 y el proyecto declara runtime.env o
@@ -692,6 +724,13 @@ else echo "SHARED:${sp}:empty"; fi
 "@
                 }
 
+                # Contrato de configuración (issue #79): solo si el .env es un sharedPath. Viaja
+                # en el mismo sondeo que el resto del reporte, en vez de abrir un segundo ssh.
+                $envEsSharedPlan = ('.env' -in @($runtime.SharedPaths))
+                $envKeysBlock = if ($envEsSharedPlan) {
+                    New-RemoteEnvKeysScript -SharedEnvPath "$remoteRoot/$appName/shared/.env"
+                } else { "" }
+
                 $reportScript = @"
 #!/bin/bash
 # Versión actual (symlink current)
@@ -709,24 +748,11 @@ else
     echo "RELEASE:new"
 fi
 
-# Estado del servicio
-if [ "$processManager" = "systemd" ]; then
-    if systemctl is-active --quiet $appName 2>/dev/null; then
-        echo "SERVICE:running"
-    elif systemctl is-enabled --quiet $appName 2>/dev/null; then
-        echo "SERVICE:stopped"
-    else
-        echo "SERVICE:not-configured"
-    fi
-else
-    if pm2 describe $appName >/dev/null 2>&1; then
-        STATUS=`$(pm2 describe $appName 2>/dev/null | grep status | head -1 | awk '{print `$4}')
-        echo "SERVICE:`$STATUS"
-    else
-        echo "SERVICE:not-configured"
-    fi
-fi
+# Estado del servicio (el sondeo lo genera el módulo: resuelve el binario igual que el
+# despliegue, y distingue "no pude comprobarlo" de "no hay servicio" — issue #78)
+$(New-NodeServiceProbeScript -ProcessManager $(if ($processManager -eq 'systemd') { 'systemd' } else { 'pm2' }) -AppName $appName)
 $sharedCheckBlock
+$envKeysBlock
 "@
 
                 $tmpLocal = New-UnixTempFile -Content $reportScript -Prefix "psdevops_report_nodeapi_"
@@ -768,13 +794,14 @@ $sharedCheckBlock
                     Write-Host "  Release:    $release (nueva)" -ForegroundColor Green
                 }
 
-                if ($serviceStatus -eq 'running') {
-                    Write-Host "  Servicio:   $processManager activo (se reiniciará)" -ForegroundColor White
-                } elseif ($serviceStatus -eq 'not-configured') {
-                    Write-Host "  Servicio:   se creará ($processManager)" -ForegroundColor Green
-                } else {
-                    Write-Host "  Servicio:   $serviceStatus" -ForegroundColor Yellow
+                $estadoServicio = ConvertTo-NodeServiceState -Status $serviceStatus -ProcessManager $processManager
+                $colorServicio = switch ($estadoServicio.Level) {
+                    'ok'    { 'White' }
+                    'info'  { 'White' }
+                    'warn'  { 'Yellow' }
+                    default { 'Red' }
                 }
+                Write-Host "  Servicio:   $($estadoServicio.Text)" -ForegroundColor $colorServicio
 
                 # Estado de sharedPaths (para saber si hay que correr -PushShared antes de -Apply)
                 if (@($runtime.SharedPaths).Count -gt 0) {
@@ -790,6 +817,31 @@ $sharedCheckBlock
                     }
                 }
 
+                # ─── Contrato de configuración (issue #79) ───
+                # .env.example está versionado, así que viaja con el código: es lo único que
+                # puede decir qué variables necesita ESTA release. shared/.env persiste entre
+                # releases, así que sin esta comparación una variable nueva se descubre en
+                # runtime. Solo se comparan nombres; el sondeo corta los valores en el servidor.
+                if ($envEsSharedPlan) {
+                    $ejemploPath = Join-Path $cwd '.env.example'
+                    $clavesEjemplo = if (Test-Path -LiteralPath $ejemploPath) {
+                        Get-DotEnvKeys -Lines @(Get-Content -LiteralPath $ejemploPath)
+                    } else { $null }
+                    $contrato = ConvertTo-EnvContractState -ExampleKeys $clavesEjemplo `
+                                                           -ServerKeys (ConvertFrom-EnvKeysOutput -Lines $output)
+
+                    Write-Host ""
+                    Write-Host "  ─── Contrato de configuración (.env.example vs shared/.env) ───" -ForegroundColor Cyan
+                    switch ($contrato.Level) {
+                        'ok'   { Write-Host "  OK: $($contrato.Text)" -ForegroundColor Green }
+                        'warn' { Write-Host "  AVISO: $($contrato.Text)" -ForegroundColor Yellow }
+                        default {
+                            Write-Host "  BLOQUEANTE: $($contrato.Text)" -ForegroundColor Red
+                            Write-Host "  -Apply no procederá hasta que el servidor tenga esas claves." -ForegroundColor Red
+                        }
+                    }
+                }
+
                 # ─── 6. Acciones que realizará -Apply ──────
                 # Lista derivada de la config real (no genérica): el paso de build y el
                 # archivo de entorno reflejan runtime.build y -EnvFile efectivamente resueltos.
@@ -800,7 +852,13 @@ $sharedCheckBlock
                 } else {
                     $acciones += "Sin build (runtime.build=false): empaquetar el fuente desde git HEAD + node_modules(prod) en tar.gz"
                 }
-                $acciones += "Subir tar.gz + '$EnvFile' (se instala como .env en el release) a ${ip}:/tmp/"
+                # Lo que el plan anuncia tiene que ser lo que apply hace: con el .env en shared/
+                # ya no se sube nada de configuración desde esta máquina.
+                if ($envEsSharedPlan) {
+                    $acciones += "Subir tar.gz a ${ip}:/tmp/ (el .env NO se sube: se enlaza desde shared/)"
+                } else {
+                    $acciones += "Subir tar.gz + '$EnvFile' (se instala como .env en el release) a ${ip}:/tmp/"
+                }
                 $acciones += "Instalar en ${remoteRoot}/${appName}/releases/${release}/"
                 if (@($runtime.SharedPaths).Count -gt 0) {
                     $acciones += "Enlazar sharedPaths [$(@($runtime.SharedPaths) -join ', ')] desde shared/ (falla si no están staged)"
@@ -861,8 +919,11 @@ $sharedCheckBlock
                 $sharedDir = "$remoteRoot/$appName/shared"
 
                 # ─── Validación local: cada sharedPath debe existir y no estar vacío ───
+                # El origen del '.env' no es el '.env' local sino el env file elegido (ADR 0004:
+                # -EnvFile selecciona el entorno). Sin esto, '-PushShared -EnvFile
+                # .env.production' subiría la configuración de desarrollo a producción.
                 foreach ($p in $sharedList) {
-                    $localPath = Join-Path $cwd $p
+                    $localPath = Resolve-SharedSourcePath -SharedPath $p -ProjectRoot $cwd -EnvFile $EnvFile
                     if (-not (Test-Path $localPath)) {
                         throw "El sharedPath '$p' no existe localmente en $cwd. Nada que subir."
                     }
@@ -904,12 +965,36 @@ $sharedCheckBlock
                 }
 
                 # ─── Empaquetar el contenido local de los sharedPaths ───
+                # Se arma un staging en vez de tarear el proyecto directamente, porque el '.env'
+                # que va al servidor no es un archivo del proyecto: sale del env file elegido y
+                # sin las claves MACSS_DEPLOY_* (metadato de despliegue, no configuración de la
+                # app). Es la misma limpieza que -Apply hacía al subirlo.
                 $tarballName = "${appName}-shared.tar.gz"
                 $localTarball = Join-Path $env:TEMP $tarballName
                 $remoteTarball = "/tmp/$tarballName"
                 Remove-Item -LiteralPath $localTarball -ErrorAction SilentlyContinue
-                $tarCmd = "tar.exe -czf `"$localTarball`" -C `"$cwd`" $($sharedList -join ' ')"
-                Invoke-Expression $tarCmd 2>&1 | Out-Null
+
+                $staging = Join-Path $env:TEMP "psdevops_shared_$([guid]::NewGuid().ToString('N'))"
+                New-Item -ItemType Directory -Path $staging -Force | Out-Null
+                try {
+                    foreach ($p in $sharedList) {
+                        $origen = Resolve-SharedSourcePath -SharedPath $p -ProjectRoot $cwd -EnvFile $EnvFile
+                        $destino = Join-Path $staging $p
+                        New-Item -ItemType Directory -Path (Split-Path $destino -Parent) -Force | Out-Null
+                        if ($p -eq '.env') {
+                            $limpio = (Remove-DeployOnlyEnvKeys -Lines @(Get-Content -LiteralPath $origen)) -join "`n"
+                            [IO.File]::WriteAllText($destino, $limpio + "`n", [Text.UTF8Encoding]::new($false))
+                            Write-Host "  .env: desde '$EnvFile', sin MACSS_DEPLOY_*" -ForegroundColor DarkGray
+                        } else {
+                            Copy-Item -LiteralPath $origen -Destination $destino -Recurse -Force
+                        }
+                    }
+
+                    $tarCmd = "tar.exe -czf `"$localTarball`" -C `"$staging`" $($sharedList -join ' ')"
+                    Invoke-Expression $tarCmd 2>&1 | Out-Null
+                } finally {
+                    Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+                }
                 if (-not (Test-Path $localTarball)) { throw "Error al empaquetar los sharedPaths." }
 
                 try {

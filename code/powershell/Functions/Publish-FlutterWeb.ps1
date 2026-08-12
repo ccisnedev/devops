@@ -360,26 +360,29 @@ function Publish-FlutterWeb {
                     }
 
                     # ─── 10. Verificación ────────────────────
-                    Write-Host "  Verificando: http://127.0.0.1:$port/" -ForegroundColor Cyan
+                    # No basta con que algo responda en el puerto: se comprueba que se esté
+                    # sirviendo LA VERSIÓN QUE SE ACABA DE DESPLEGAR (WebVerification.ps1).
+                    #
+                    # Un desajuste es un fallo del despliegue, no un aviso. El caso de
+                    # 'micro' —servía desde un directorio plano, así que mover 'current' no
+                    # cambiaba nada de cara al usuario— terminaba en verde con el check
+                    # anterior, que solo miraba el código HTTP del puerto declarado.
+                    Write-Host "  Verificando lo que se sirve..." -ForegroundColor Cyan
 
-                    $verifyScript = @"
-#!/bin/bash
-set -e
-sleep 1
-HTTP_CODE=`$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$port/ 2>/dev/null || echo '000')
-if [ "`$HTTP_CODE" = "200" ]; then
-    echo "OK: HTTP $port responde 200"
-    exit 0
-else
-    echo "WARNING: HTTP $port respondió `$HTTP_CODE (puede necesitar tiempo para iniciar)" >&2
-    exit 0
-fi
-"@
+                    $verificacion = Invoke-WebVerification -Port $port -ExpectedVersion $appVersion `
+                                                           -User $user -IP $ip -SshPort $sshPort `
+                                                           -KeyPath $privateKeyPath
 
-                    Invoke-RemoteScript -ScriptContent $verifyScript `
-                                        -User $user -IP $ip -Port $sshPort `
-                                        -KeyPath $privateKeyPath `
-                                        -ScriptPrefix "psdevops_verify_flutterweb_" | Out-Null
+                    switch ($verificacion.Level) {
+                        'ok'   { Write-Host "  OK: $($verificacion.Text)" -ForegroundColor Green }
+                        'warn' { Write-Host "  AVISO: $($verificacion.Text)" -ForegroundColor Yellow }
+                        default {
+                            Write-Host "  FALLO: $($verificacion.Text)" -ForegroundColor Red
+                            throw ("El release se subió pero la verificación falló: " +
+                                   "$($verificacion.Text). Los archivos están en el servidor; " +
+                                   "revise el 'root' del site de nginx y el symlink 'current'.")
+                        }
+                    }
 
                     # ─── Éxito ───────────────────────────────
                     Write-Host ""

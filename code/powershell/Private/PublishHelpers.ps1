@@ -432,6 +432,54 @@ function Invoke-RemoteScript {
 
 <#
 .SYNOPSIS
+Ejecuta un script bash remoto y DEVUELVE su salida, en vez de imprimirla.
+
+.DESCRIPTION
+Invoke-RemoteScript está hecho para scripts que actúan: imprime lo que el servidor dice y
+devuelve el código de salida. Un sondeo es lo contrario —su salida ES el resultado— y usarlo
+para eso entrega un entero donde se esperaban líneas: el parser no encuentra nada y concluye
+que el servidor no respondió, sobre un servidor perfectamente sano.
+
+No imprime nada: quien llama decide qué mostrar. Los sondeos leen estado del servidor y su
+salida cruda no le dice nada a nadie.
+#>
+function Invoke-RemoteScriptCapture {
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory = $true)][string]$ScriptContent,
+        [Parameter(Mandatory = $true)][string]$User,
+        [Parameter(Mandatory = $true)][string]$IP,
+        [Parameter(Mandatory = $true)][int]$Port,
+        [Parameter(Mandatory = $true)][string]$KeyPath,
+        [Parameter()][string]$ScriptPrefix = "psdevops_probe_"
+    )
+
+    $tmpLocal = New-UnixTempFile -Content $ScriptContent -Prefix $ScriptPrefix
+
+    try {
+        $remoteName = [IO.Path]::GetFileName($tmpLocal)
+        $remotePath = "/tmp/$remoteName"
+
+        & scp -i $KeyPath -P $Port $tmpLocal "$($User)@$($IP):$remotePath" 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Error al subir el sondeo al servidor remoto (scp exit code: $LASTEXITCODE)"
+        }
+
+        $remoteCmd = "bash $remotePath ; rc=`$?; rm -f $remotePath; exit `$rc"
+        $ErrorActionPreference = 'Continue'   # stderr no es un error: es un dato del sondeo
+        $output = & ssh -i $KeyPath -p $Port "$($User)@$($IP)" $remoteCmd 2>&1
+        $ErrorActionPreference = 'Stop'
+
+        return @($output | ForEach-Object { "$_" })
+    }
+    finally {
+        Remove-Item -LiteralPath $tmpLocal -ErrorAction SilentlyContinue
+    }
+}
+
+<#
+.SYNOPSIS
 Carga un script bash externo y reemplaza placeholders.
 
 .DESCRIPTION
