@@ -140,7 +140,9 @@ function New-EnvSecretCommand {
     # Sin '--body': ese argumento deja el secreto en la línea de comandos del proceso, visible
     # para cualquiera que liste procesos. gh lo lee de stdin cuando no se le pasa.
     #
-    # Y al environment, no al repositorio: el environment es lo que permite exigir aprobación
-    # antes de desplegar (R05, R23). Un secret de repositorio no tiene esa puerta.
+    # Y al environment, no al repositorio: el environment permite restringir el despliegue a la
+    # rama main --sin eso, cualquiera lanza el workflow desde otra rama y usa los secrets de
+    # produccion-- y deja historial por entorno. No es por los gates de aprobacion: R05, R22 y
+    # R23 gobiernan el MERGE, no el despliegue, que segun el handbook es automatico despues.
     return @('secret', 'set', $SecretName, '--env', $Environment, '--repo', $Repo)
 }
