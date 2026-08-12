@@ -108,19 +108,28 @@ function Resolve-EnvSecretName {
 function Resolve-EnvSecretComponent {
     <#
     .SYNOPSIS
-    Deduce el componente del directorio desde el que se ejecuta. Vacío si no se puede.
+    Deduce el componente a partir del archivo que se publica. Vacío si no se puede.
     #>
     [CmdletBinding()]
     [OutputType([string])]
     param(
-        [Parameter(Mandatory = $true)][string]$Path
+        [Parameter(Mandatory = $true)][string]$EnvFilePath
     )
 
-    $hoja = (Split-Path -Leaf ("$Path".TrimEnd('\', '/'))).ToLowerInvariant()
+    # Del ARCHIVO y no del directorio actual: son dos cosas independientes, y tomarlo del
+    # directorio permite que discrepen sin que nadie lo note. Desde code/api,
+    # '-EnvFile ../db/.env.production' publicaria la configuracion de db bajo el nombre de
+    # api, y eso no se descubre hasta que la API no arranca.
+    #
+    # Se normaliza la ruta para que un '..' intermedio no se lleve por delante la deduccion.
+    $completa = [IO.Path]::GetFullPath(("$EnvFilePath" -replace '/', [IO.Path]::DirectorySeparatorChar))
+    $carpeta = [IO.Path]::GetDirectoryName($completa)
+    if (-not $carpeta) { return '' }
+
+    $hoja = (Split-Path -Leaf $carpeta).ToLowerInvariant()
     if ($hoja -in @('db', 'api', 'app')) { return $hoja }
 
-    # Mejor pedirlo que adivinar: publicar la configuración de un componente bajo el nombre de
-    # otro no se nota hasta que la app no arranca.
+    # Mejor pedirlo que adivinar.
     return ''
 }
 
