@@ -131,12 +131,14 @@ function Publish-EnvSecret {
         }
 
         # db, api y app se despliegan por separado y cada uno tiene su propio env file. El
-        # componente sale del directorio, igual que se invoca a Publish-NodeApi desde code/api.
+        # componente sale del ARCHIVO que se publica, no del directorio actual: si saliera del
+        # directorio, '-EnvFile ../db/.env.production' desde code/api publicaría la
+        # configuración de db bajo el nombre de api, y eso no se nota hasta que algo no arranca.
         if (-not $SecretName) {
             if (-not $Component) {
-                $Component = Resolve-EnvSecretComponent -Path $cwd
+                $Component = Resolve-EnvSecretComponent -EnvFilePath $envPath
                 if (-not $Component) {
-                    throw "No se pudo deducir el componente desde '$cwd'. Ejecute el comando desde code/db, code/api o code/app, o indíquelo con -Component <db|api|app>."
+                    throw "No se pudo deducir el componente desde '$envPath'. El env file debe estar en code/db, code/api o code/app, o indique el componente con -Component <db|api|app>."
                 }
             }
             $SecretName = Resolve-EnvSecretName -Component $Component

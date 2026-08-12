@@ -120,21 +120,28 @@ Describe "El componente: db, api y app tienen cada uno su configuración" {
         ($n | Sort-Object -Unique).Count | Should -Be 3
     }
 
-    It "se deduce del directorio desde el que se ejecuta" {
-        # Se corre desde code/api, como Publish-NodeApi. Pedir el componente a mano cuando el
-        # directorio ya lo dice es una oportunidad de equivocarse sin ganar nada.
-        Resolve-EnvSecretComponent -Path 'C:\repos\impulsa\code\api' | Should -Be 'api'
-        Resolve-EnvSecretComponent -Path '/home/x/impulsa/code/db'   | Should -Be 'db'
+    It "se deduce del archivo que se publica" {
+        Resolve-EnvSecretComponent -EnvFilePath 'C:\repos\impulsa\code\api\.env.production' | Should -Be 'api'
+        Resolve-EnvSecretComponent -EnvFilePath '/home/x/impulsa/code/db/.env.production'   | Should -Be 'db'
     }
 
-    It "no se deduce nada desde un directorio que no es un componente" {
-        # Mejor pedirlo que adivinar: publicar la configuración de un componente bajo el nombre
-        # de otro es de los errores que no se ven hasta que la app no arranca.
-        Resolve-EnvSecretComponent -Path 'C:\repos\impulsa' | Should -BeNullOrEmpty
+    It "manda el archivo, no el directorio desde el que se invoca" {
+        # Si el componente saliera del directorio actual, esto publicaría la configuración de
+        # db bajo el nombre de api:
+        #     cd code/api ; Publish-EnvSecret -Apply -EnvFile ../db/.env.production
+        # Y no se notaría hasta que la API no arrancara. El archivo es la única fuente que no
+        # puede contradecir a lo que se está publicando.
+        Resolve-EnvSecretComponent -EnvFilePath 'C:\repos\impulsa\code\api\..\db\.env.production' |
+            Should -Be 'db'
+    }
+
+    It "no se deduce nada desde una ruta que no es un componente" {
+        # Mejor pedirlo que adivinar.
+        Resolve-EnvSecretComponent -EnvFilePath 'C:\repos\impulsa\.env.production' | Should -BeNullOrEmpty
     }
 
     It "tolera mayúsculas en el nombre del directorio" {
-        Resolve-EnvSecretComponent -Path 'C:\repos\impulsa\code\API' | Should -Be 'api'
+        Resolve-EnvSecretComponent -EnvFilePath 'C:\repos\impulsa\code\API\.env.production' | Should -Be 'api'
     }
 }
 
