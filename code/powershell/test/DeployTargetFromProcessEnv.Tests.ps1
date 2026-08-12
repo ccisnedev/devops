@@ -195,6 +195,27 @@ Context "Publish-FlutterWeb — el cmdlet completo, como lo invoca un runner" {
         }
     }
 
+    BeforeEach {
+        # La prueba trae su propio ~/.ssh/config. Sin esto dependía de que la máquina tuviera
+        # uno: en el runner de CI no existe, el fallo era "no se encontró el archivo SSH config"
+        # y la aserción sobre el alias no se cumplía. La prueba pasaba en local y bloqueaba la
+        # publicación del módulo, que es lo peor de los dos mundos.
+        $script:HomePrevio = $env:USERPROFILE
+        $script:HomeFalso = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path (Join-Path $script:HomeFalso '.ssh') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $script:HomeFalso '.ssh/config') -Value @(
+            "Host otro-alias"
+            "    HostName 10.0.0.1"
+            "    User nadie"
+            "    IdentityFile $script:HomeFalso/.ssh/id_rsa"
+        )
+        $env:USERPROFILE = $script:HomeFalso
+    }
+
+    AfterEach {
+        if ($script:HomePrevio) { $env:USERPROFILE = $script:HomePrevio }
+    }
+
     It "sin env file, el cmdlet resuelve el destino y llega hasta la conexión" {
         $env:MACSS_DEPLOY_SSH_ALIAS = 'alias-que-no-existe-en-ssh-config'
         $raiz = New-ProyectoFlutter
@@ -203,8 +224,10 @@ Context "Publish-FlutterWeb — el cmdlet completo, como lo invoca un runner" {
             $msg = try { Publish-FlutterWeb -Plan 6>$null | Out-Null; '' } catch { $_.Exception.Message }
         } finally { Pop-Location }
 
-        # Falla —no hay tal servidor— pero por el motivo correcto: el destino ya se resolvió.
+        # Falla —ese alias no está en el config— pero por el motivo correcto: el destino ya se
+        # resolvió y el cmdlet llegó hasta la capa de conexión.
         $msg | Should -Not -Match 'no hay destino de despliegue'
+        $msg | Should -Not -Match 'No se encontró el env file'
         $msg | Should -Match 'alias-que-no-existe-en-ssh-config'
     }
 
