@@ -1,4 +1,4 @@
-﻿function Invoke-SqlPackage {
+function Invoke-SqlPackage {
     <#
     .SYNOPSIS
         Ejecuta acciones de SqlPackage para despliegue declarativo de bases de datos SQL Server.
@@ -201,7 +201,7 @@
 
                     & sqlpackage @reportArgs 2>&1 | Tee-Object -Variable reportOutput
                     if ($LASTEXITCODE -ne 0) {
-                        throw "No se pudo generar el reporte. Verifique la conexión y permisos."
+                        throw (New-SqlPackageError -Accion 'generar el reporte' -ExitCode $LASTEXITCODE -Salida $reportOutput)
                     }
 
                     # 3. Mostrar cambios
@@ -230,7 +230,7 @@
                         Remove-Item $reportPath -ErrorAction SilentlyContinue
                     }
                     else {
-                        throw "El despliegue falló con código de salida: $LASTEXITCODE"
+                        throw (New-SqlPackageError -Accion 'aplicar el dacpac' -ExitCode $LASTEXITCODE -Salida $publishOutput)
                     }
                 }
                 finally {
@@ -286,7 +286,7 @@
 
                     & sqlpackage @reportArgs 2>&1 | Tee-Object -Variable reportOutput
                     if ($LASTEXITCODE -ne 0) {
-                        throw "No se pudo generar el reporte. Verifique la conexión y permisos."
+                        throw (New-SqlPackageError -Accion 'generar el reporte' -ExitCode $LASTEXITCODE -Salida $reportOutput)
                     }
 
                     $changes = Show-DeployReport -ReportPath $reportPath
@@ -345,7 +345,7 @@
 
                     & sqlpackage @scriptArgs 2>&1 | Tee-Object -Variable scriptOutput
                     if ($LASTEXITCODE -ne 0) {
-                        throw "No se pudo generar el script. Verifique la conexión y permisos."
+                        throw (New-SqlPackageError -Accion 'generar el script' -ExitCode $LASTEXITCODE -Salida $scriptOutput)
                     }
 
                     Write-Host ""
@@ -391,7 +391,7 @@
 
                     & sqlpackage @extractArgs 2>&1 | Tee-Object -Variable extractOutput
                     if ($LASTEXITCODE -ne 0) {
-                        throw "No se pudo extraer el esquema. Verifique la conexión y permisos."
+                        throw (New-SqlPackageError -Accion 'extraer el esquema' -ExitCode $LASTEXITCODE -Salida $extractOutput)
                     }
 
                     Write-Host ""
@@ -437,7 +437,7 @@
 
                     & sqlpackage @exportArgs 2>&1 | Tee-Object -Variable exportOutput
                     if ($LASTEXITCODE -ne 0) {
-                        throw "No se pudo exportar. Verifique la conexión y permisos."
+                        throw (New-SqlPackageError -Accion 'exportar' -ExitCode $LASTEXITCODE -Salida $exportOutput)
                     }
 
                     Write-Host ""
@@ -497,7 +497,7 @@
                         Write-Host "  Importación completada exitosamente" -ForegroundColor Green
                     }
                     else {
-                        throw "La importación falló con código de salida: $LASTEXITCODE"
+                        throw (New-SqlPackageError -Accion 'importar el bacpac' -ExitCode $LASTEXITCODE -Salida $importOutput)
                     }
                 }
                 finally {
