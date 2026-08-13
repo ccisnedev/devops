@@ -236,23 +236,26 @@ MACSS_DEPLOY_SSH_ALIAS=
                 try {
                     # ─── Subir artefactos ────────────────────
                     Write-Host "  Subiendo a $ip..." -ForegroundColor Cyan
-                    & scp -i $keyPath -P $sshPort $localTar "$($user)@$($ip):$remoteTar" 2>&1 | Out-Null
-                    if ($LASTEXITCODE -ne 0) { throw "Error al subir el tarball (scp exit: $LASTEXITCODE)" }
+                    Invoke-RemoteCopy -LocalPath $localTar -RemotePath $remoteTar `
+                                      -User $user -IP $ip -Port $sshPort -KeyPath $keyPath `
+                                      -Descripcion 'el tarball del stack'
 
                     # Las claves MACSS_DEPLOY_* son metadato de despliegue, no config de runtime
                     # del stack: se filtran antes de subir (ADR 0004 §2, ADR 0010).
                     $envRaw = (Remove-DeployOnlyEnvKeys -Lines (Get-Content (Join-Path $cwd $EnvFile))) -join "`n"
 
                     $tmpEnv = New-UnixTempFile -Content $envRaw -Prefix "psdevops_dockenv_"
-                    & scp -i $keyPath -P $sshPort $tmpEnv "$($user)@$($ip):$remoteEnv" 2>&1 | Out-Null
-                    if ($LASTEXITCODE -ne 0) { throw "Error al subir .env (scp exit: $LASTEXITCODE)" }
+                    Invoke-RemoteCopy -LocalPath $tmpEnv -RemotePath $remoteEnv `
+                                      -User $user -IP $ip -Port $sshPort -KeyPath $keyPath `
+                                      -Descripcion 'el .env del stack'
                     Remove-Item -LiteralPath $tmpEnv -ErrorAction SilentlyContinue
                     Write-Host "    tarball + .env subidos" -ForegroundColor Green
 
                     if ($cfg.Build -eq 'transfer') {
                         $remoteImg = "/tmp/$($cfg.Name)-image-$release.tar"
-                        & scp -i $keyPath -P $sshPort $imageTar "$($user)@$($ip):$remoteImg" 2>&1 | Out-Null
-                        if ($LASTEXITCODE -ne 0) { throw "Error al subir la imagen (scp exit: $LASTEXITCODE)" }
+                        Invoke-RemoteCopy -LocalPath $imageTar -RemotePath $remoteImg `
+                                          -User $user -IP $ip -Port $sshPort -KeyPath $keyPath `
+                                          -Descripcion 'la imagen del contenedor'
                         Write-Host "  Cargando imagen en el servidor (docker load)..." -ForegroundColor Cyan
                         $loadRc = Invoke-RemoteScript -ScriptContent "set -e`ndocker load -i '$remoteImg'`nrm -f '$remoteImg'" `
                             -User $user -IP $ip -Port $sshPort -KeyPath $keyPath -ScriptPrefix "psdevops_dockload_"
@@ -377,8 +380,9 @@ fi
                 try {
                     $remoteName = [IO.Path]::GetFileName($tmpLocal)
                     $remotePath = "/tmp/$remoteName"
-                    & scp -i $keyPath -P $sshPort $tmpLocal "$($user)@$($ip):$remotePath" 2>&1 | Out-Null
-                    if ($LASTEXITCODE -ne 0) { throw "Error al conectar con el servidor (scp exit: $LASTEXITCODE)" }
+                    Invoke-RemoteCopy -LocalPath $tmpLocal -RemotePath $remotePath `
+                                      -User $user -IP $ip -Port $sshPort -KeyPath $keyPath `
+                                      -Descripcion 'el sondeo del plan'
                     $remoteCmd = "bash $remotePath ; rc=`$?; rm -f $remotePath; exit `$rc"
                     $output = & ssh -i $keyPath -p $sshPort "$($user)@$($ip)" $remoteCmd 2>&1
                 } finally {

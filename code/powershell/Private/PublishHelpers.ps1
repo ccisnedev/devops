@@ -365,6 +365,60 @@ Prefijo para el archivo temporal (default: "psdevops_remote_").
 .EXAMPLE
 Invoke-RemoteScript -ScriptContent $installScript -User "user" -IP "192.168.1.1" -Port 22 -KeyPath "~/.ssh/id_rsa"
 #>
+<#
+.SYNOPSIS
+Compone el mensaje de un fallo de transferencia remota, incluyendo lo que dijo el comando.
+
+.DESCRIPTION
+Existe porque el modulo lanzaba solo el codigo de salida: "Error al subir tarball (scp exit:
+255)". El 255 es el codigo con el que ssh reporta SUS errores, y cubre causas con remedios
+opuestos --una conexion cortada, una clave no autorizada, una ruta muerta, una host key
+cambiada--. scp habia dicho cual era, y el 'Out-Null' se lo comia.
+#>
+function New-RemoteTransferError {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)][string]$Descripcion,
+        [Parameter(Mandatory = $true)][int]$ExitCode,
+        [Parameter(Mandatory = $true)][AllowNull()][AllowEmptyCollection()]$Salida
+    )
+
+    $lineas = @($Salida) | ForEach-Object { "$_".TrimEnd() } | Where-Object { $_ -match '\S' }
+
+    $detalle = if ($lineas.Count) { ($lineas -join "`n  ") } else { "(el comando no dijo nada)" }
+
+    # El 255 es el que mas confunde: no es un problema del archivo ni del destino, es ssh
+    # diciendo que no pudo establecer la sesion. Decirlo ahorra buscar en el sitio equivocado.
+    $nota = if ($ExitCode -eq 255) {
+        "`n  255 es el codigo de ssh: no pudo establecer la conexion. El archivo y la ruta no son la causa."
+    } else { "" }
+
+    return "Error al transferir $Descripcion (exit $ExitCode):`n  $detalle$nota"
+}
+
+<#
+.SYNOPSIS
+Copia un archivo al servidor por scp, y falla diciendo por que.
+#>
+function Invoke-RemoteCopy {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$LocalPath,
+        [Parameter(Mandatory = $true)][string]$RemotePath,
+        [Parameter(Mandatory = $true)][string]$User,
+        [Parameter(Mandatory = $true)][string]$IP,
+        [Parameter(Mandatory = $true)]$Port,
+        [Parameter(Mandatory = $true)][string]$KeyPath,
+        [Parameter()][string]$Descripcion = 'el archivo'
+    )
+
+    $salida = & scp -i $KeyPath -P $Port $LocalPath "$($User)@$($IP):$RemotePath" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw (New-RemoteTransferError -Descripcion $Descripcion -ExitCode $LASTEXITCODE -Salida $salida)
+    }
+}
+
 function Invoke-RemoteScript {
     [CmdletBinding()]
     param(
@@ -393,13 +447,10 @@ function Invoke-RemoteScript {
         $remoteName = [IO.Path]::GetFileName($tmpLocal)
         $remotePath = "/tmp/$remoteName"
         
-        # Subir script (suprimir salida)
-        & scp -i $KeyPath -P $Port $tmpLocal "$($User)@$($IP):$remotePath" 2>&1 | Out-Null
-        
-        if ($LASTEXITCODE -ne 0) {
-            throw "Error al subir script al servidor remoto (scp exit code: $LASTEXITCODE)"
-        }
-        
+        Invoke-RemoteCopy -LocalPath $tmpLocal -RemotePath $remotePath `
+                          -User $User -IP $IP -Port $Port -KeyPath $KeyPath `
+                          -Descripcion 'el script al servidor remoto'
+
         # Ejecutar y eliminar (capturar salida completa)
         # IMPORTANTE: stderr (warnings) no son errores, solo el exit code != 0
         $remoteCmd = "bash $remotePath ; rc=`$?; rm -f $remotePath; exit `$rc"
@@ -461,10 +512,9 @@ function Invoke-RemoteScriptCapture {
         $remoteName = [IO.Path]::GetFileName($tmpLocal)
         $remotePath = "/tmp/$remoteName"
 
-        & scp -i $KeyPath -P $Port $tmpLocal "$($User)@$($IP):$remotePath" 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            throw "Error al subir el sondeo al servidor remoto (scp exit code: $LASTEXITCODE)"
-        }
+        Invoke-RemoteCopy -LocalPath $tmpLocal -RemotePath $remotePath `
+                          -User $User -IP $IP -Port $Port -KeyPath $KeyPath `
+                          -Descripcion 'el sondeo al servidor remoto'
 
         $remoteCmd = "bash $remotePath ; rc=`$?; rm -f $remotePath; exit `$rc"
         $ErrorActionPreference = 'Continue'   # stderr no es un error: es un dato del sondeo

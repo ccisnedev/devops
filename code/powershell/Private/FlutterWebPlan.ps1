@@ -73,8 +73,9 @@ fi
         $remoteName = [IO.Path]::GetFileName($tmpLocal)
         $remotePath = "/tmp/$remoteName"
 
-        & scp -i $PrivateKeyPath -P $SshPort $tmpLocal "$($User)@$($IP):$remotePath" 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "Error al conectar con el servidor (scp exit: $LASTEXITCODE)" }
+        Invoke-RemoteCopy -LocalPath $tmpLocal -RemotePath $remotePath `
+                          -User $User -IP $IP -Port $SshPort -KeyPath $PrivateKeyPath `
+                          -Descripcion 'el sondeo del plan'
 
         $remoteCmd = "bash $remotePath ; rc=`$?; rm -f $remotePath; exit `$rc"
         $output = & ssh -i $PrivateKeyPath -p $SshPort "$($User)@$($IP)" $remoteCmd 2>&1
