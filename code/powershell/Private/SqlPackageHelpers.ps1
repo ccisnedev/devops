@@ -202,17 +202,61 @@ function Build-SqlPackageArgs {
 #>
 function Find-DacpacPath {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter()][string]$ProjectRoot = "."
+    )
 
-    $sqlproj = Get-ChildItem -Path "." -Filter "*.sqlproj" -File | Select-Object -First 1
+    $sqlproj = Get-ChildItem -Path $ProjectRoot -Filter "*.sqlproj" -File | Select-Object -First 1
     if (-not $sqlproj) {
-        throw "No se encontró un archivo .sqlproj en el directorio actual."
+        throw "No se encontró un archivo .sqlproj en '$ProjectRoot'."
     }
 
     $projectName = [System.IO.Path]::GetFileNameWithoutExtension($sqlproj.Name)
-    $dacpacPath = ".\bin\Debug\$projectName.dacpac"
 
-    return $dacpacPath
+    # Con Join-Path y no a mano: la ruta se armaba como ".\bin\Debug\<nombre>.dacpac", que en
+    # Linux no es una ruta sino un nombre de archivo con contrabarras dentro. sqlpackage recibe
+    # la cadena literal y responde "Could not find file".
+    #
+    # El guard previo --Test-Path-- no lo detenia: PowerShell en Unix normaliza la contrabarra
+    # en sus proveedores, asi que la daba por buena. Un guard que depende de que dos programas
+    # interpreten igual la misma cadena no es un guard.
+    #
+    # Absoluta, ademas: una ruta relativa depende de que el directorio actual siga siendo el
+    # mismo cuando sqlpackage la resuelva.
+    $raiz = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $ProjectRoot).Path)
+    return (Join-Path (Join-Path (Join-Path $raiz 'bin') 'Debug') "$projectName.dacpac")
+}
+
+<#
+.SYNOPSIS
+    Compone el mensaje de un fallo de sqlpackage, incluyendo lo que dijo.
+
+.DESCRIPTION
+    Las seis invocaciones lanzaban "Verifique la conexion y permisos" pasara lo que pasara. En
+    el primer despliegue automatico de impulsa la conexion estaba perfecta y lo que faltaba era
+    un archivo: el mensaje mandaba a revisar credenciales y firewall mientras sqlpackage ya
+    habia dicho "Could not find file".
+#>
+function New-SqlPackageError {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)][string]$Accion,
+        [Parameter(Mandatory = $true)][int]$ExitCode,
+        [Parameter(Mandatory = $true)][AllowNull()][AllowEmptyCollection()]$Salida
+    )
+
+    # sqlpackage escribe decenas de lineas de progreso y el motivo esta al final.
+    $lineas = @(@($Salida) | ForEach-Object { "$_".TrimEnd() } | Where-Object { $_ -match '\S' })
+    $ultimas = @($lineas | Select-Object -Last 8)
+
+    if (-not $ultimas.Count) {
+        # Sin salida no hay nada que interpretar; ahi la conexion vuelve a ser la sospecha
+        # razonable.
+        return "No se pudo $Accion (sqlpackage exit $ExitCode) y no dijo por qué. Verifique la conexión y los permisos."
+    }
+
+    return "No se pudo ${Accion} (sqlpackage exit ${ExitCode}):`n  " + ($ultimas -join "`n  ")
 }
 
 <#
