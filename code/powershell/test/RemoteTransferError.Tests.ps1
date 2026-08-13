@@ -69,30 +69,43 @@ Describe "New-RemoteTransferError — el mensaje que recibe el operador" {
     }
 }
 
-Describe "Publish-NodeApi y Publish-FlutterWeb — cableado" {
+Describe "Cableado — ningún sitio del módulo descarta la salida" {
+    # Se comprueba por barrido y no archivo por archivo: una lista escrita a mano deja fuera el
+    # que se agregue mañana, y este defecto es exactamente el que se propaga copiando una línea.
 
     BeforeAll {
-        $script:NodeApi    = Get-Content "$PSScriptRoot/../Functions/Publish-NodeApi.ps1" -Raw
-        $script:FlutterWeb = Get-Content "$PSScriptRoot/../Functions/Publish-FlutterWeb.ps1" -Raw
-        $script:Helpers    = Get-Content "$PSScriptRoot/../Private/PublishHelpers.ps1" -Raw
+        $script:Fuentes = Get-ChildItem "$PSScriptRoot/../Functions", "$PSScriptRoot/../Private" `
+                                        -Filter *.ps1 -Recurse
     }
 
-    It "Publish-NodeApi ya no descarta la salida de scp" {
-        $script:NodeApi | Should -Not -Match '&\s*scp[^\n]*Out-Null'
+    It "ningún archivo del módulo conserva la forma 'scp ... | Out-Null'" {
+        $culpables = @($script:Fuentes | Where-Object {
+            (Get-Content $_.FullName -Raw) -match '&\s*scp[^\n]*Out-Null'
+        } | ForEach-Object { $_.Name })
+
+        $culpables -join ', ' | Should -BeNullOrEmpty
     }
 
-    It "Publish-FlutterWeb ya no descarta la salida de scp" {
-        $script:FlutterWeb | Should -Not -Match '&\s*scp[^\n]*Out-Null'
+    It "los cuatro que transferían archivos usan el helper" {
+        foreach ($n in 'Publish-NodeApi.ps1', 'Publish-FlutterWeb.ps1', 'Publish-DockerStack.ps1', 'FlutterWebPlan.ps1') {
+            $f = $script:Fuentes | Where-Object Name -eq $n
+            $f | Should -Not -BeNullOrEmpty -Because "$n debería existir"
+            (Get-Content $f.FullName -Raw) | Should -Match 'Invoke-RemoteCopy' -Because "$n transfiere archivos"
+        }
     }
 
-    It "ambos usan el helper compartido" {
-        $script:NodeApi    | Should -Match 'Invoke-RemoteCopy'
-        $script:FlutterWeb | Should -Match 'Invoke-RemoteCopy'
-    }
+    It "solo dos archivos invocan scp a mano, y por motivos distintos" {
+        # PublishHelpers  — es el helper: captura la salida para poder incluirla en el error.
+        # SshHelpers      — New-SshAccess es INTERACTIVO: canaliza a Out-Host para que el prompt
+        #                   de contraseña llegue a la terminal durante el bootstrap. Capturar la
+        #                   salida ahí dejaría al operador esperando delante de una pantalla
+        #                   muda. Es una excepción deliberada, no un olvido.
+        #
+        # Un tercero significa que alguien volvió a escribir la invocación a mano.
+        $conScp = @($script:Fuentes | Where-Object {
+            (Get-Content $_.FullName -Raw) -match '&\s*scp\s'
+        } | ForEach-Object { $_.Name } | Sort-Object)
 
-    It "los helpers de ejecución remota tampoco lo descartan" {
-        # Invoke-RemoteScript y su variante Capture son por donde pasan los dos cmdlets para
-        # ejecutar en el servidor, y tenian el mismo agujero.
-        $script:Helpers | Should -Not -Match '&\s*scp[^\n]*Out-Null'
+        $conScp | Should -Be @('PublishHelpers.ps1', 'SshHelpers.ps1')
     }
 }
