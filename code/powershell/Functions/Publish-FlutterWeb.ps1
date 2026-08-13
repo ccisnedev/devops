@@ -319,9 +319,9 @@ function Publish-FlutterWeb {
                 try {
                     # ─── 7. SCP: subir zip ───────────────────
                     Write-Host "  Subiendo archivos a $ip..." -ForegroundColor Cyan
-                    $scpArgs = @('-i', $privateKeyPath, '-P', $sshPort, $localZipPath, "$($user)@$($ip):$remoteZipPath")
-                    & scp @scpArgs 2>&1 | Out-Null
-                    if ($LASTEXITCODE -ne 0) { throw "Error al subir zip (scp exit: $LASTEXITCODE)" }
+                    Invoke-RemoteCopy -LocalPath $localZipPath -RemotePath $remoteZipPath `
+                                      -User $user -IP $ip -Port $sshPort -KeyPath $privateKeyPath `
+                                      -Descripcion 'el zip del release'
                     Write-Host "    Zip subido" -ForegroundColor Green
 
                     # ─── 8. Instalar release ─────────────────

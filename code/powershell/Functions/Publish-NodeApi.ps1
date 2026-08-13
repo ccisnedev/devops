@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
 Despliega una API Node.js/TypeScript a un servidor Linux remoto vía SSH.
 
@@ -523,9 +523,9 @@ function Publish-NodeApi {
                     Write-Host "  Subiendo archivos a $ip..." -ForegroundColor Cyan
 
                     # Subir tarball
-                    $scpArgs = @('-i', $privateKeyPath, '-P', $sshPort, $localTarball, "$($user)@$($ip):$remoteTarball")
-                    & scp @scpArgs 2>&1 | Out-Null
-                    if ($LASTEXITCODE -ne 0) { throw "Error al subir tarball (scp exit: $LASTEXITCODE)" }
+                    Invoke-RemoteCopy -LocalPath $localTarball -RemotePath $remoteTarball `
+                                      -User $user -IP $ip -Port $sshPort -KeyPath $privateKeyPath `
+                                      -Descripcion 'el tarball del release'
                     Write-Host "    Tarball subido" -ForegroundColor Green
 
                     # Subir el env como .env del release (LF para bash en Linux). ADR 0004: se
@@ -540,9 +540,9 @@ function Publish-NodeApi {
                     } else {
                         $envContent = (Remove-DeployOnlyEnvKeys -Lines @(Get-Content $envProdPath)) -join "`n"
                         $tmpEnvPath = New-UnixTempFile -Content $envContent -Prefix "psdevops_env_"
-                        $scpEnvArgs = @('-i', $privateKeyPath, '-P', $sshPort, $tmpEnvPath, "$($user)@$($ip):$remoteEnvFile")
-                        & scp @scpEnvArgs 2>&1 | Out-Null
-                        if ($LASTEXITCODE -ne 0) { throw "Error al subir el env (scp exit: $LASTEXITCODE)" }
+                        Invoke-RemoteCopy -LocalPath $tmpEnvPath -RemotePath $remoteEnvFile `
+                                          -User $user -IP $ip -Port $sshPort -KeyPath $privateKeyPath `
+                                          -Descripcion 'el env del release'
                         Write-Host "    $EnvFile subido como .env (LF, sin MACSS_DEPLOY_*)" -ForegroundColor Green
                     }
 
@@ -561,9 +561,9 @@ function Publish-NodeApi {
                             -RuntimeEnv $rtEnv -Processes $rtProcs -Restart $rtRestart -RestartDelaySec $rtDelay
                         $tmpEcoPath = New-UnixTempFile -Content $ecoJson -Prefix "psdevops_eco_"
                         $remoteEcoFile = "/tmp/${appName}.ecosystem.json"
-                        $scpEcoArgs = @('-i', $privateKeyPath, '-P', $sshPort, $tmpEcoPath, "$($user)@$($ip):$remoteEcoFile")
-                        & scp @scpEcoArgs 2>&1 | Out-Null
-                        if ($LASTEXITCODE -ne 0) { throw "Error al subir el ecosystem generado (scp exit: $LASTEXITCODE)" }
+                        Invoke-RemoteCopy -LocalPath $tmpEcoPath -RemotePath $remoteEcoFile `
+                                          -User $user -IP $ip -Port $sshPort -KeyPath $privateKeyPath `
+                                          -Descripcion 'el ecosystem.config.json generado'
                         $procCount = if ($rtProcs) { @($rtProcs).Count } else { 1 }
                         Write-Host "    ecosystem.config.json generado ($procCount proceso(s), config-as-data)" -ForegroundColor Green
                     }
@@ -827,8 +827,9 @@ $envKeysBlock
                     $remoteName = [IO.Path]::GetFileName($tmpLocal)
                     $remotePath = "/tmp/$remoteName"
 
-                    & scp -i $privateKeyPath -P $sshPort $tmpLocal "$($user)@$($ip):$remotePath" 2>&1 | Out-Null
-                    if ($LASTEXITCODE -ne 0) { throw "Error al conectar con el servidor (scp exit: $LASTEXITCODE)" }
+                    Invoke-RemoteCopy -LocalPath $tmpLocal -RemotePath $remotePath `
+                                      -User $user -IP $ip -Port $sshPort -KeyPath $privateKeyPath `
+                                      -Descripcion 'el sondeo del plan'
 
                     $remoteCmd = "bash $remotePath ; rc=`$?; rm -f $remotePath; exit `$rc"
                     $output = & ssh -i $privateKeyPath -p $sshPort "$($user)@$($ip)" $remoteCmd 2>&1
@@ -1019,8 +1020,9 @@ $envKeysBlock
                 $tmpProbe = New-UnixTempFile -Content $probeScript -Prefix "psdevops_probe_shared_"
                 try {
                     $remoteProbe = "/tmp/$([IO.Path]::GetFileName($tmpProbe))"
-                    & scp -i $privateKeyPath -P $sshPort $tmpProbe "$($user)@$($ip):$remoteProbe" 2>&1 | Out-Null
-                    if ($LASTEXITCODE -ne 0) { throw "Error al conectar con el servidor (scp exit: $LASTEXITCODE)" }
+                    Invoke-RemoteCopy -LocalPath $tmpProbe -RemotePath $remoteProbe `
+                                      -User $user -IP $ip -Port $sshPort -KeyPath $privateKeyPath `
+                                      -Descripcion 'el sondeo de sharedPaths'
                     $probeOut = & ssh -i $privateKeyPath -p $sshPort "$($user)@$($ip)" "bash $remoteProbe; rm -f $remoteProbe" 2>&1
                 } finally {
                     Remove-Item -LiteralPath $tmpProbe -ErrorAction SilentlyContinue
@@ -1079,8 +1081,9 @@ $envKeysBlock
 
                 try {
                     Write-Host "  Subiendo shared a $ip..." -ForegroundColor Cyan
-                    & scp -i $privateKeyPath -P $sshPort $localTarball "$($user)@$($ip):$remoteTarball" 2>&1 | Out-Null
-                    if ($LASTEXITCODE -ne 0) { throw "Error al subir el tarball de shared (scp exit: $LASTEXITCODE)" }
+                    Invoke-RemoteCopy -LocalPath $localTarball -RemotePath $remoteTarball `
+                                      -User $user -IP $ip -Port $sshPort -KeyPath $privateKeyPath `
+                                      -Descripcion 'el tarball de sharedPaths'
 
                     $useSudo = if ($deployConfig.runtime -and ($null -ne $deployConfig.runtime.useSudo)) {
                         [bool]$deployConfig.runtime.useSudo
