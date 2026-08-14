@@ -211,9 +211,9 @@ MACSS_DEPLOY_SSH_ALIAS=
                         throw "El elemento de 'include'/compose no existe: $it (relativo a $cwd)"
                     }
                 }
-                $localTar = Join-Path $env:TEMP $tarballName
+                $localTar = Join-Path ([System.IO.Path]::GetTempPath()) $tarballName
                 $tarArgs = @('-czf', $localTar, '-C', $cwd) + $items
-                & tar.exe @tarArgs
+                & tar @tarArgs
                 if (-not (Test-Path $localTar)) { throw "Error al crear el tarball del stack." }
                 $tarMB = [math]::Round((Get-Item $localTar).Length / 1MB, 1)
                 Write-Host "    $tarballName ($tarMB MB)" -ForegroundColor Green
@@ -226,7 +226,7 @@ MACSS_DEPLOY_SSH_ALIAS=
                     if ($LASTEXITCODE -ne 0) { throw "docker compose build (local) falló con código $LASTEXITCODE" }
 
                     Write-Host "  Serializando imagen $($cfg.Image) (docker save)..." -ForegroundColor Cyan
-                    $imageTar = Join-Path $env:TEMP "$($cfg.Name)-image-$release.tar"
+                    $imageTar = Join-Path ([System.IO.Path]::GetTempPath()) "$($cfg.Name)-image-$release.tar"
                     & docker save -o $imageTar $cfg.Image
                     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $imageTar)) { throw "docker save de $($cfg.Image) falló." }
                     $imgMB = [math]::Round((Get-Item $imageTar).Length / 1MB, 1)
