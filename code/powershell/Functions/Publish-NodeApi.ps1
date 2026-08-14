@@ -415,7 +415,7 @@ function Publish-NodeApi {
                 }
 
                 # ─── 5. Preparar artefactos ──────────────────
-                $localTarball = Join-Path $env:TEMP $tarballName
+                $localTarball = Join-Path ([System.IO.Path]::GetTempPath()) $tarballName
                 $isWindowsHost = ($env:OS -eq 'Windows_NT')
 
                 if ($runtime.Build) {
@@ -462,7 +462,7 @@ function Publish-NodeApi {
                         $tarItems += 'ecosystem.config.js'
                         Write-Host "  ecosystem.config.js detected (config-as-code)" -ForegroundColor Green
                     }
-                    $tarCmd = "tar.exe -czf `"$localTarball`" -C `"$cwd`" $($tarItems -join ' ')"
+                    $tarCmd = "tar -czf `"$localTarball`" -C `"$cwd`" $($tarItems -join ' ')"
                     $tarResult = Invoke-Expression $tarCmd 2>&1
                     if (-not (Test-Path $localTarball)) {
                         throw "Error al crear tarball: $tarResult"
@@ -479,13 +479,13 @@ function Publish-NodeApi {
                     $modulesPlan = Get-ProdModulesPlan -IsWindowsHost $isWindowsHost
                     Write-Host "  Empaquetando (git archive HEAD + npm ci --omit=dev, $modulesPlan)..." -ForegroundColor Cyan
 
-                    $srcTar = Join-Path $env:TEMP "psdevops_src_$([guid]::NewGuid().ToString('N').Substring(0,8)).tar"
+                    $srcTar = Join-Path ([System.IO.Path]::GetTempPath()) "psdevops_src_$([guid]::NewGuid().ToString('N').Substring(0,8)).tar"
 
                     # Materializar el script a un temp con LF (sin BOM) y ejecutarlo como
                     # archivo — NO por stdin: al pipear, PowerShell añade un CRLF final que
                     # bash interpreta como un comando `\r` (exit 127 espurio tras el build).
                     $buildScript = (Get-BashScript -ScriptName 'Build-NodeApiPackage.sh' -Placeholders @{}) -replace "`r`n", "`n" -replace "`r", "`n"
-                    $buildScriptTmp = Join-Path $env:TEMP "psdevops_build_$([guid]::NewGuid().ToString('N').Substring(0,8)).sh"
+                    $buildScriptTmp = Join-Path ([System.IO.Path]::GetTempPath()) "psdevops_build_$([guid]::NewGuid().ToString('N').Substring(0,8)).sh"
                     [System.IO.File]::WriteAllText($buildScriptTmp, $buildScript, (New-Object System.Text.UTF8Encoding $false))
                     try {
                         # Empaqueta el subarbol versionado del componente desde el TOPLEVEL del
@@ -1052,11 +1052,11 @@ $envKeysBlock
                 # sin las claves MACSS_DEPLOY_* (metadato de despliegue, no configuración de la
                 # app). Es la misma limpieza que -Apply hacía al subirlo.
                 $tarballName = "${appName}-shared.tar.gz"
-                $localTarball = Join-Path $env:TEMP $tarballName
+                $localTarball = Join-Path ([System.IO.Path]::GetTempPath()) $tarballName
                 $remoteTarball = "/tmp/$tarballName"
                 Remove-Item -LiteralPath $localTarball -ErrorAction SilentlyContinue
 
-                $staging = Join-Path $env:TEMP "psdevops_shared_$([guid]::NewGuid().ToString('N'))"
+                $staging = Join-Path ([System.IO.Path]::GetTempPath()) "psdevops_shared_$([guid]::NewGuid().ToString('N'))"
                 New-Item -ItemType Directory -Path $staging -Force | Out-Null
                 try {
                     foreach ($p in $sharedList) {
@@ -1072,7 +1072,7 @@ $envKeysBlock
                         }
                     }
 
-                    $tarCmd = "tar.exe -czf `"$localTarball`" -C `"$staging`" $($sharedList -join ' ')"
+                    $tarCmd = "tar -czf `"$localTarball`" -C `"$staging`" $($sharedList -join ' ')"
                     Invoke-Expression $tarCmd 2>&1 | Out-Null
                 } finally {
                     Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue

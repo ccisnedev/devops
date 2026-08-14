@@ -66,6 +66,27 @@ docker run --rm -v "$PRIV_WIN:/priv:ro" "$IMG" pwsh -NoProfile -Command '
         exit 1
     }
     Write-Host "  caso 3 (resuelve al dacpac real): PASS"
+
+    # 4. TEMP no existe fuera de Windows. Se comprueba aqui porque es el hecho del entorno
+    #    que justifica el barrido de $env:TEMP en Pester: sin esto, alguien podria pensar
+    #    que aquella regla es una manía y volver a escribir Join-Path $env:TEMP.
+    #
+    #    Fue el segundo defecto del despliegue 010: "Cannot bind argument to parameter
+    #    Path because it is null", sin decir cual de los siete sitios.
+    if ([string]::IsNullOrEmpty($env:TEMP)) {
+        Write-Host "  caso 4 (TEMP no existe en Linux, por eso el barrido): PASS"
+    } else {
+        Write-Host "  FALLO: TEMP existe en esta imagen; la premisa del barrido hay que revisarla" -ForegroundColor Red
+        exit 1
+    }
+
+    # 5. Y lo que se usa en su lugar si funciona.
+    $tmp = [System.IO.Path]::GetTempPath()
+    if ([string]::IsNullOrEmpty($tmp) -or -not (Test-Path $tmp)) {
+        Write-Host "  FALLO: GetTempPath no resuelve en Linux" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "  caso 5 (GetTempPath resuelve a $tmp): PASS"
 '
 
 echo "DacpacPathLinux: PASS"
