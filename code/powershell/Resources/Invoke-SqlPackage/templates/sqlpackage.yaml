@@ -43,6 +43,33 @@ properties:
   # Y RoleMembership NO puede ir en esta lista mientras DropRoleMembersNotInSource sea true
   # ("conflicts with the selected DoNotDropObjectType"): son dos formas de decir lo mismo.
 
+  # ─── Frontera con el DBA: el despliegue NO administra opciones de la BD ──
+  # Ver ADR 0016, hermana de la 0013: las cuentas y las opciones de base de datos son las dos
+  # caras de la misma regla. El repositorio versiona el ESQUEMA de la aplicación; la
+  # configuración de la instancia la administra el DBA.
+  #
+  # ScriptDatabaseOptions viene ACTIVO por omisión. Con él, antes de tocar una sola tabla
+  # sqlpackage compara las opciones de base de datos del modelo contra las del servidor y emite
+  # un ALTER DATABASE por cada diferencia: modelo de recuperación, nivel de compatibilidad,
+  # collation, AUTO_CLOSE, AUTO_SHRINK. Como el proyecto no las declara —no son suyas—, el
+  # dacpac emite el default de DacFx. Para el modelo de recuperación ese default es FULL:
+  #
+  #   ALTER DATABASE [$(DatabaseName)] SET RECOVERY FULL WITH ROLLBACK IMMEDIATE;
+  #
+  # Medido en producción el 2026-08-17: el DBA puso cuatro bases en SIMPLE y el despliegue las
+  # devolvió a FULL. Además el WITH ROLLBACK IMMEDIATE corta las transacciones abiertas de la
+  # aplicación — no es un efecto secundario, es la forma en que se aplica el cambio.
+  #
+  # Lo grave es que el DeployReport NO lo declara: sale <Alerts /> vacío. La compuerta de
+  # revisión mostraba un plan limpio de un despliegue que empezaba cambiando la política de
+  # respaldo. Sólo aparece si se pide el .sql con -Script.
+  #
+  # Una sola propiedad gobierna el conjunto entero; no hay que enumerar qué opciones proteger.
+  #
+  # Si su proyecto SÍ es dueño de su instancia —una base que el repositorio crea y administra de
+  # punta a punta— quite esta línea de forma deliberada y deje constancia de por qué.
+  ScriptDatabaseOptions: false
+
 # ─── Configuración por acción ────────────────────────────────────────
 
 # Publish: despliega el .dacpac al servidor
