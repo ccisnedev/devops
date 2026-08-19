@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [6.8.5] - 2026-08-18
+
+### Changed
+
+- **`-Init` deja de generar proyectos que administran las opciones de la base de datos.** La
+  plantilla ahora incluye `ScriptDatabaseOptions: false` (ADR 0016).
+
+  `sqlpackage` trae esa propiedad activa por omision: antes de tocar una sola tabla compara las
+  opciones de base de datos del modelo contra las del servidor y emite un `ALTER DATABASE` por
+  cada diferencia. Como el proyecto no declara el modelo de recuperacion —no es suyo—, el dacpac
+  emitia el default de DacFx:
+
+  ```sql
+  ALTER DATABASE [...] SET RECOVERY FULL WITH ROLLBACK IMMEDIATE;
+  ```
+
+  Medido en produccion el 2026-08-17: el DBA puso cuatro bases en SIMPLE y el despliegue las
+  devolvio a FULL. El `WITH ROLLBACK IMMEDIATE` ademas corta las transacciones abiertas de la
+  aplicacion — no es un efecto secundario, es la forma en que se aplica el cambio.
+
+  Lo que hace que esto durara meses: el `DeployReport` **no lo declara**. Sale `<Alerts />`
+  vacio. La compuerta de revision mostraba un plan limpio de un despliegue que empezaba
+  cambiando la politica de respaldo. Un test protege ahora la plantilla, porque la revision del
+  plan no puede.
+
+  Es la hermana de la ADR 0013: las cuentas y las opciones de base de datos son las dos caras de
+  la misma frontera. El repositorio versiona el esquema de la aplicacion; la instancia la
+  administra el DBA.
+
+  Los `sqlpackage.yaml` ya versionados **no** se corrigen solos.
+
 ## [6.3.1] - 2026-08-08
 
 ### Changed

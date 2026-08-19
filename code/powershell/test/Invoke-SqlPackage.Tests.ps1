@@ -133,6 +133,17 @@ Describe 'Etapa 2: Invoke-SqlPackage -Init' {
         $parsed.properties.DoNotDropObjectTypes | Should -Be 'Logins;Users'
     }
 
+    # ADR 0016: el despliegue no administra las opciones de la instancia. ScriptDatabaseOptions
+    # viene activo por omision en sqlpackage, y como el proyecto no declara RecoveryMode el dacpac
+    # emite el default de DacFx (FULL), revirtiendo la politica de respaldo del DBA en cada
+    # despliegue. El DeployReport no lo declara, asi que la compuerta de revision no lo atrapa:
+    # esta prueba es la unica red.
+    It 'El sqlpackage.yaml no administra las opciones de base de datos por defecto' {
+        $yamlPath = Join-Path $script:testDir "sqlpackage.yaml"
+        $parsed = ConvertFrom-Yaml (Get-Content $yamlPath -Raw)
+        $parsed.properties.ScriptDatabaseOptions | Should -BeFalse
+    }
+
     # sqlpackage rechaza DoNotDropObjectTypes si DropObjectsNotInSource es false, y rechaza
     # RoleMembership dentro de la lista mientras DropRoleMembersNotInSource sea true. La
     # plantilla no puede generar ninguna de esas dos combinaciones.
