@@ -5,3 +5,5 @@ cleanrooms/
 # Inquiry — local workspace & cycle state
 .inquiry/
 docs/requisitions/
+# MACSS — local workspace (git-ignored)
+.macss/
