@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [6.9.0] - 2026-09-09
+
+### Added
+
+- **`New-SshAccess -PublicKeyFile`: instalar la clave publica de otra persona.** Hasta ahora
+  el cmdlet solo sabia dar acceso a quien lo ejecutaba: generaba el par, lo instalaba y
+  registraba el alias en el `~/.ssh/config` local. Para dar `ssh prod` a un tecnico de
+  soporte con una cuenta compartida (`soporte`) eso obligaba a generar la clave privada en
+  la maquina del operador y enviarsela, o a instalar el `.pub` a mano con el script.
+
+  Ahora el flujo es el correcto: el colega genera su par (`ssh-keygen`), envia **solo el
+  `.pub`**, y el operador con acceso de bootstrap lo instala:
+
+  ```powershell
+  New-SshAccess -PublicKeyFile .\prod.pub -Server prod -HostName 192.168.10.18 -User soporte `
+                -BootstrapUser cacsiadmin -BootstrapIdentityFile ~/.ssh/prod
+  ```
+
+  El cmdlet valida el archivo antes de tocar el servidor (rechaza una clave PRIVADA enviada
+  por error y cualquier cosa que no sea una unica linea `<tipo> AAAA... [comentario]`),
+  instala por el mismo `Install-AuthorizedKey.sh` (sudo implicito cuando el bootstrap no es
+  el usuario destino), **no** genera clave, **no** toca el `~/.ssh/config` del operador y
+  **no** verifica el login (la privada no esta en esta maquina): devuelve `Verified = $false`
+  e imprime el bloque `Host` que el colega pega en SU config. `-Server` pasa a ser opcional
+  en este modo y solo nombra el alias de ese bloque. Avisa si la clave viene sin comentario,
+  porque el comentario es lo que permite revocarla despues con `Remove-SshAccess`.
+
+  Nuevo helper privado `Read-SshPublicKeyFile` (validacion + huella SHA256), cubierto por
+  `test/SshAccessPublicKeyFile.Tests.ps1` con el paso remoto mockeado.
+
 ## [6.8.5] - 2026-08-18
 
 ### Changed
