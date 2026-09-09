@@ -27,6 +27,48 @@ Key parameters: `-Server` (config alias), `-HostName`, `-User` (target/owner),
 another user's `authorized_keys`), `-KeyType` (default `ed25519`), `-KeyPath` (default
 `~/.ssh/<Server>`; reused if it already exists), `-Force`.
 
+### Giving a colleague access (`-PublicKeyFile`)
+
+When someone else needs `ssh <alias>` and you are the one holding the bootstrap access,
+do not generate their key for them: private keys should never travel. The colleague
+generates the pair on their machine and sends you **only the `.pub`**; you install it.
+
+1. Colleague (Windows PowerShell or any shell with OpenSSH):
+
+   ```powershell
+   ssh-keygen -t ed25519 -f $HOME\.ssh\prod -C "soporte@prod-mmeca-$(Get-Date -Format yyyyMMdd)"
+   # send  $HOME\.ssh\prod.pub  (ONLY the .pub)
+   ```
+
+2. You (operator with bootstrap access):
+
+   ```powershell
+   New-SshAccess -PublicKeyFile .\prod.pub -Server prod -HostName 192.168.10.18 -User soporte `
+                 -BootstrapUser cacsiadmin -BootstrapIdentityFile ~/.ssh/prod
+   ```
+
+   The cmdlet validates the file (rejects a private key or anything that is not one
+   OpenSSH public-key line), installs it into the target user's `authorized_keys` (via
+   sudo when the bootstrap login differs), and prints the `Host` block for step 3. It does
+   **not** generate a key, does **not** touch your `~/.ssh/config`, and cannot verify the
+   login (you do not hold the private key), so the returned object has `Verified = $false`.
+
+3. Colleague appends the printed block to their `~/.ssh/config`:
+
+   ```
+   Host prod
+       HostName 192.168.10.18
+       User soporte
+       Port 22
+       IdentityFile ~/.ssh/prod
+       IdentitiesOnly yes
+   ```
+
+   and runs `ssh prod`.
+
+Insist on a key **comment** that identifies the person (`<user>@<server>-<who>-<date>`):
+it is what lets you find and revoke that one key later with `Remove-SshAccess -PublicKey`.
+
 ## Remove-SshAccess (revoke)
 
 SSH keys have no native expiry: a key is valid while its public key sits in the server's

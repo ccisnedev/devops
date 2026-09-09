@@ -176,6 +176,101 @@ function Get-SshKeyFingerprint {
 
 <#
 .SYNOPSIS
+Reads and validates a public key file (someone else's .pub, typically). Returns the
+normalized key line, its parts and SHA256 fingerprint. Rejects private keys and
+anything that is not a single "<type> <base64> [comment]" line.
+#>
+function Read-SshPublicKeyFile {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { throw "Public key file not found: $Path" }
+    $raw = (Get-Content -LiteralPath $Path -Raw)
+    if ($raw -match 'PRIVATE KEY') {
+        throw "'$Path' is a PRIVATE key. Ask for the .pub file; the private key must never leave its owner's machine."
+    }
+    $lines = @($raw -split "`r?`n" | Where-Object { $_.Trim() -ne '' })
+    if ($lines.Count -ne 1) { throw "'$Path' must contain exactly one public key line (found $($lines.Count))." }
+    $parts = $lines[0].Trim() -split '\s+'
+    if ($parts.Count -lt 2 -or $parts[0] -notmatch '^(ssh-(ed25519|rsa|dss)|ecdsa-sha2-nistp(256|384|521)|sk-(ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com)$' -or $parts[1] -notmatch '^AAAA[A-Za-z0-9+/=]+$') {
+        throw "'$Path' does not look like an OpenSSH public key (expected '<type> AAAA... [comment]')."
+    }
+    return [pscustomobject]@{
+        PublicKey   = ($parts -join ' ')
+        Type        = $parts[0]
+        Blob        = $parts[1]
+        Comment     = ($(if ($parts.Count -gt 2) { ($parts[2..($parts.Count - 1)] -join ' ') } else { '' }))
+        Fingerprint = (Get-SshKeyFingerprint -PublicKeyPath $Path)
+    }
+}
+
+<#
+.SYNOPSIS
+New-SshAccess -PublicKeyFile flow: install a colleague's .pub into the target user's
+authorized_keys (via the bootstrap login, sudo when needed). No key generation, no local
+~/.ssh/config change, no login verification (the private key is not ours). Prints the
+Host block the colleague must add on their side and returns a summary object.
+#>
+function Install-SshForeignPublicKey {
+    [CmdletBinding()]
+    param(
+        [string]$Server,
+        [Parameter(Mandatory)][string]$HostName,
+        [Parameter(Mandatory)][string]$User,
+        [int]$Port = 22,
+        [string]$BootstrapUser,
+        [string]$BootstrapIdentityFile,
+        [switch]$Sudo,
+        [Parameter(Mandatory)][string]$PublicKeyFile
+    )
+    if (-not $Server) { $Server = $HostName }
+
+    Write-Host ""
+    Write-Host "  New-SshAccess - install foreign public key for $User@$HostName" -ForegroundColor Cyan
+
+    $key = Read-SshPublicKeyFile -Path $PublicKeyFile
+    Write-Host "  Public key : $($key.Type) $($key.Fingerprint) $($key.Comment)" -ForegroundColor DarkGray
+    if (-not $key.Comment) {
+        Write-Host "  WARNING: the key has no comment. Ask for one (e.g. <user>@<server>-<who>) so it can be identified and revoked later." -ForegroundColor Yellow
+    }
+
+    $bootstrap = if ($BootstrapUser) { $BootstrapUser } else { $User }
+    $useSudo = ($Sudo -or ($bootstrap -ne $User))
+    Write-Host "  Installing public key for '$User' via '$bootstrap' (sudo=$useSudo)..." -ForegroundColor DarkGray
+    if ($useSudo -and -not $BootstrapIdentityFile) { Write-Host "  You may be prompted for your password up to 3 times (scp, ssh, sudo)." -ForegroundColor Yellow }
+
+    $installScript = Get-BashScript -ScriptName 'Install-AuthorizedKey.sh' -Placeholders @{
+        '__TARGET_USER__' = $User
+        '__PUBKEY__'      = $key.PublicKey
+        '__USE_SUDO__'    = ($(if ($useSudo) { '1' } else { '0' }))
+    }
+    Invoke-RemoteBash -ScriptContent $installScript -User $bootstrap -HostName $HostName -Port $Port -IdentityFile $BootstrapIdentityFile -Tty:$useSudo -Prefix 'macss_authkey_'
+    $rc = $LASTEXITCODE
+    if ($rc -ne 0) { throw "Public key install failed (exit $rc)." }
+
+    $block = New-SshConfigEntry -Alias $Server -HostName $HostName -User $User -Port $Port -IdentityFile "~/.ssh/$Server"
+    Write-Host ""
+    Write-Host "  OK: public key installed for $User@$HostName. Not verified (the private key is not on this machine)." -ForegroundColor Green
+    Write-Host "  Send this block to the key owner to append to THEIR ~/.ssh/config (adjust IdentityFile to where they saved the private key):" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host ($block -replace '(?m)^', '      ')
+    Write-Host ""
+    Write-Host "  Then they can run: ssh $Server" -ForegroundColor DarkGray
+
+    return [pscustomobject]@{
+        Server        = $Server
+        HostName      = $HostName
+        User          = $User
+        KeyPath       = $null
+        PublicKeyFile = (Resolve-Path -LiteralPath $PublicKeyFile).Path
+        Fingerprint   = $key.Fingerprint
+        Comment       = $key.Comment
+        Verified      = $false
+        ConfigBlock   = $block
+    }
+}
+
+<#
+.SYNOPSIS
 Extracts the base64 blob (second field) of a public key line. Used to match keys
 in a server's authorized_keys regardless of the trailing comment.
 #>

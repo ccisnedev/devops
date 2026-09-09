@@ -48,31 +48,53 @@ Path of the key. Defaults to ~/.ssh/<Server>. If the path already exists it is R
 .PARAMETER Comment
 Public key comment (default "<User>@<Server>-<yyyyMMdd>").
 
+.PARAMETER PublicKeyFile
+Install SOMEONE ELSE's public key (.pub) instead of generating a pair. Use it when a
+colleague generated their own key and sent you only the .pub: the private key never
+leaves their machine. In this mode the cmdlet does not generate a key, does not touch
+your ~/.ssh/config and cannot verify the login (you do not hold the private key); it
+prints the Host block the colleague must add to THEIR ~/.ssh/config. -Server is optional
+here and only names the alias in that printed block (defaults to -HostName).
+
 .PARAMETER Force
 Overwrite an existing key at -KeyPath and replace an existing Host alias.
 
 .EXAMPLE
 New-SshAccess -Server fotos-vm -HostName 192.168.10.110 -User svc-fotos -BootstrapUser '44358590@cacsi.local' -Sudo
+
+.EXAMPLE
+# A colleague ran `ssh-keygen -t ed25519 -f ~/.ssh/prod -C soporte@prod-mmeca` and sent prod.pub:
+New-SshAccess -PublicKeyFile .\prod.pub -Server prod -HostName 192.168.10.18 -User soporte `
+              -BootstrapUser cacsiadmin -BootstrapIdentityFile ~/.ssh/prod
 #>
 function New-SshAccess {
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName = 'Generate')]
     param(
-        [Parameter(Mandatory)][string]$Server,
+        [Parameter(Mandatory, ParameterSetName = 'Generate')]
+        [Parameter(ParameterSetName = 'InstallPublicKey')]
+        [string]$Server,
         [Parameter(Mandatory)][string]$HostName,
         [Parameter(Mandatory)][string]$User,
         [int]$Port = 22,
         [string]$BootstrapUser,
         [string]$BootstrapIdentityFile,
         [switch]$Sudo,
-        [string]$KeyType = 'ed25519',
-        [string]$KeyPath,
-        [string]$Comment,
+        [Parameter(ParameterSetName = 'Generate')][string]$KeyType = 'ed25519',
+        [Parameter(ParameterSetName = 'Generate')][string]$KeyPath,
+        [Parameter(ParameterSetName = 'Generate')][string]$Comment,
+        [Parameter(Mandatory, ParameterSetName = 'InstallPublicKey')][string]$PublicKeyFile,
         [switch]$Force
     )
 
     $ErrorActionPreference = 'Stop'
     . "$PSScriptRoot/../Private/SshHelpers.ps1"
     . "$PSScriptRoot/../Private/PublishHelpers.ps1"
+
+    if ($PSCmdlet.ParameterSetName -eq 'InstallPublicKey') {
+        return Install-SshForeignPublicKey -Server $Server -HostName $HostName -User $User -Port $Port `
+            -BootstrapUser $BootstrapUser -BootstrapIdentityFile $BootstrapIdentityFile -Sudo:$Sudo `
+            -PublicKeyFile $PublicKeyFile
+    }
 
     Write-Host ""
     Write-Host "  New-SshAccess - $Server ($User@$HostName)" -ForegroundColor Cyan
