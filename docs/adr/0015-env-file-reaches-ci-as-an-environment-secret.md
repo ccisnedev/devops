@@ -99,6 +99,13 @@ el release; filtrarlas al publicar crearía dos configuraciones distintas para e
   GitHub es real y hay que contarla al evaluar el riesgo.
 - **La configuración sigue sin ser auditable en contenido.** Se sabe *cuándo* cambió y *quién* lo
   publicó, no *qué* cambió. Versionar configuración cifrada es otro problema.
+  > **Cerrado (2026-09-20, [ADR 0017](0017-configuracion-compuesta-desde-archivos-versionados.md)).**
+  > Y sin cifrar nada, que era la salida que aquí se daba por necesaria. La configuración se separa
+  > del secreto y se versiona en claro en `env/`; lo que queda como secret del environment es solo
+  > `secret/<entorno>.secret`. El diff de una PR dice qué cambió. Esto también encoge la **tercera
+  > copia** del punto anterior: sigue habiendo tres, pero la de la máquina y la de GitHub pasan a
+  > contener solo el material que rota, y dejan de republicarse cuando cambia una variable que no es
+  > secreta.
 - **La ADR 0014 no se revierte.** `.env` como `sharedPath` sigue disponible y probado, y es
   razonable donde cambiar configuración sin release importe más que el rollback por versión. Deja
   de ser lo recomendado para componentes con rollback, que hoy son todos los de `impulsa`.

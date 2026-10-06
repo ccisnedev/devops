@@ -1,6 +1,15 @@
 # ADR 0004: Deploy target lives in the (gitignored) env file, selected by `-EnvFile`
 
-**Status:** Accepted (2026-07-07) · **Enmendada** (2026-08-12) por la ADR 0011 del handbook
+**Status:** Accepted (2026-07-07) · **Enmendada** (2026-08-12) por la ADR 0011 del handbook ·
+**Acotada** (2026-09-20) por la [ADR 0017](0017-configuracion-compuesta-desde-archivos-versionados.md)
+
+> **Acotación — el env file deja de ser un archivo y pasa a ser dos.**
+> Lo que sigue en pie: el destino sale de la configuración del entorno y no del archivo de
+> proyecto versionado, y `-EnvFile` sigue existiendo. Lo que se acota son las dos consecuencias
+> marcadas más abajo: los entornos pasan a estar versionados, así que un entorno nuevo **sí** es
+> una PR; y el nombre del entorno deja de seleccionar el destino por sí mismo. Los dos puntos que
+> esta ADR dejó en **Deferred** —`-Environment <name>` y el layering de archivos— se adoptan en la
+> ADR 0017, el segundo con una mecánica distinta de la que aquí se anticipó.
 
 > **Enmienda — de dónde lo toma un ejecutor que no es una persona.**
 > Esta ADR decidió que el destino sale del env file y no del archivo versionado, y eso no
@@ -139,13 +148,37 @@ cmdlets (`Publish-FlutterWeb`, `Publish-DockerStack`, `Invoke-PgSchema`) follow 
   `~/.ssh/config`.
 - **No duplication, no PR to switch/add a target:** a new environment is a new gitignored env
   file; nothing in the repo changes.
+  > **Acotado (2026-09-20, ADR 0017).** Deja de ser cierto, y a propósito. Con los entornos
+  > versionados en `env/`, un entorno nuevo **es** una PR. Se cambió de criterio: la fricción de
+  > una revisión se paga a cambio de que la configuración de cada entorno sea auditable y no viva
+  > solo en el portátil de quien desplegó la última vez. Lo que sigue fuera de git, y por tanto
+  > sigue sin necesitar PR, es `secret/`.
 - **Safer default:** bare `-Apply` targets the developer's own / pre-prod env; production is
   always an explicit `-EnvFile .env.production`.
 - **One mental model:** "which environment?" = "which env file?" — it selects app config
   **and** target together. (The `.env`-selection concern noted in ADR 0003's wake is resolved
   by the same lever.)
+  > **Acotado (2026-09-20, ADR 0017).** El modelo mental se conserva, con un nivel de indirección
+  > más: «¿qué entorno?» selecciona ahora **dos** archivos, `env/<nombre>.env` y
+  > `secret/<nombre>.secret`, que se componen en el `.env` que se despliega. El destino sigue
+  > saliendo del primero, como aquí se decidió — lo que **no** ocurre es que el nombre del entorno
+  > sea el destino: medido en el piloto, las capas de un mismo proyecto apuntan a destinos
+  > distintos, y una capa no usa SSH. Deducir el alias del nombre sería inventar un valor, que la
+  > ADR 0009 de `macss` prohíbe.
 - **Breaking vs 5.3.7 only:** `-Server` and `servers:` are removed. Their sole consumer
   (impulsa, on a branch) migrates to `MACSS_DEPLOY_SERVER` in the same change. Released as
   **5.3.8**.
 - **Deferred:** a name-based `-Environment <name>` sugar over `-EnvFile`; `.env` layering
   (base + per-env override) à la dotenv-flow — added only if the free-form phase shows a need.
+  > **Resuelto (2026-09-20, ADR 0017).** La fase de forma libre mostró la necesidad: 33 de las 44
+  > claves del componente piloto valen lo mismo en los tres entornos, y existen solo en portátiles.
+  > Los dos puntos se adoptan, y el segundo **no** como layering:
+  >
+  > - `-Environment <nombre>` deja de ser azúcar sobre `-EnvFile`: selecciona los dos archivos del
+  >   entorno. Y no es un default, es obligatorio; no hay entorno implícito.
+  > - El layering à la `dotenv-flow` **se descarta en favor de la composición.** Una cascada de
+  >   archivos que se sobrescriben obliga a contestar «¿de qué archivo salió este valor?» en cada
+  >   incidente, y es justo la pregunta que la ADR 0011 del handbook quiere evitar al exigir que
+  >   se imprima el origen de cada valor. En su lugar, una clave secreta se declara en el archivo
+  >   versionado como el hueco `@secret` y se completa desde `secret/`: los conjuntos de claves con
+  >   valor son disjuntos, y la precedencia entre archivos no llega a existir.
