@@ -1,4 +1,4 @@
-# FlutterWebPlan.ps1
+﻿# FlutterWebPlan.ps1
 # Builds the Publish-FlutterWeb deploy plan (local config + live server state + actions) as a
 # common plan object (DeployPlan.ps1). Shared by -Plan and -Apply so both render the same plan
 # (ADR 0002 §"Confirmation flow" step 1, ADR 0009). The remote probe is read-only.
@@ -109,6 +109,9 @@ function ConvertTo-FlutterWebPlan {
         Get-DeployPlanBlocker turns into a hard stop in -Apply.
     .PARAMETER Probe
         Object from Invoke-FlutterWebProbe (Current/Release/Nginx).
+    .PARAMETER BuildEnv
+        Object from Get-FlutterBuildEnv, or $null when the build runs without an env file
+        (ADR 0018). Only the key NAMES reach the plan: the plan is persisted to disk.
     #>
     [CmdletBinding()]
     param(
@@ -118,7 +121,8 @@ function ConvertTo-FlutterWebPlan {
         [Parameter(Mandatory)][string]$Server,
         [Parameter(Mandatory)][string]$IP,
         [Parameter(Mandatory)]$Port,
-        [Parameter(Mandatory)][string]$RemoteWebRoot
+        [Parameter(Mandatory)][string]$RemoteWebRoot,
+        $BuildEnv
     )
 
     # ─── Server-state rows (with severity levels) ────────
@@ -166,8 +170,28 @@ function ConvertTo-FlutterWebPlan {
     }
 
     # ─── Actions -Apply will perform ─────────────────────
+    # ─── Dart-defines (ADR 0018) ─────────────────────────
+    $buildCmd = 'Invoke-FlutterBuild -Web'
+    if ($BuildEnv) {
+        $buildCmd += " -EnvFile $(Split-Path -Leaf $BuildEnv.Path)"
+        $defineText = if ($BuildEnv.Defines.Count) {
+            "$($BuildEnv.Defines.Keys -join ', ') (de $(Split-Path -Leaf $BuildEnv.Path))"
+        } else {
+            "ninguno ($(Split-Path -Leaf $BuildEnv.Path) solo trae claves MACSS_*)"
+        }
+        $secretLike = @($BuildEnv.SecretLikeKeys)
+        $definesRow = if ($secretLike.Count) {
+            New-DeployPlanRow -Level 'warn' -Text ("$defineText; parecen secretos y quedan en el " +
+                "JavaScript publicado: $($secretLike -join ', ')")
+        } else {
+            New-DeployPlanRow -Level 'info' -Text $defineText
+        }
+    } else {
+        $definesRow = New-DeployPlanRow -Level 'muted' -Text 'ninguno (sin env file)'
+    }
+
     $actions = @(
-        'Compilar Flutter Web (Invoke-FlutterBuild -Web)',
+        "Compilar Flutter Web ($buildCmd)",
         'Comprimir artefactos en zip',
         "Subir zip a ${IP}:/tmp/",
         "Instalar en ${RemoteWebRoot}/${AppName}/releases/${Release}/",
@@ -185,6 +209,7 @@ function ConvertTo-FlutterWebPlan {
             'Versión'  = $Release
             'Servidor' = "$Server ($IP)"
             'Puerto'   = "$Port"
+            'Dart-defines' = $definesRow
         }
         'Estado del servidor' = [ordered]@{
             'Current' = $currentRow
@@ -216,12 +241,13 @@ function Get-FlutterWebPlan {
         [Parameter(Mandatory)][int]$SshPort,
         [Parameter(Mandatory)][string]$PrivateKeyPath,
         [Parameter(Mandatory)]$Port,
-        [Parameter(Mandatory)][string]$RemoteWebRoot
+        [Parameter(Mandatory)][string]$RemoteWebRoot,
+        $BuildEnv
     )
 
     $probe = Invoke-FlutterWebProbe -AppName $AppName -Release $Release -User $User -IP $IP `
         -SshPort $SshPort -PrivateKeyPath $PrivateKeyPath -Port $Port -RemoteWebRoot $RemoteWebRoot
 
     return ConvertTo-FlutterWebPlan -Probe $probe -AppName $AppName -Release $Release `
-        -Server $Server -IP $IP -Port $Port -RemoteWebRoot $RemoteWebRoot
+        -Server $Server -IP $IP -Port $Port -RemoteWebRoot $RemoteWebRoot -BuildEnv $BuildEnv
 }
