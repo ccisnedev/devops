@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [6.10.0] - 2026-10-07
+
+### Added
+
+- **`Invoke-FlutterBuild -EnvFile`: el entorno de una app Flutter sale del env file (ADR 0018).**
+  Hasta ahora el cmdlet compilaba siempre el mismo binario. La app elegia su backend en el codigo
+  con un booleano, y compilar para uat obligaba a editar `main.dart` y acordarse de deshacerlo.
+
+  ```powershell
+  Invoke-FlutterBuild -Apk -EnvFile .env.uat    # -> release/app_impulsa_v1.15.0_uat.apk
+  ```
+
+  - Cada clave que no empiece con `MACSS_` llega al build como dart-define
+    (`--dart-define-from-file`, mediante un JSON temporal que se borra al terminar).
+  - `MACSS_FLUTTER_FLAVOR` es el `--flavor` del APK, y el nombre del APK lo lleva. Web y Windows lo
+    ignoran.
+  - Un env file inexistente falla antes de compilar.
+  - Las claves con nombre de secreto (`KEY`, `SECRET`, `PASSWORD`) **avisan**: quedan dentro del
+    binario, y el binario se puede descompilar.
+  - Sin `-EnvFile`, el build no cambia.
+
+  Nuevo helper privado `FlutterBuildEnv.ps1` (`Get-FlutterBuildEnv`, `New-FlutterDefineFile`,
+  `Resolve-FlutterApkOutput`). Lo cubren `test/FlutterBuildEnv.Tests.ps1` y
+  `test/Invoke-FlutterBuild.Tests.ps1`, este ultimo con `flutter` simulado.
+
+### Changed
+
+- **`Publish-FlutterWeb` compila con el mismo `-EnvFile` que elige el servidor.** Antes el archivo
+  solo daba `MACSS_DEPLOY_SSH_ALIAS`, y podia publicarse en uat un JavaScript compilado contra
+  produccion. Ahora sus claves distintas de `MACSS_*` llegan al build. El plan muestra sus nombres,
+  nunca los valores, en la fila `Dart-defines`, que pasa a `warn` si alguna tiene nombre de
+  secreto. Si el archivo no existe (runner con el alias en el proceso), compila sin defines, como
+  antes.
+- **`Invoke-FlutterBuild` falla si `flutter build` falla.** Antes seguia e intentaba mover un
+  artefacto que no existia.
+
 ## [6.9.0] - 2026-09-09
 
 ### Added

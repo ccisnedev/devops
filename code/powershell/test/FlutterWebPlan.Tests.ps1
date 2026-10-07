@@ -1,4 +1,4 @@
-# FlutterWebPlan.Tests.ps1
+﻿# FlutterWebPlan.Tests.ps1
 # Tests de la lógica de decisión del plan de Publish-FlutterWeb (ADR 0009).
 #
 # Cubren `ConvertTo-FlutterWebPlan`, que es la parte PURA del builder: mapea los tres estados
@@ -283,5 +283,52 @@ Describe "Publish-FlutterWeb — el puerto declarado debe ser un puerto" {
     It "acepta un puerto valido y sigue hasta el servidor" {
         # Falla despues, al resolver el alias SSH inexistente: la validacion de puerto ya paso.
         Get-PlanError (New-AppWith -Port '3046') | Should -Not -Match 'no es un puerto valido'
+    }
+}
+
+Describe "ConvertTo-FlutterWebPlan — dart-defines del build (ADR 0018)" {
+    BeforeAll {
+        function New-BuildEnv {
+            param([string[]]$Keys = @(), [string[]]$SecretLike = @())
+            $defines = [ordered]@{}
+            foreach ($k in $Keys) { $defines[$k] = 'valor-que-no-debe-salir' }
+            return [pscustomobject]@{
+                Path = 'C:\proj\.env.uat'; Flavor = 'uat'; Defines = $defines; SecretLikeKeys = $SecretLike
+            }
+        }
+        function New-PlanWithEnv {
+            param($BuildEnv)
+            return ConvertTo-FlutterWebPlan -Probe (New-Probe) -AppName 'pyme' -Release 'v1.2.3' `
+                -Server 'uat' -IP '10.0.0.5' -Port 4020 -RemoteWebRoot '/var/www' -BuildEnv $BuildEnv
+        }
+    }
+
+    It "sin env file: la fila lo dice y la accion es el build de siempre" {
+        $plan = New-PlanFrom (New-Probe)
+        (ConvertTo-DeployPlanRow $plan.Sections['Configuración local']['Dart-defines']).Text |
+            Should -BeLike '*sin env file*'
+        $plan.Actions[0] | Should -Be 'Compilar Flutter Web (Invoke-FlutterBuild -Web)'
+    }
+
+    It "con env file: muestra los NOMBRES de las claves, nunca los valores" {
+        $plan = New-PlanWithEnv (New-BuildEnv -Keys 'APP_ENV', 'IMPULSA_BASE_URL')
+        $row = ConvertTo-DeployPlanRow $plan.Sections['Configuración local']['Dart-defines']
+        $row.Text | Should -BeLike 'APP_ENV, IMPULSA_BASE_URL (de .env.uat)'
+        $row.Text | Should -Not -BeLike '*valor-que-no-debe-salir*'
+        $row.Level | Should -Be 'info'
+        $plan.Actions[0] | Should -Be 'Compilar Flutter Web (Invoke-FlutterBuild -Web -EnvFile .env.uat)'
+    }
+
+    It "env file solo con claves MACSS_*: no hay defines" {
+        $row = ConvertTo-DeployPlanRow (New-PlanWithEnv (New-BuildEnv)).Sections['Configuración local']['Dart-defines']
+        $row.Text | Should -BeLike 'ninguno*MACSS_*'
+    }
+
+    It "claves con nombre de secreto: la fila es warn, pero no bloquea" {
+        $plan = New-PlanWithEnv (New-BuildEnv -Keys 'APP_ENV', 'MAPS_API_KEY' -SecretLike 'MAPS_API_KEY')
+        $row = ConvertTo-DeployPlanRow $plan.Sections['Configuración local']['Dart-defines']
+        $row.Level | Should -Be 'warn'
+        $row.Text | Should -BeLike '*MAPS_API_KEY*'
+        @(Get-DeployPlanBlocker -Plan $plan) | Should -HaveCount 0
     }
 }
