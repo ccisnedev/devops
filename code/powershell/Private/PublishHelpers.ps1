@@ -1241,8 +1241,19 @@ Mapa de env no-secreto (runtime.env). Acepta hashtable o PSCustomObject (deseria
 .PARAMETER Processes
 Array de procesos (runtime.processes). Cada uno acepta name, script, cwd, env.
 
+.PARAMETER WorkingDir
+Directorio de trabajo del release tal como lo ve el supervisor: el symlink 'current'
+(p. ej. /opt/app/api/current). Con este parametro cada app recibe un cwd absoluto: el
+WorkingDir si no declara cwd, WorkingDir/<cwd> si lo declara relativo, y su cwd tal cual si es
+absoluto.
+
+Sin cwd, pm2 resuelve script y cwd contra process.cwd() del CLI, que Node entrega ya resuelto
+(getcwd): el app quedaria registrado con releases/<release> y un 'pm2 restart' o un 'pm2
+resurrect' tras cambiar 'current' seguirian corriendo el release viejo (#110).
+
 .EXAMPLE
-New-Pm2EcosystemJson -AppName 'micro' -Entrypoint 'server.js' -RuntimeEnv @{ NODE_ENV = 'production' }
+New-Pm2EcosystemJson -AppName 'micro' -Entrypoint 'server.js' -RuntimeEnv @{ NODE_ENV = 'production' } `
+    -WorkingDir '/opt/app/micro/current'
 #>
 function New-Pm2EcosystemJson {
     [CmdletBinding()]
@@ -1252,7 +1263,8 @@ function New-Pm2EcosystemJson {
         [object]$RuntimeEnv,
         [object]$Processes,
         [ValidateSet('always', 'on-failure', 'no')][string]$Restart = 'always',
-        [int]$RestartDelaySec = 5
+        [int]$RestartDelaySec = 5,
+        [string]$WorkingDir
     )
 
     # Interseccion systemd n pm2 (ADR 0005): unicas claves portables por proceso.
@@ -1306,8 +1318,19 @@ function New-Pm2EcosystemJson {
             autorestart   = ($Restart -ne 'no')
             restart_delay = ($RestartDelaySec * 1000)
         }
-        $cwd = & $getKey $p 'cwd'
-        if ($cwd) { $app['cwd'] = [string]$cwd }
+        $cwd = [string](& $getKey $p 'cwd')
+        if ($WorkingDir) {
+            # El cwd se fija por el symlink 'current' (#110). Un cwd relativo se resolveria en
+            # pm2 contra el release fisico; aqui se ancla a WorkingDir. Uno absoluto se respeta.
+            $base = $WorkingDir.TrimEnd('/')
+            if (-not $cwd) {
+                $cwd = $base
+            } elseif (-not $cwd.StartsWith('/')) {
+                $rel = ($cwd -replace '^(\./)+', '').TrimEnd('/')
+                $cwd = if ($rel -and $rel -ne '.') { "$base/$rel" } else { $base }
+            }
+        }
+        if ($cwd) { $app['cwd'] = $cwd }
         if ($mergedEnv.Count -gt 0) { $app['env'] = $mergedEnv }
         [void]$apps.Add($app)
     }

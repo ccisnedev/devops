@@ -56,3 +56,54 @@ Describe 'New-Pm2EcosystemJson' {
         $app.restart_delay | Should -Be 5000
     }
 }
+
+# cwd por el symlink del release (ccisnedev/devops#110). Sin cwd, pm2 resuelve script y cwd
+# contra process.cwd() del CLI, que Node entrega ya resuelto (getcwd): el app queda anclado a
+# releases/<release> y un 'pm2 restart' tras cambiar 'current' sigue corriendo el release viejo.
+Describe 'New-Pm2EcosystemJson -WorkingDir' {
+
+    It 'single-process sin cwd declarado: cwd = WorkingDir (el symlink current)' {
+        $json = New-Pm2EcosystemJson -AppName 'api' -Entrypoint 'dist/server.js' `
+            -RuntimeEnv @{ NODE_ENV = 'production' } -WorkingDir '/opt/app/api/current'
+        ($json | ConvertFrom-Json).apps[0].cwd | Should -Be '/opt/app/api/current'
+    }
+
+    It 'multi-process: cada proceso sin cwd recibe WorkingDir' {
+        $json = New-Pm2EcosystemJson -AppName 'api' -Entrypoint 'server.js' -WorkingDir '/opt/app/api/current' `
+            -Processes @(
+                @{ name = 'api';    script = 'server.js' },
+                @{ name = 'worker'; script = 'worker.js' }
+            )
+        $apps = ($json | ConvertFrom-Json).apps
+        @($apps | Where-Object cwd -eq '/opt/app/api/current').Count | Should -Be 2
+    }
+
+    It 'cwd relativo declarado: se resuelve contra WorkingDir, no contra el release fisico' {
+        $json = New-Pm2EcosystemJson -AppName 'api' -Entrypoint 'server.js' -WorkingDir '/opt/app/api/current' `
+            -Processes @( @{ name = 'worker'; script = 'w.js'; cwd = 'worker' } )
+        ($json | ConvertFrom-Json).apps[0].cwd | Should -Be '/opt/app/api/current/worker'
+    }
+
+    It 'cwd relativo con ./ y barra final: se normaliza' {
+        $json = New-Pm2EcosystemJson -AppName 'api' -Entrypoint 'server.js' -WorkingDir '/opt/app/api/current/' `
+            -Processes @( @{ name = 'worker'; script = 'w.js'; cwd = './worker/' } )
+        ($json | ConvertFrom-Json).apps[0].cwd | Should -Be '/opt/app/api/current/worker'
+    }
+
+    It 'cwd absoluto declarado: se respeta tal cual' {
+        $json = New-Pm2EcosystemJson -AppName 'api' -Entrypoint 'server.js' -WorkingDir '/opt/app/api/current' `
+            -Processes @( @{ name = 'worker'; script = 'w.js'; cwd = '/srv/shared/worker' } )
+        ($json | ConvertFrom-Json).apps[0].cwd | Should -Be '/srv/shared/worker'
+    }
+
+    It 'sin -WorkingDir: no inventa cwd (retrocompat del generador puro)' {
+        $json = New-Pm2EcosystemJson -AppName 'api' -Entrypoint 'server.js'
+        ($json | ConvertFrom-Json).apps[0].PSObject.Properties.Name | Should -Not -Contain 'cwd'
+    }
+
+    It 'Publish-NodeApi pasa -WorkingDir al generar el ecosystem' {
+        $src = Get-Content "$PSScriptRoot/../Functions/Publish-NodeApi.ps1" -Raw
+        $call = [regex]::Match($src, 'New-Pm2EcosystemJson(?:[^\r\n]*`\r?\n)*[^\r\n]*').Value
+        $call | Should -Match '-WorkingDir\s+\$workingDir'
+    }
+}

@@ -558,7 +558,8 @@ function Publish-NodeApi {
                         $rtRestart = if ($deployConfig.runtime.restart) { [string]$deployConfig.runtime.restart } else { 'always' }
                         $rtDelay = if ($deployConfig.runtime.restartDelaySec) { [int]$deployConfig.runtime.restartDelaySec } else { 5 }
                         $ecoJson = New-Pm2EcosystemJson -AppName $appName -Entrypoint $entrypoint `
-                            -RuntimeEnv $rtEnv -Processes $rtProcs -Restart $rtRestart -RestartDelaySec $rtDelay
+                            -RuntimeEnv $rtEnv -Processes $rtProcs -Restart $rtRestart -RestartDelaySec $rtDelay `
+                            -WorkingDir $workingDir
                         $tmpEcoPath = New-UnixTempFile -Content $ecoJson -Prefix "psdevops_eco_"
                         $remoteEcoFile = "/tmp/${appName}.ecosystem.json"
                         Invoke-RemoteCopy -LocalPath $tmpEcoPath -RemotePath $remoteEcoFile `
