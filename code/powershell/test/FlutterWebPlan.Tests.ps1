@@ -332,3 +332,23 @@ Describe "ConvertTo-FlutterWebPlan — dart-defines del build (ADR 0018)" {
         @(Get-DeployPlanBlocker -Plan $plan) | Should -HaveCount 0
     }
 }
+
+Describe "ConvertTo-FlutterWebPlan — contrato .env.example (ADR 0018 §8)" {
+    It "un problema de contrato vuelve error la fila Dart-defines y bloquea el apply" {
+        $plan = ConvertTo-FlutterWebPlan -Probe (New-Probe) -AppName 'pyme' -Release 'v1.2.3' `
+            -Server 'production' -IP '10.0.0.5' -Port 4020 -RemoteWebRoot '/var/www' `
+            -ContractProblems @('La app declara variables en .env.example (API_URL) y el build no recibe env file.')
+        $row = ConvertTo-DeployPlanRow $plan.Sections['Configuración local']['Dart-defines']
+        $row.Level | Should -Be 'error'
+        $row.Text | Should -BeLike '*API_URL*'
+        $blockers = @(Get-DeployPlanBlocker -Plan $plan)
+        $blockers | Should -HaveCount 1
+        $blockers[0] | Should -BeLike 'Dart-defines:*API_URL*'
+    }
+
+    It "sin problemas de contrato no hay bloqueo" {
+        $plan = ConvertTo-FlutterWebPlan -Probe (New-Probe) -AppName 'pyme' -Release 'v1.2.3' `
+            -Server 'production' -IP '10.0.0.5' -Port 4020 -RemoteWebRoot '/var/www' -ContractProblems @()
+        @(Get-DeployPlanBlocker -Plan $plan) | Should -HaveCount 0
+    }
+}

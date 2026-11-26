@@ -105,3 +105,54 @@ Describe 'Invoke-FlutterBuild' {
         { Invoke-FlutterBuild -Apk 6>$null } | Should -Throw '*flutter build apk*'
     }
 }
+
+# ADR 0018 §8: si la app declara variables en .env.example, un build sin ellas no puede compilar.
+# String.fromEnvironment sin define devuelve '' y flutter build no falla: el fallo seria silencioso.
+Describe 'Invoke-FlutterBuild — contrato .env.example' {
+    BeforeEach {
+        $script:calls = [System.Collections.Generic.List[object]]::new()
+        $script:proj = New-FlutterProject
+        Push-Location $script:proj
+        Mock -ModuleName macss-devops flutter {
+            $script:calls.Add(@($args))
+            New-Item -ItemType Directory -Path 'build/app/outputs/flutter-apk' -Force | Out-Null
+            New-Item -ItemType File -Path 'build/app/outputs/flutter-apk/app-release.apk' -Force | Out-Null
+            New-Item -ItemType Directory -Path 'build/web' -Force | Out-Null
+            $global:LASTEXITCODE = 0
+        }
+        Mock -ModuleName macss-devops New-Object { throw 'sin GUI' } -ParameterFilter { $ComObject }
+        Set-Content -Path '.env.example' -Encoding UTF8 -Value @(
+            '# URLs del backend', 'API_URL=https://api.example.com', 'FOTOS_URL=', 'MACSS_DEPLOY_SSH_ALIAS=')
+    }
+
+    AfterEach { Pop-Location }
+
+    It 'con .env.example y sin -EnvFile falla antes de compilar, nombrando las claves' {
+        { Invoke-FlutterBuild -Web 6>$null } | Should -Throw '*API_URL, FOTOS_URL*-EnvFile*'
+        $script:calls | Should -HaveCount 0
+    }
+
+    It 'falla si al env file le falta una clave del contrato, y la nombra' {
+        Set-Content -Path '.env.uat' -Encoding UTF8 -Value @('API_URL=https://uat.example.com')
+        { Invoke-FlutterBuild -Web -EnvFile .env.uat 6>$null } | Should -Throw '*Faltan en .env.uat*FOTOS_URL*'
+        $script:calls | Should -HaveCount 0
+    }
+
+    It 'falla si una clave del contrato esta vacia' {
+        Set-Content -Path '.env.uat' -Encoding UTF8 -Value @('API_URL=https://uat.example.com', 'FOTOS_URL=  ')
+        { Invoke-FlutterBuild -Web -EnvFile .env.uat 6>$null } | Should -Throw '*vacias en .env.uat*FOTOS_URL*'
+        $script:calls | Should -HaveCount 0
+    }
+
+    It 'las claves MACSS_* del .env.example no son parte del contrato' {
+        Set-Content -Path '.env.uat' -Encoding UTF8 -Value @('API_URL=https://uat.example.com', 'FOTOS_URL=https://f.example.com')
+        Invoke-FlutterBuild -Web -EnvFile .env.uat 6>$null
+        $script:calls | Should -HaveCount 1
+    }
+
+    It 'un .env.example sin claves de la app (solo MACSS_*) no exige -EnvFile' {
+        Set-Content -Path '.env.example' -Encoding UTF8 -Value @('MACSS_DEPLOY_SSH_ALIAS=')
+        Invoke-FlutterBuild -Web 6>$null
+        $script:calls | Should -HaveCount 1
+    }
+}

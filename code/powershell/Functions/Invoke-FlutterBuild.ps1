@@ -24,7 +24,10 @@ MACSS_*, llegan al build como dart-defines (`String.fromEnvironment`). Si declar
 MACSS_FLUTTER_FLAVOR, el APK se compila con `--flavor` y su nombre lleva el flavor
 (app_<nombre>_v<versión>_<flavor>.apk). Lo que entra en el binario se puede leer
 descompilándolo: las claves con nombre de secreto (KEY, SECRET, PASSWORD) producen un aviso.
-Sin -EnvFile el build es el de siempre (ADR 0018).
+Sin -EnvFile el build es el de siempre, salvo que el proyecto tenga `.env.example`: entonces la
+app declara variables y el cmdlet falla antes de compilar. Con -EnvFile, también falla si falta o
+está vacía alguna clave del `.env.example` (ADR 0018 §8). Un `String.fromEnvironment` sin define
+devuelve '' y compila sin error: sin esta comprobación la app saldría con URLs vacías.
 
 .EXAMPLE
 Invoke-FlutterBuild
@@ -88,10 +91,18 @@ function Invoke-FlutterBuild {
         foreach ($key in $buildEnv.SecretLikeKeys) {
             Write-Warning "La clave '$key' parece un secreto y quedará dentro del binario, que se puede descompilar."
         }
-        if ($buildEnv.Defines.Count) {
-            $defineFile = New-FlutterDefineFile -Defines $buildEnv.Defines
-            $defineArgs = @("--dart-define-from-file=$defineFile")
-        }
+    }
+
+    # Contrato (ADR 0018 §8): si la app declara variables en .env.example, todas tienen que llegar
+    # con valor. Se comprueba antes de escribir el JSON temporal y antes de compilar.
+    $contractProblems = @(Test-FlutterEnvContract -ProjectRoot (Get-Location).ProviderPath -BuildEnv $buildEnv)
+    if ($contractProblems.Count) {
+        throw ("El env file no cumple el .env.example del proyecto:`n  - " + ($contractProblems -join "`n  - "))
+    }
+
+    if ($buildEnv -and $buildEnv.Defines.Count) {
+        $defineFile = New-FlutterDefineFile -Defines $buildEnv.Defines
+        $defineArgs = @("--dart-define-from-file=$defineFile")
     }
 
     try {

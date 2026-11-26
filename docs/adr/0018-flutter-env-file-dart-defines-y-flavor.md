@@ -1,6 +1,6 @@
 # ADR 0018: El env file de una app Flutter da sus dart-defines y su *flavor*
 
-**Status:** Proposed (2026-10-07)
+**Status:** Accepted (2026-11-26). Propuesta el 2026-10-07; el §8 se agregó al aceptarla.
 
 **Resuelve:** el punto que la [ADR 0017](0017-configuracion-compuesta-desde-archivos-versionados.md)
 dejó para una segunda etapa («las apps Flutter con su relación entorno → *flavor*»), sin adelantar
@@ -51,10 +51,24 @@ Flutter resuelve las dos cosas por separado:
 6. **`Publish-FlutterWeb` compila con el mismo `-EnvFile` que elige el servidor.** Así el destino y
    la configuración compilada salen del mismo archivo y no pueden divergir. Si el archivo no existe
    (un runner que exporta `MACSS_DEPLOY_SSH_ALIAS` al proceso, ADR 0015), compila sin defines,
-   como antes.
+   como antes, salvo que el proyecto declare un contrato (§8).
 7. **El plan muestra los nombres de los dart-defines, nunca sus valores.** El plan se persiste en
    disco (ADR 0009). La fila pasa a `warn` si hay claves con nombre de secreto, pero no se cuenta
    como bloqueante.
+
+8. **El `.env.example` del proyecto es el contrato, y sin él no hay contrato.** Si existe y
+   declara claves que no son `MACSS_*`, cada una tiene que llegar al build con un valor no vacío.
+   Si no, `Invoke-FlutterBuild` falla antes de compilar nombrando las claves, también cuando no
+   se pasó `-EnvFile`. En `Publish-FlutterWeb`, la fila `Dart-defines` del plan pasa a
+   `error`, que bloquea el `-Apply` antes de compilar.
+
+   El motivo es que el fallo es silencioso: `String.fromEnvironment` sin define devuelve `''` y
+   `flutter build` compila sin error. Sin el contrato, una app que ya lee sus URLs del env file
+   saldría con URLs vacías y el despliegue en verde. Se prefiere que el build falle.
+
+   Sin `.env.example` el comportamiento es el de los puntos 1 y 6: la protección se activa sola
+   cuando la app adopta variables, sin depender de que alguien recuerde el flag. Un valor vacío
+   cuenta como ausente: en Flutter no hay forma de distinguir «vacío a propósito» de «no llegó».
 
 Los nombres de los archivos siguen la convención de las APIs: `.env` (dev local), `.env.uat`,
 `.env.demo`, `.env.production`. Se versiona solo `.env.example`.

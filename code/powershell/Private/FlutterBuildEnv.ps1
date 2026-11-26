@@ -5,6 +5,7 @@
 #   Get-FlutterBuildEnv       — lee el archivo y separa defines, flavor y claves sospechosas.
 #   New-FlutterDefineFile     — escribe los defines a un JSON temporal para --dart-define-from-file.
 #   Resolve-FlutterApkOutput  — encuentra el APK que dejo Gradle (el nombre cambia con el flavor).
+#   Test-FlutterEnvContract   — compara el env file con el .env.example del proyecto (contrato).
 #
 # Las claves MACSS_* son de las herramientas (destino de despliegue, flavor) y nunca llegan al
 # binario. Todo lo demas SI llega, y un binario de Flutter se puede descompilar: por eso las
@@ -108,4 +109,57 @@ function Resolve-FlutterApkOutput {
                ForEach-Object Name)
     $list = if ($found.Count) { $found -join ', ' } else { '(ninguno)' }
     throw "No se encontro el APK esperado '$expected'. APKs en la carpeta: $list"
+}
+
+function Test-FlutterEnvContract {
+    <#
+    .SYNOPSIS
+        Problemas del env file de un build contra el .env.example del proyecto (ADR 0018 §8).
+    .DESCRIPTION
+        El .env.example versionado es el contrato: la app declara ahi las variables que lee con
+        String.fromEnvironment. Sin .env.example no hay contrato y no hay problemas: el build de
+        siempre. Con .env.example, cada clave que no sea MACSS_* tiene que llegar al build con un
+        valor no vacio.
+
+        Existe porque el fallo es silencioso: un String.fromEnvironment sin define devuelve '' y
+        `flutter build` compila sin error. Sin esta comprobacion, la app saldria con URLs vacias y
+        el despliegue en verde.
+
+        Solo compara NOMBRES y si el valor esta vacio. Nunca devuelve valores.
+    .OUTPUTS
+        string[] con un problema por elemento; vacio si cumple. Envolver en @() al contar.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)][string]$ProjectRoot,
+        $BuildEnv
+    )
+
+    $examplePath = Join-Path $ProjectRoot '.env.example'
+    if (-not (Test-Path -LiteralPath $examplePath -PathType Leaf)) { return @() }
+
+    $required = @(Get-DotEnvKeys -Lines @(Get-Content -LiteralPath $examplePath) |
+                  Where-Object { $_ -notlike 'MACSS_*' })
+    if ($required.Count -eq 0) { return @() }
+
+    if (-not $BuildEnv) {
+        return @("La app declara variables en .env.example ($($required -join ', ')) y el build " +
+                 "no recibe env file. Use -EnvFile <archivo> (.env, .env.uat, .env.production).")
+    }
+
+    $file = Split-Path -Leaf $BuildEnv.Path
+    $problems = [System.Collections.Generic.List[string]]::new()
+    $missing = @($required | Where-Object { -not $BuildEnv.Defines.Contains($_) })
+    if ($missing.Count) {
+        $problems.Add("Faltan en $file claves declaradas en .env.example: $($missing -join ', ').")
+    }
+    $empty = @($required | Where-Object {
+        $BuildEnv.Defines.Contains($_) -and -not "$($BuildEnv.Defines[$_])".Trim()
+    })
+    if ($empty.Count) {
+        $problems.Add("Estan vacias en ${file}: $($empty -join ', '). " +
+                      "String.fromEnvironment las leeria como '' sin que el build falle.")
+    }
+    return $problems.ToArray()
 }

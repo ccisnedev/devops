@@ -5,6 +5,7 @@
 BeforeAll {
     . "$PSScriptRoot/../Private/PublishHelpers.ps1"
     . "$PSScriptRoot/../Private/FlutterBuildEnv.ps1"
+    . "$PSScriptRoot/../Private/EnvContract.ps1"
 
     function New-EnvFile {
         param([string[]]$Lines)
@@ -110,5 +111,38 @@ Describe 'Resolve-FlutterApkOutput' {
         New-Item -ItemType File -Path (Join-Path $script:out 'app-prod-release.apk') | Out-Null
         { Resolve-FlutterApkOutput -OutputDir $script:out -Flavor 'uat' } |
             Should -Throw '*app-prod-release.apk*'
+    }
+}
+
+Describe 'Test-FlutterEnvContract' {
+    BeforeEach {
+        $script:root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N').Substring(0, 6))
+        New-Item -ItemType Directory -Path $script:root | Out-Null
+    }
+
+    It 'sin .env.example no hay contrato: ningun problema, con o sin env file' {
+        @(Test-FlutterEnvContract -ProjectRoot $script:root) | Should -HaveCount 0
+    }
+
+    It 'con .env.example y sin env file: un problema que nombra las claves' {
+        Set-Content -Path (Join-Path $script:root '.env.example') -Value @('API_URL=', 'MACSS_DEPLOY_SSH_ALIAS=') -Encoding UTF8
+        $p = @(Test-FlutterEnvContract -ProjectRoot $script:root)
+        $p | Should -HaveCount 1
+        $p[0] | Should -BeLike '*(API_URL)*-EnvFile*'
+    }
+
+    It 'nunca incluye valores en los problemas' {
+        Set-Content -Path (Join-Path $script:root '.env.example') -Value @('API_URL=', 'FOTOS_URL=') -Encoding UTF8
+        $buildEnv = Get-FlutterBuildEnv -Path (New-EnvFile @('API_URL=https://valor-que-no-debe-salir'))
+        $p = @(Test-FlutterEnvContract -ProjectRoot $script:root -BuildEnv $buildEnv)
+        $p | Should -HaveCount 1
+        $p[0] | Should -BeLike '*FOTOS_URL*'
+        $p[0] | Should -Not -BeLike '*valor-que-no-debe-salir*'
+    }
+
+    It 'env file completo: ningun problema' {
+        Set-Content -Path (Join-Path $script:root '.env.example') -Value @('API_URL=') -Encoding UTF8
+        $buildEnv = Get-FlutterBuildEnv -Path (New-EnvFile @('API_URL=https://x', 'MACSS_FLUTTER_FLAVOR=uat'))
+        @(Test-FlutterEnvContract -ProjectRoot $script:root -BuildEnv $buildEnv) | Should -HaveCount 0
     }
 }

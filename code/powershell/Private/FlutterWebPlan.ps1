@@ -105,13 +105,18 @@ function ConvertTo-FlutterWebPlan {
         Pure: turns the raw probe states plus local config into the common plan object.
     .DESCRIPTION
         No I/O — this is where severity is decided, so it is unit-testable without a server.
-        'port-in-use' is the only 'error' level: it means the apply is known to fail, which
-        Get-DeployPlanBlocker turns into a hard stop in -Apply.
+        'port-in-use' and a broken .env.example contract are the 'error' levels: the apply is
+        known to fail (or to deploy a broken app), which Get-DeployPlanBlocker turns into a
+        hard stop in -Apply.
     .PARAMETER Probe
         Object from Invoke-FlutterWebProbe (Current/Release/Nginx).
     .PARAMETER BuildEnv
         Object from Get-FlutterBuildEnv, or $null when the build runs without an env file
         (ADR 0018). Only the key NAMES reach the plan: the plan is persisted to disk.
+    .PARAMETER ContractProblems
+        Output of Test-FlutterEnvContract (ADR 0018 §8). Any problem turns the Dart-defines row
+        into 'error': the build would compile with empty dart-defines and the deploy would go
+        green, so -Apply must stop before building.
     #>
     [CmdletBinding()]
     param(
@@ -122,7 +127,8 @@ function ConvertTo-FlutterWebPlan {
         [Parameter(Mandatory)][string]$IP,
         [Parameter(Mandatory)]$Port,
         [Parameter(Mandatory)][string]$RemoteWebRoot,
-        $BuildEnv
+        $BuildEnv,
+        [string[]]$ContractProblems = @()
     )
 
     # ─── Server-state rows (with severity levels) ────────
@@ -203,6 +209,12 @@ function ConvertTo-FlutterWebPlan {
         $actions += "Crear configuración nginx en puerto $Port"
     }
 
+    # ─── Contrato .env.example (ADR 0018 §8) ─────────────
+    $contract = @($ContractProblems | Where-Object { $_ })
+    if ($contract.Count) {
+        $definesRow = New-DeployPlanRow -Level 'error' -Text ($contract -join ' ')
+    }
+
     $sections = [ordered]@{
         'Configuración local' = [ordered]@{
             'Proyecto' = $AppName
@@ -242,12 +254,14 @@ function Get-FlutterWebPlan {
         [Parameter(Mandatory)][string]$PrivateKeyPath,
         [Parameter(Mandatory)]$Port,
         [Parameter(Mandatory)][string]$RemoteWebRoot,
-        $BuildEnv
+        $BuildEnv,
+        [string[]]$ContractProblems = @()
     )
 
     $probe = Invoke-FlutterWebProbe -AppName $AppName -Release $Release -User $User -IP $IP `
         -SshPort $SshPort -PrivateKeyPath $PrivateKeyPath -Port $Port -RemoteWebRoot $RemoteWebRoot
 
     return ConvertTo-FlutterWebPlan -Probe $probe -AppName $AppName -Release $Release `
-        -Server $Server -IP $IP -Port $Port -RemoteWebRoot $RemoteWebRoot -BuildEnv $BuildEnv
+        -Server $Server -IP $IP -Port $Port -RemoteWebRoot $RemoteWebRoot -BuildEnv $BuildEnv `
+        -ContractProblems $ContractProblems
 }

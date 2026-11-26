@@ -235,11 +235,14 @@ function Publish-FlutterWeb {
                               -LegacyServer $deployConfig.server -Cmdlet 'Publish-FlutterWeb'
 
                 # El mismo env file da los dart-defines del build (ADR 0018). Si no existe (un
-                # runner que exporta MACSS_DEPLOY_SSH_ALIAS al proceso), se compila sin defines.
+                # runner que exporta MACSS_DEPLOY_SSH_ALIAS al proceso), se compila sin defines,
+                # salvo que la app declare variables en .env.example: entonces el plan bloquea
+                # (ADR 0018 §8), porque compilaria con URLs vacias y el deploy saldria en verde.
                 $buildEnvPath = if ([System.IO.Path]::IsPathRooted($EnvFile)) { $EnvFile } else { Join-Path $cwd $EnvFile }
                 $buildEnv = if (Test-Path -LiteralPath $buildEnvPath -PathType Leaf) {
                     Get-FlutterBuildEnv -Path $buildEnvPath
                 } else { $null }
+                $contractProblems = @(Test-FlutterEnvContract -ProjectRoot $cwd -BuildEnv $buildEnv)
 
                 # ─── 3. Validaciones de config ───────────────
                 if (-not $port) {
@@ -271,7 +274,7 @@ function Publish-FlutterWeb {
                 $deployPlan = Get-FlutterWebPlan -AppName $appName -Release $release `
                     -Server $server -User $user -IP $ip -SshPort $sshPort `
                     -PrivateKeyPath $privateKeyPath -Port $port -RemoteWebRoot $remoteWebRoot `
-                    -BuildEnv $buildEnv
+                    -BuildEnv $buildEnv -ContractProblems $contractProblems
                 Show-DeployPlan -Plan $deployPlan
 
                 # ─── Blockers (ADR 0009) ─────────────────────
@@ -461,11 +464,14 @@ function Publish-FlutterWeb {
                               -LegacyServer $deployConfig.server -Cmdlet 'Publish-FlutterWeb'
 
                 # El mismo env file da los dart-defines del build (ADR 0018). Si no existe (un
-                # runner que exporta MACSS_DEPLOY_SSH_ALIAS al proceso), se compila sin defines.
+                # runner que exporta MACSS_DEPLOY_SSH_ALIAS al proceso), se compila sin defines,
+                # salvo que la app declare variables en .env.example: entonces el plan bloquea
+                # (ADR 0018 §8), porque compilaria con URLs vacias y el deploy saldria en verde.
                 $buildEnvPath = if ([System.IO.Path]::IsPathRooted($EnvFile)) { $EnvFile } else { Join-Path $cwd $EnvFile }
                 $buildEnv = if (Test-Path -LiteralPath $buildEnvPath -PathType Leaf) {
                     Get-FlutterBuildEnv -Path $buildEnvPath
                 } else { $null }
+                $contractProblems = @(Test-FlutterEnvContract -ProjectRoot $cwd -BuildEnv $buildEnv)
 
                 # ─── 3. Validaciones de config ───────────────
                 if (-not $port) {
@@ -497,7 +503,7 @@ function Publish-FlutterWeb {
                 $deployPlan = Get-FlutterWebPlan -AppName $appName -Release $release `
                     -Server $server -User $user -IP $ip -SshPort $sshPort `
                     -PrivateKeyPath $privateKeyPath -Port $port -RemoteWebRoot $remoteWebRoot `
-                    -BuildEnv $buildEnv
+                    -BuildEnv $buildEnv -ContractProblems $contractProblems
                 Show-DeployPlan -Plan $deployPlan
 
                 # ─── 6. Persistir el reporte de cambios (ADR 0009) — solo en -Plan ───

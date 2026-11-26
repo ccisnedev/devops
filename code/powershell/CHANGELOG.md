@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
-## [6.10.0] - 2026-10-07
+## [6.10.0] - 2026-11-26
 
 ### Added
 
@@ -23,7 +23,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   - Un env file inexistente falla antes de compilar.
   - Las claves con nombre de secreto (`KEY`, `SECRET`, `PASSWORD`) **avisan**: quedan dentro del
     binario, y el binario se puede descompilar.
-  - Sin `-EnvFile`, el build no cambia.
+  - Sin `-EnvFile`, el build no cambia, salvo que el proyecto tenga `.env.example` (abajo).
+- **El `.env.example` de una app Flutter es un contrato que el build hace cumplir (ADR 0018 §8).**
+  Si el proyecto lo tiene y declara claves que no son `MACSS_*`, `Invoke-FlutterBuild` falla antes
+  de compilar cuando no recibe `-EnvFile` o cuando al archivo le falta alguna clave o la trae
+  vacía, y nombra las claves. En `Publish-FlutterWeb` la fila `Dart-defines` del plan pasa a
+  `error` y bloquea el `-Apply`. `String.fromEnvironment` sin define devuelve `''` y compila sin
+  error: sin el contrato, la app saldría con URLs vacías y el despliegue en verde. Sin
+  `.env.example`, nada cambia. Helper `Test-FlutterEnvContract`.
 
   Nuevo helper privado `FlutterBuildEnv.ps1` (`Get-FlutterBuildEnv`, `New-FlutterDefineFile`,
   `Resolve-FlutterApkOutput`). Lo cubren `test/FlutterBuildEnv.Tests.ps1` y
@@ -36,7 +43,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   produccion. Ahora sus claves distintas de `MACSS_*` llegan al build. El plan muestra sus nombres,
   nunca los valores, en la fila `Dart-defines`, que pasa a `warn` si alguna tiene nombre de
   secreto. Si el archivo no existe (runner con el alias en el proceso), compila sin defines, como
-  antes.
+  antes, salvo que haya contrato.
 - **`Invoke-FlutterBuild` falla si `flutter build` falla.** Antes seguia e intentaba mover un
   artefacto que no existia.
 
