@@ -58,7 +58,7 @@ no-portable).
 |---|---|---|
 | `name` (nombre del proceso) | nombre del unit / `SyslogIdentifier` | `name` del app |
 | `script` (entrypoint) | `ExecStart=node <script>` | `script` |
-| `cwd` (default: dir del release) | `WorkingDirectory=` | `cwd` |
+| `cwd` (default: el symlink `current` del release; relativo → bajo `current`) | `WorkingDirectory=` | `cwd` (siempre absoluto, ver §3) |
 | `env` (inline, NO-secreto, versionado) | `Environment=K=V` | `env: { K: V }` |
 | envFile (secretos) | `EnvironmentFile=` | dotenv del app / `--env` |
 | `restart` (`always`/`on-failure`/`no`) | `Restart=` + `RestartSec=` | `autorestart` + `restart_delay` |
@@ -106,6 +106,13 @@ como no-portables.
   desplegar (`ecosystem.config.json`; pm2 lo carga nativo, sin trampa CJS/ESM). `env` = merge
   de `runtime.env` + `env` por proceso; secretos vía dotenv del app. `restart` → `autorestart`
   + `restart_delay`. Nadie escribe un ecosystem a mano.
+  - **`cwd` siempre absoluto y por `current`** (enmienda, #110). Cada app del JSON lleva `cwd`:
+    `/opt/app/<app>/current` si el proceso no declara uno, `current/<cwd>` si lo declara
+    relativo, y el suyo si es absoluto. Sin `cwd`, pm2 resuelve `cwd` y `script` contra el
+    `process.cwd()` del CLI, que Node entrega ya resuelto (`getcwd`): el app queda registrado con
+    `releases/<release>` y un `pm2 restart` o `pm2 resurrect` tras cambiar `current` sigue
+    corriendo el release viejo. Tampoco sirve `pm2 start <ecosystem> --cwd`: pisa el `cwd` de
+    cada app y rompe los ecosystems multi-proceso.
 - **systemd:** `processes[]` → **un `.service` por proceso** (`<app>-<name>.service`, o `<app>`
   si es single-process). `env` → líneas `Environment=`; secretos → `EnvironmentFile=`.
   `script` → `ExecStart`. `restart` → `Restart=`. `enabled` → `systemctl enable`.
@@ -118,6 +125,11 @@ como no-portables.
   fotos); (b) dar una salida ESM-safe (`.cjs` es CommonJS siempre, ignora `type:module`).
 - Este camino queda como **válvula de escape pm2-only** para el caso raro que de verdad
   necesite lógica computada. Es la excepción, no el default.
+- Un ecosystem escrito a mano **debe declarar `cwd` absoluto por `current`** en cada app
+  (`cwd: '/opt/app/<app>/current'`; `__dirname` no sirve, Node también lo resuelve). Tras el
+  arranque, `Manage-NodeProcess.sh` revisa `pm2 jlist` y emite un **AVISO** por cada app
+  registrado bajo `releases/` (#110). Es aviso y no error para no romper los despliegues
+  existentes; pasará a error cuando los consumidores hayan migrado.
 
 ### 5. Restricción del `.env` (secretos)
 

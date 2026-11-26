@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/)
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [6.9.1] - 2026-11-25
+
+### Fixed
+
+- **pm2 dejaba los apps anclados al release fisico cuando se desplegaban con ecosystem (#110).**
+  Con `ecosystem.config.json` (generado) o `.cjs`/`.js` (a mano), pm2 registraba el app con
+  `/opt/app/<app>/releases/<release>` en vez de `/opt/app/<app>/current`. El ecosystem no
+  declaraba `cwd`, y pm2 lo resuelve contra el `process.cwd()` del CLI, que Node entrega ya
+  resuelto aunque el shell haya entrado por el symlink.
+
+  El despliegue funcionaba igual (cada deploy hace `pm2 delete` + `pm2 start`), por eso pasó
+  inadvertido. Lo que fallaba era todo lo que confía en `current` despues:
+
+  - un rollback a mano —devolver `current` al release anterior y `pm2 restart`— seguía
+    corriendo el release roto, sin ningún aviso;
+  - `pm2 resurrect` tras un reinicio levantaba el release anclado, no el de `current`;
+  - `pm2 info` mostraba un release distinto de `current`, y parecía un rollback que nunca
+    ocurrió.
+
+  Ahora:
+
+  - `New-Pm2EcosystemJson -WorkingDir` da a cada app un `cwd` absoluto: `current` si no declara
+    uno, `current/<cwd>` si es relativo, el suyo si es absoluto. `Publish-NodeApi` lo pasa
+    siempre. Los apps con `runtime.env` o `runtime.processes` quedan en `current` desde su
+    próximo despliegue, sin tocar su repo.
+  - `Manage-NodeProcess.sh` revisa `pm2 jlist` tras el arranque y emite un **AVISO** por cada app
+    registrado bajo `releases/`, con la corrección: declarar `cwd` en el ecosystem escrito a
+    mano o migrar a `runtime.env`/`runtime.processes`. Es aviso, no error, para no romper
+    despliegues existentes.
+  - Se descartó `pm2 start <ecosystem> --cwd`: pisa el `cwd` de cada app y rompe los
+    ecosystems multi-proceso.
+
+  Cubierto por `test/NewPm2EcosystemJson.Tests.ps1` (resolución de `cwd`) y
+  `test/ManageNodeProcessPm2CwdCurrent.container.test.sh`, que cambia `current` de release,
+  ejecuta `pm2 restart` y comprueba que corre el release nuevo. ADR 0005 enmendada.
+
 ## [6.9.0] - 2026-09-09
 
 ### Added

@@ -141,18 +141,38 @@ elif [ "$PROCESS_MANAGER" = "pm2" ]; then
         # Process names, cwd and env are owned by the config-as-code file, not by CLI flags.
         echo "Using config-as-code: $ECOSYSTEM_FILE"
 
-        # Immutable deploys swap the 'current' symlink to a new release dir. A graceful
-        # 'pm2 reload' keeps each app's already-resolved script realpath (the PREVIOUS
-        # release), so after the symlink swap it would keep running the old code. Delete
-        # + start forces pm2 to re-resolve the script through the updated 'current'
-        # symlink so the new release actually runs. (Brief restart; a zero-downtime
-        # reload would need cluster mode + a stable non-symlinked script path.)
+        # Delete + start: el registro de pm2 se rehace en cada deploy con lo que declare el
+        # ecosystem del release nuevo (nombres, cwd, env). pm2 solo sigue el symlink 'current'
+        # en un restart/reload/resurrect si el app tiene cwd = .../current: sin cwd, pm2 lo
+        # resuelve contra process.cwd() del CLI, que Node entrega ya resuelto (getcwd), y el
+        # app queda anclado a releases/<release> (#110). El ecosystem.config.json generado
+        # siempre declara cwd; para los escritos a mano se verifica abajo.
         pm2 delete "$ECOSYSTEM_FILE" >/dev/null 2>&1 || true
         wait_port_free "$PORT" || exit 1
         pm2 start "$ECOSYSTEM_FILE" --update-env
 
         # Persist the process list so 'pm2 startup' can resurrect it after a reboot.
         pm2 save
+
+        # Aviso (no error, para no romper deploys existentes): apps anclados a un release fisico.
+        # WORKING_DIR es <root>/<app>/current; un pm_cwd bajo <root>/<app>/releases/ delata el
+        # ecosystem sin cwd. node siempre existe aqui: pm2 lo requiere.
+        APP_ROOT="$(dirname "$WORKING_DIR")"
+        PINNED="$(pm2 jlist 2>/dev/null | node -e '
+            let raw = ""; process.stdin.on("data", d => raw += d).on("end", () => {
+                let apps = []; try { apps = JSON.parse(raw.slice(raw.indexOf("["))); } catch (e) { return; }
+                for (const p of apps) {
+                    const c = (p.pm2_env && p.pm2_env.pm_cwd) || "";
+                    if (c.startsWith(process.argv[1] + "/releases/")) console.log(p.name + " -> " + c);
+                }
+            });' "$APP_ROOT" || true)"
+        if [ -n "$PINNED" ]; then
+            echo "AVISO: pm2 registro estos apps con el directorio fisico del release, no con $WORKING_DIR:" >&2
+            echo "$PINNED" | sed 's/^/  /' >&2
+            echo "  Un 'pm2 restart' o un rollback cambiando el symlink 'current' seguiria corriendo ese release." >&2
+            echo "  Declare cwd: '$WORKING_DIR' en $(basename "$ECOSYSTEM_FILE"), o migre a runtime.env /" >&2
+            echo "  runtime.processes en publish.yaml (el ecosystem generado ya lo declara). Ver #110." >&2
+        fi
 
         # The ecosystem file owns the app names, so verify the whole list instead of $NAME.
         # The authoritative liveness check is the healthcheck that runs after this script.
