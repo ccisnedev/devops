@@ -198,6 +198,7 @@ function Publish-FlutterWeb {
                 . "$PSScriptRoot/../Private/Read-SSHConfig.ps1"
                 . "$PSScriptRoot/../Private/DeployPlan.ps1"
                 . "$PSScriptRoot/../Private/FlutterWebPlan.ps1"
+                . "$PSScriptRoot/../Private/FlutterBuildEnv.ps1"
 
                 # ─── 0. Validaciones ─────────────────────────
                 $pubspecPath = Join-Path $cwd "pubspec.yaml"
@@ -233,6 +234,16 @@ function Publish-FlutterWeb {
                 $server = Resolve-DeployTargetFromEnv -ProjectRoot $cwd -EnvFile $EnvFile `
                               -LegacyServer $deployConfig.server -Cmdlet 'Publish-FlutterWeb'
 
+                # El mismo env file da los dart-defines del build (ADR 0018). Si no existe (un
+                # runner que exporta MACSS_DEPLOY_SSH_ALIAS al proceso), se compila sin defines,
+                # salvo que la app declare variables en .env.example: entonces el plan bloquea
+                # (ADR 0018 §8), porque compilaria con URLs vacias y el deploy saldria en verde.
+                $buildEnvPath = if ([System.IO.Path]::IsPathRooted($EnvFile)) { $EnvFile } else { Join-Path $cwd $EnvFile }
+                $buildEnv = if (Test-Path -LiteralPath $buildEnvPath -PathType Leaf) {
+                    Get-FlutterBuildEnv -Path $buildEnvPath
+                } else { $null }
+                $contractProblems = @(Test-FlutterEnvContract -ProjectRoot $cwd -BuildEnv $buildEnv)
+
                 # ─── 3. Validaciones de config ───────────────
                 if (-not $port) {
                     throw "No se encontró 'port:' en publish.yaml."
@@ -262,7 +273,8 @@ function Publish-FlutterWeb {
                 #     parameter (variables are case-insensitive) and fail the type coercion. ───
                 $deployPlan = Get-FlutterWebPlan -AppName $appName -Release $release `
                     -Server $server -User $user -IP $ip -SshPort $sshPort `
-                    -PrivateKeyPath $privateKeyPath -Port $port -RemoteWebRoot $remoteWebRoot
+                    -PrivateKeyPath $privateKeyPath -Port $port -RemoteWebRoot $remoteWebRoot `
+                    -BuildEnv $buildEnv -ContractProblems $contractProblems
                 Show-DeployPlan -Plan $deployPlan
 
                 # ─── Blockers (ADR 0009) ─────────────────────
@@ -296,7 +308,11 @@ function Publish-FlutterWeb {
                 }
 
                 Write-Host "  Compilando Flutter Web..." -ForegroundColor Cyan
-                Invoke-FlutterBuild -Web
+                if ($buildEnv) {
+                    Invoke-FlutterBuild -Web -EnvFile $buildEnv.Path
+                } else {
+                    Invoke-FlutterBuild -Web
+                }
                 $webBuildPath = Join-Path $cwd $webBuildFolder
 
                 if (-not (Test-Path (Join-Path $webBuildPath "index.html"))) {
@@ -412,6 +428,7 @@ function Publish-FlutterWeb {
                 . "$PSScriptRoot/../Private/Read-SSHConfig.ps1"
                 . "$PSScriptRoot/../Private/DeployPlan.ps1"
                 . "$PSScriptRoot/../Private/FlutterWebPlan.ps1"
+                . "$PSScriptRoot/../Private/FlutterBuildEnv.ps1"
 
                 # ─── 0. Validaciones ─────────────────────────
                 $pubspecPath = Join-Path $cwd "pubspec.yaml"
@@ -446,6 +463,16 @@ function Publish-FlutterWeb {
                 $server = Resolve-DeployTargetFromEnv -ProjectRoot $cwd -EnvFile $EnvFile `
                               -LegacyServer $deployConfig.server -Cmdlet 'Publish-FlutterWeb'
 
+                # El mismo env file da los dart-defines del build (ADR 0018). Si no existe (un
+                # runner que exporta MACSS_DEPLOY_SSH_ALIAS al proceso), se compila sin defines,
+                # salvo que la app declare variables en .env.example: entonces el plan bloquea
+                # (ADR 0018 §8), porque compilaria con URLs vacias y el deploy saldria en verde.
+                $buildEnvPath = if ([System.IO.Path]::IsPathRooted($EnvFile)) { $EnvFile } else { Join-Path $cwd $EnvFile }
+                $buildEnv = if (Test-Path -LiteralPath $buildEnvPath -PathType Leaf) {
+                    Get-FlutterBuildEnv -Path $buildEnvPath
+                } else { $null }
+                $contractProblems = @(Test-FlutterEnvContract -ProjectRoot $cwd -BuildEnv $buildEnv)
+
                 # ─── 3. Validaciones de config ───────────────
                 if (-not $port) {
                     throw "No se encontró 'port:' en publish.yaml."
@@ -475,7 +502,8 @@ function Publish-FlutterWeb {
                 #     [switch]$Plan (variables case-insensitive) y rompe la coerción de tipo.
                 $deployPlan = Get-FlutterWebPlan -AppName $appName -Release $release `
                     -Server $server -User $user -IP $ip -SshPort $sshPort `
-                    -PrivateKeyPath $privateKeyPath -Port $port -RemoteWebRoot $remoteWebRoot
+                    -PrivateKeyPath $privateKeyPath -Port $port -RemoteWebRoot $remoteWebRoot `
+                    -BuildEnv $buildEnv -ContractProblems $contractProblems
                 Show-DeployPlan -Plan $deployPlan
 
                 # ─── 6. Persistir el reporte de cambios (ADR 0009) — solo en -Plan ───
